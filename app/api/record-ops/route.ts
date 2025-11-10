@@ -5,8 +5,11 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const EDGE_FN_URL = process.env.RECORD_OPS_FN_URL // set this to your deployed Edge Function URL
 
+// Avoid throwing at module initialization (this breaks Next.js build/prerender).
+// Create Supabase admin client lazily inside the request handler so missing
+// env vars produce runtime errors instead of build-time exceptions.
 if (!SUPABASE_URL) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL in env')
+  console.warn('Warning: NEXT_PUBLIC_SUPABASE_URL not set. Some features may fail at runtime.')
 }
 
 if (!SERVICE_KEY) {
@@ -14,7 +17,8 @@ if (!SERVICE_KEY) {
   console.warn('Warning: SUPABASE_SERVICE_ROLE_KEY not set. Token verification will fail.')
 }
 
-const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY ?? '')
+let _supabaseAdmin: ReturnType<typeof createClient> | null = null
+
 
 export async function POST(req: Request) {
   try {
@@ -22,6 +26,16 @@ export async function POST(req: Request) {
     const token = authHeader.replace(/^Bearer\s+/i, '')
 
     if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 401 })
+
+    // create admin client lazily so we don't rely on env at build time
+    let supabaseAdmin = _supabaseAdmin
+    if (!supabaseAdmin) {
+      if (!SUPABASE_URL || !SERVICE_KEY) {
+        return NextResponse.json({ error: 'Server not configured: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }, { status: 500 })
+      }
+      supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY)
+      _supabaseAdmin = supabaseAdmin
+    }
 
     // verify token with Supabase admin client
     const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token)

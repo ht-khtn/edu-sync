@@ -19,7 +19,7 @@ export default function LoginForm() {
     setLoading(true)
     setError(null)
     try {
-      const supabase = getSupabase()
+      const supabase = await getSupabase()
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setError(error.message)

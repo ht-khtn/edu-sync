@@ -2,7 +2,7 @@
 // Usage (client-side): import { getSupabase } from '@/lib/supabase' and call inside event handlers or effects
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-export function getSupabase(): SupabaseClient {
+export async function getSupabase() {
 	const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 	const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
@@ -12,7 +12,10 @@ export function getSupabase(): SupabaseClient {
 		)
 	}
 
-	return createClient(supabaseUrl, supabaseAnonKey)
+  // Dynamically import to avoid evaluating createClient during server-side prerender/build
+  const { createClient } = await import('@supabase/supabase-js')
+  
+  return createClient(supabaseUrl, supabaseAnonKey)
 }
 
 export default getSupabase

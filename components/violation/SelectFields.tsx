@@ -43,7 +43,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           <SelectTrigger data-student-trigger>
             <SelectValue placeholder="-- Chọn học sinh --" />
           </SelectTrigger>
-          <SelectContent className="bg-white/95 dark:bg-popover backdrop-blur-sm">
+          <SelectContent className="bg-white dark:bg-white">
             {students.map((s) => (
               <SelectItem key={s.id} value={s.id}>{s.full_name} {s.class_name ? `(${s.class_name})` : ''}</SelectItem>
             ))}
@@ -58,7 +58,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           <SelectTrigger data-criteria-trigger>
             <SelectValue placeholder="-- Chọn loại lỗi --" />
           </SelectTrigger>
-          <SelectContent className="bg-white/95 dark:bg-popover backdrop-blur-sm">
+          <SelectContent className="bg-white dark:bg-white">
             {(isClassMode
               ? criteria.filter((c) => c.category === 'class')
               : criteria.filter((c) => c.category === 'student')

@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import getSupabase from '@/lib/supabase'
 
 type Role = { role_id: string; target: string | null }
@@ -71,6 +72,26 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             homeroomOf,
             canComplaint,
           })
+        // subscribe to auth changes to keep client state and server components in sync
+        try {
+          const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
+            if (!mounted) return
+            // refresh server components so header and other RSCs update
+            try {
+              // use next/navigation's router to refresh
+              // (router declared below via hook)
+              // eslint-disable-next-line @typescript-eslint/no-use-before-define
+              router.refresh()
+            } catch {}
+
+            const newUid = sess?.user?.id ?? null
+            if (!newUid) {
+              setState((s) => ({ ...s, userId: null, loading: false, roles: [], classTargets: [], homeroomOf: [], canComplaint: false }))
+            }
+          })
+          // cleanup on unmount
+          ;(subscription as any)?.unsubscribe?.()
+        } catch {}
       } catch (e: any) {
         console.warn('AuthProvider init error', e?.message)
         if (mounted) setState((s) => ({ ...s, loading: false }))
@@ -80,6 +101,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       mounted = false
     }
   }, [])
+
+  const router = useRouter()
 
   const value = useMemo(() => state, [state])
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>

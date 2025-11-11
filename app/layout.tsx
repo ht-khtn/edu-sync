@@ -69,10 +69,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <header className="border-b bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-neutral-50 dark:bg-zinc-900`}>
+        <header className="border-b bg-white">
           <nav className="mx-auto max-w-6xl px-4 py-3 w-full flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-tight text-zinc-900">EduSync</Link>
+            <Link href="/" className="font-semibold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">EduSync</Link>
             <ul className="flex gap-4 text-sm items-center">
               {user && hasCC && (
                 <>
@@ -92,7 +92,7 @@ export default async function RootLayout({
             </ul>
           </nav>
         </header>
-        <main>{children}</main>
+        <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
         <Toaster position="top-right" richColors closeButton />
       </body>
     </html>

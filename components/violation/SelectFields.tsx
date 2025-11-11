@@ -9,6 +9,7 @@ type Props = {
   criteria: Criteria[]
   allowedClasses?: { id: string; name: string }[]
   currentClass?: { id: string; name: string } | null
+  showCurrentClass?: boolean
 }
 
 export default function SelectFields({ students, criteria, allowedClasses, currentClass }: Props) {
@@ -18,12 +19,6 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
 
   return (
     <>
-      {/* Current class info */}
-      {currentClass && (
-        <div className="mb-4 text-sm text-muted-foreground">
-          Lớp đang ghi nhận hiện tại: <span className="font-medium text-foreground">{currentClass.name}</span>
-        </div>
-      )}
 
       <section>
         <Label className="mb-2">Đối tượng ghi nhận</Label>

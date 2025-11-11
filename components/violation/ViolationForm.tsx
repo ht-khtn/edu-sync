@@ -1,6 +1,8 @@
 import type { Criteria, Student } from '@/lib/violations'
 import { filterStudentsByClass } from '@/lib/violations'
-import { MdFilledButton, MdOutlinedButton } from '@/components/md/Button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { redirect } from 'next/navigation'
 
 type Props = {
@@ -84,7 +86,7 @@ export function ViolationForm({ students, criteria }: Props) {
     <section className="flex flex-col gap-6">
       <form action={submitViolation} className="grid gap-6 lg:grid-cols-2">
         <section>
-          <label className="block text-sm font-medium mb-2">Học sinh</label>
+          <Label className="mb-2">Học sinh</Label>
           <select name="student_id" required className="w-full border rounded-md h-9 px-2">
             <option value="">-- Chọn học sinh --</option>
             {effectiveStudents.map((s) => (
@@ -94,7 +96,7 @@ export function ViolationForm({ students, criteria }: Props) {
         </section>
 
         <section>
-          <label className="block text-sm font-medium mb-2">Loại lỗi</label>
+          <Label className="mb-2">Loại lỗi</Label>
           <select name="criteria_id" required className="w-full border rounded-md h-9 px-2">
             <option value="">-- Chọn loại lỗi --</option>
             {criteria.map((c) => (
@@ -104,18 +106,18 @@ export function ViolationForm({ students, criteria }: Props) {
         </section>
 
         <section className="lg:col-span-2">
-          <label className="block text-sm font-medium mb-2">Lý do / ghi chú</label>
-          <input type="text" name="reason" placeholder="Tuỳ chọn" className="w-full border rounded-md h-9 px-2" />
+          <Label className="mb-2">Lý do / ghi chú</Label>
+          <Input type="text" name="reason" placeholder="Tuỳ chọn" />
         </section>
 
         <section className="lg:col-span-2">
-          <label className="block text-sm font-medium mb-2">Link minh chứng (tuỳ chọn)</label>
-          <input type="url" name="evidence_url" placeholder="https://..." className="w-full border rounded-md h-9 px-2" />
+          <Label className="mb-2">Link minh chứng (tuỳ chọn)</Label>
+          <Input type="url" name="evidence_url" placeholder="https://..." />
         </section>
 
         <section className="lg:col-span-2 flex gap-3 items-center">
-          <MdFilledButton type="submit">Ghi nhận</MdFilledButton>
-          <MdOutlinedButton type="reset">Làm mới</MdOutlinedButton>
+          <Button type="submit">Ghi nhận</Button>
+          <Button type="reset" variant="outline">Làm mới</Button>
         </section>
       </form>
       <p className="text-xs text-muted-foreground">Mô phỏng frontend — chưa ghi xuống database.</p>

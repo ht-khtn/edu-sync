@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Script from 'next/script'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +36,6 @@ export default function RootLayout({
           </nav>
         </header>
         <main>{children}</main>
-        <Script id="material-web" type="module" src="https://esm.run/@material/web/all.js" strategy="afterInteractive" />
       </body>
     </html>
   );

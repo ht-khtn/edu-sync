@@ -45,10 +45,26 @@ export default function LoginForm() {
       if (error) {
         setError(error.message);
       } else {
+        // Persist session to server-side cookies so server components can read auth state
+        try {
+          const access_token = (data as any)?.session?.access_token
+          const refresh_token = (data as any)?.session?.refresh_token
+          const expires_in = (data as any)?.session?.expires_in
+          if (access_token && refresh_token) {
+            await fetch('/api/auth/set-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ access_token, refresh_token, expires_in }),
+            })
+          }
+        } catch (e) {
+          // ignore cookie set failures; still continue with client-side session
+        }
         // persist session preference if needed
         if (values.remember) {
           // custom logic can be added here
         }
+        // navigate to dashboard
         router.push("/");
       }
     } catch (err: any) {

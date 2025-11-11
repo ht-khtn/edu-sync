@@ -3,6 +3,7 @@ import RecentRecordsList from '@/components/violation/RecentRecordsList'
 import { fetchCriteriaFromDB, fetchStudentsFromDB, filterStudentsByClass, type Criteria, type Student } from '@/lib/violations'
 import getSupabase from '@/lib/supabase'
 import getSupabaseServer from '@/lib/supabase-server'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,19 +53,30 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
   }
 
   return (
-    <main className="mx-auto max-w-4xl p-6 flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Nhập lỗi vi phạm</h1>
-        <p className="text-sm text-muted-foreground">Danh sách loại lỗi lấy trực tiếp từ bảng criteria.</p>
-      </header>
-      {supabaseClient ? (
-        <div className="flex flex-col gap-10">
-          <ViolationForm students={effectiveStudents} criteria={criteria} />
+    <main className="mx-auto max-w-6xl p-6 flex flex-col gap-8">
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Nhập lỗi vi phạm</CardTitle>
+          <CardDescription>Danh sách tiêu chí lấy trực tiếp từ bảng criteria.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {supabaseClient ? (
+            <ViolationForm students={effectiveStudents} criteria={criteria} />
+          ) : (
+            <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Gần đây</CardTitle>
+          <CardDescription>20 ghi nhận gần nhất trong phạm vi quyền của bạn.</CardDescription>
+        </CardHeader>
+        <CardContent>
           <RecentRecordsList />
-        </div>
-      ) : (
-        <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
-      )}
+        </CardContent>
+      </Card>
     </main>
   )
 }

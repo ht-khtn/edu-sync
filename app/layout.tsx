@@ -22,12 +22,29 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  let user: { email?: string } | null = null
+  let user: { id?: string, email?: string } | null = null
+  let hasCC = false
   try {
     const { getSupabaseServer } = await import('@/lib/supabase-server')
     const supabase = await getSupabaseServer()
     const { data } = await supabase.auth.getUser()
     user = data?.user ?? null
+    // Resolve CC role for nav visibility
+    if (user?.id) {
+      const { data: appUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_uid', user.id)
+        .maybeSingle()
+      const appUserId = appUser?.id as string | undefined
+      if (appUserId) {
+        const { data: roles } = await supabase
+          .from('user_roles')
+          .select('role_id')
+          .eq('user_id', appUserId)
+        hasCC = Array.isArray(roles) && roles.some(r => r.role_id === 'CC')
+      }
+    }
   } catch {
     // Supabase not configured; render public nav only
   }
@@ -50,12 +67,15 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <header className="border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <header className="border-b bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/50">
           <nav className="mx-auto max-w-6xl px-4 py-3 w-full flex items-center justify-between">
             <Link href="/" className="font-semibold tracking-tight text-zinc-900">EduSync</Link>
             <ul className="flex gap-4 text-sm items-center">
-              {user && (
-                <li><Link href="/violation-entry">Nhập vi phạm</Link></li>
+              {user && hasCC && (
+                <>
+                  <li><Link href="/violation-entry">Nhập vi phạm</Link></li>
+                  <li><Link href="/score-entry">Nhập điểm</Link></li>
+                </>
               )}
               {!user ? (
                 <li><Link href="/login">Đăng nhập</Link></li>

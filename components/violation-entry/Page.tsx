@@ -5,8 +5,7 @@ import getSupabase from '@/lib/supabase'
 import getSupabaseServer from '@/lib/supabase-server'
 import { getAllowedClassIdsForWrite } from '@/lib/rbac'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { Button } from '@/components/ui/button'
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 export const dynamic = 'force-dynamic'
 
@@ -141,28 +140,34 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
   return (
     <main className="mx-auto max-w-6xl p-6 flex flex-col gap-8">
       <Card>
-        <CardHeader className="border-b flex items-center justify-between">
+        <CardHeader className="border-b">
           <div>
             <CardTitle>Ghi nhận hôm nay</CardTitle>
             <CardDescription>Danh sách các lỗi vi phạm được ghi nhận trong ngày.</CardDescription>
           </div>
-          <div>
-            {/* Sheet trigger to open the add-violation form */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button aria-label="Thêm ghi nhận">＋</Button>
-              </SheetTrigger>
-              <SheetContent side="right">
-                <SheetHeader>
-                  <SheetTitle>Thêm lỗi vi phạm</SheetTitle>
-                  <SheetDescription>Điền thông tin để ghi nhận vi phạm mới.</SheetDescription>
-                </SheetHeader>
-                {/* Render server-side ViolationForm inside the sheet */}
-                <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
-              </SheetContent>
-            </Sheet>
-          </div>
         </CardHeader>
+
+        {/* current class display under header */}
+        {currentClass && (
+          <div className="px-6">
+            <div className="mb-4 text-sm text-muted-foreground">Lớp đang ghi nhận hiện tại: <span className="font-medium text-foreground">{currentClass.name}</span></div>
+          </div>
+        )}
+
+        {/* centered dialog opened by floating FAB */}
+        <Dialog>
+          <DialogTrigger asChild>
+            <button aria-label="Thêm ghi nhận" className="fixed right-6 bottom-6 z-50 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground size-12 shadow-lg">＋</button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Thêm lỗi vi phạm</DialogTitle>
+              <DialogDescription>Điền thông tin để ghi nhận vi phạm mới.</DialogDescription>
+            </DialogHeader>
+            <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
+          </DialogContent>
+        </Dialog>
+
         <CardContent>
           {supabaseClient ? (
             <RecentRecordsList />

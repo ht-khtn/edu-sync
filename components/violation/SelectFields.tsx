@@ -26,14 +26,14 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
       )}
 
       <section>
-        <Label className="mb-2">Ghi nhận cho lớp</Label>
+        <Label className="mb-2">Đối tượng ghi nhận</Label>
         <div className="flex items-center gap-3 mb-3">
           <input id="class-mode" type="checkbox" checked={isClassMode} onChange={(e) => {
             const val = e.target.checked
             setIsClassMode(val)
             if (val) setSelectedStudent("")
           }} />
-          <label htmlFor="class-mode" className="text-sm">Bật nếu ghi lỗi cho cả lớp (không chọn học sinh)</label>
+          <label htmlFor="class-mode" className="text-sm">Ghi nhận cho lớp</label>
         </div>
 
         <input type="hidden" name="student_id" value={isClassMode ? "" : selectedStudent} />
@@ -43,7 +43,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           <SelectTrigger data-student-trigger>
             <SelectValue placeholder="-- Chọn học sinh --" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-white/95 dark:bg-popover backdrop-blur-sm">
             {students.map((s) => (
               <SelectItem key={s.id} value={s.id}>{s.full_name} {s.class_name ? `(${s.class_name})` : ''}</SelectItem>
             ))}
@@ -58,7 +58,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           <SelectTrigger data-criteria-trigger>
             <SelectValue placeholder="-- Chọn loại lỗi --" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-white/95 dark:bg-popover backdrop-blur-sm">
             {(isClassMode
               ? criteria.filter((c) => c.category === 'class')
               : criteria.filter((c) => c.category === 'student')

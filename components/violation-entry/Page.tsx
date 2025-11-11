@@ -127,7 +127,14 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
         </CardHeader>
         <CardContent>
           {supabaseClient ? (
+            <>
+              {currentClass && (
+                <div className="mb-4 text-sm text-muted-foreground">
+                  Lớp đang ghi nhận hiện tại: <span className="font-medium text-foreground">{currentClass.name}</span>
+                </div>
+              )}
             <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
+            </>
           ) : (
             <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
           )}

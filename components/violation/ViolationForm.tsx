@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation'
 type Props = {
   students: Student[]
   criteria: Criteria[]
+  allowedClasses: { id: string; name: string }[]
 }
 
 // Server action to handle form submission: insert into records
@@ -20,10 +21,11 @@ async function submitViolation(formData: FormData) {
 
   const student_id = String(formData.get('student_id') || '')
   const criteria_id = String(formData.get('criteria_id') || '')
+  const class_id = String(formData.get('class_id') || '')
   const reason = (formData.get('reason') || '').toString().trim()
   const evidence_url = (formData.get('evidence_url') || '').toString().trim()
 
-  if (!student_id || !criteria_id) {
+  if (!criteria_id) {
     redirect('/violation-entry?error=missing')
   }
 
@@ -42,20 +44,29 @@ async function submitViolation(formData: FormData) {
     redirect('/violation-entry?error=nouser')
   }
 
-  // Fetch student class
-  const { data: studentRow, error: sErr } = await supabase
-    .from('users')
-    .select('id,class_id')
-    .eq('id', student_id)
-    .maybeSingle()
-  if (sErr || !studentRow) {
-    redirect('/violation-entry?error=nostudent')
+  // Determine whether this is a student-level or class-level entry
+  let targetClassId: string | null = null
+  if (student_id) {
+    // Fetch student class
+    const { data: studentRow, error: sErr } = await supabase
+      .from('users')
+      .select('id,class_id')
+      .eq('id', student_id)
+      .maybeSingle()
+    if (sErr || !studentRow) {
+      redirect('/violation-entry?error=nostudent')
+    }
+    targetClassId = studentRow.class_id ?? null
+  } else {
+    // class-level violation: class_id must be provided
+    if (!class_id) redirect('/violation-entry?error=missing')
+    targetClassId = class_id
   }
 
   // Resolve class name for permission check
   let className: string | null = null
-  if (studentRow.class_id) {
-    const { data: cls } = await supabase.from('classes').select('name').eq('id', studentRow.class_id).maybeSingle()
+  if (targetClassId) {
+    const { data: cls } = await supabase.from('classes').select('name').eq('id', targetClassId).maybeSingle()
     className = cls?.name ?? null
   }
 
@@ -65,22 +76,29 @@ async function submitViolation(formData: FormData) {
     redirect('/violation-entry?error=forbidden')
   }
 
-  // Fetch criteria score
+  // Fetch criteria score and category
   const { data: criteriaRow, error: cErr } = await supabase
     .from('criteria')
-    .select('id,score')
+    .select('id,score,category')
     .eq('id', criteria_id)
     .maybeSingle()
   if (cErr || !criteriaRow) {
     redirect('/violation-entry?error=nocriteria')
   }
 
+  // If this is a class-level entry, only criteria with category === 'class' are allowed
+  if (!student_id) {
+    if ((criteriaRow.category ?? '') !== 'class') {
+      redirect('/violation-entry?error=forbidden')
+    }
+  }
+
   const score = -Math.abs(criteriaRow.score ?? 0)
   const note = [reason, evidence_url].filter(Boolean).join(' | ')
 
   const { data: inserted, error: insErr } = await supabase.from('records').insert({
-    class_id: studentRow.class_id,
-    student_id,
+    class_id: targetClassId,
+    student_id: student_id || null,
     criteria_id,
     score,
     note,
@@ -107,7 +125,7 @@ async function submitViolation(formData: FormData) {
 
 import ViolationFormClient from './ViolationFormClient'
 
-export function ViolationForm({ students, criteria }: Props) {
+export function ViolationForm({ students, criteria, allowedClasses }: Props) {
   // For now, we don't have server-side auth context; limit-by-class not applied here
   const effectiveStudents = filterStudentsByClass(students, [])
 
@@ -116,6 +134,7 @@ export function ViolationForm({ students, criteria }: Props) {
       <ViolationFormClient
         students={effectiveStudents}
         criteria={criteria}
+        allowedClasses={allowedClasses}
         action={submitViolation}
       />
     </section>

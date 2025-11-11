@@ -11,6 +11,7 @@ import { useFormStatus } from 'react-dom'
 type Props = {
   students: Student[]
   criteria: Criteria[]
+  allowedClasses: { id: string; name: string }[]
   action: (formData: FormData) => void | Promise<void>
 }
 
@@ -24,13 +25,14 @@ function PendingButtons() {
   )
 }
 
-export default function ViolationFormClient({ students, criteria, action }: Props) {
+export default function ViolationFormClient({ students, criteria, allowedClasses, action }: Props) {
   function handleBeforeSubmit(form: HTMLFormElement) {
     const studentId = (form.querySelector('input[name="student_id"]') as HTMLInputElement)?.value
+    const classId = (form.querySelector('input[name="class_id"]') as HTMLInputElement)?.value
     const criteriaId = (form.querySelector('input[name="criteria_id"]') as HTMLInputElement)?.value
-    if (!studentId) {
-      toast.error('Chọn học sinh trước khi ghi nhận.')
-      const trg = form.querySelector('[data-student-trigger]') as HTMLElement | null
+    if (!studentId && !classId) {
+      toast.error('Chọn học sinh hoặc chọn ghi nhận cho lớp.')
+      const trg = form.querySelector('[data-student-trigger], [data-class-trigger]') as HTMLElement | null
       trg?.focus()
       return false
     }
@@ -52,7 +54,7 @@ export default function ViolationFormClient({ students, criteria, action }: Prop
       }}
       className="grid gap-6 lg:grid-cols-2"
     >
-      <SelectFields students={students} criteria={criteria} />
+      <SelectFields students={students} criteria={criteria} allowedClasses={allowedClasses} />
 
       <section className="lg:col-span-2">
         <Label className="mb-2">Lý do / ghi chú</Label>

@@ -13,6 +13,7 @@ export type Student = {
   student_code: string
   full_name: string
   class_id: string
+  class_name?: string
 }
 
 export type ViolationDraft = {

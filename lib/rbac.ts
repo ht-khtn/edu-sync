@@ -58,3 +58,23 @@ export async function getAllowedClassIdsForView(supabase: SupabaseClient, userId
   }
   return allowed
 }
+
+export async function getAllowedClassIdsForWrite(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
+  const roles = await getUserRolesWithScope(supabase, userId)
+  const allowed = new Set<string>()
+  if (!roles.length) return allowed
+
+  const { data: classes } = await supabase.from('classes').select('id,name')
+  for (const r of roles) {
+    if (r.target === 'ALL') {
+      // All classes writable within scope=school
+      if (r.scope === 'school') {
+        for (const c of classes || []) allowed.add(c.id)
+      }
+    } else if (r.target) {
+      const match = classes?.find(c => c.name === r.target)
+      if (match?.id) allowed.add(match.id)
+    }
+  }
+  return allowed
+}

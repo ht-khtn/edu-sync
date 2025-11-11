@@ -78,17 +78,29 @@ async function submitViolation(formData: FormData) {
   const score = -Math.abs(criteriaRow.score ?? 0)
   const note = [reason, evidence_url].filter(Boolean).join(' | ')
 
-  const { error: insErr } = await supabase.from('records').insert({
+  const { data: inserted, error: insErr } = await supabase.from('records').insert({
     class_id: studentRow.class_id,
     student_id,
     criteria_id,
     score,
     note,
     recorded_by: appUser.id,
-  })
+  }).select('id').maybeSingle()
   if (insErr) {
     redirect('/violation-entry?error=insert')
   }
+
+  // Audit log (best-effort)
+  try {
+    await supabase.from('audit_logs').insert({
+      table_name: 'records',
+      record_id: inserted?.id,
+      action: 'insert',
+      actor_id: appUser.id,
+      diff: { student_id, criteria_id, score, note },
+      meta: { source: 'violation-form' },
+    })
+  } catch {}
 
   redirect('/violation-entry?ok=1')
 }

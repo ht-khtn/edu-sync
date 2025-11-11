@@ -19,7 +19,7 @@ export default function SelectFields({ students, criteria }: Props) {
         <Label className="mb-2">Học sinh</Label>
         <input type="hidden" name="student_id" value={selectedStudent} />
         <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-          <SelectTrigger>
+          <SelectTrigger data-student-trigger>
             <SelectValue placeholder="-- Chọn học sinh --" />
           </SelectTrigger>
           <SelectContent>
@@ -34,7 +34,7 @@ export default function SelectFields({ students, criteria }: Props) {
         <Label className="mb-2">Loại lỗi</Label>
         <input type="hidden" name="criteria_id" value={selectedCriteria} />
         <Select value={selectedCriteria} onValueChange={setSelectedCriteria}>
-          <SelectTrigger>
+          <SelectTrigger data-criteria-trigger>
             <SelectValue placeholder="-- Chọn loại lỗi --" />
           </SelectTrigger>
           <SelectContent>

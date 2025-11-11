@@ -56,22 +56,6 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Nhập lỗi vi phạm</h1>
         <p className="text-sm text-muted-foreground">Danh sách loại lỗi lấy trực tiếp từ bảng criteria.</p>
-        {searchParams?.ok === '1' && (
-          <p className="text-green-600 text-sm">Đã ghi nhận.</p>
-        )}
-        {searchParams?.error && (
-          <p className="text-red-600 text-sm">
-            {searchParams.error === 'missing' && 'Thiếu dữ liệu bắt buộc.'}
-            {searchParams.error === 'nouser' && 'Không tìm thấy người dùng trong hệ thống.'}
-            {searchParams.error === 'nostudent' && 'Không tìm thấy học sinh.'}
-            {searchParams.error === 'nocriteria' && 'Không tìm thấy tiêu chí.'}
-            {searchParams.error === 'insert' && 'Lỗi khi ghi nhận, vui lòng thử lại.'}
-            {searchParams.error === 'forbidden' && 'Bạn không có quyền ghi nhận cho lớp này.'}
-            {![
-              'missing','nouser','nostudent','nocriteria','insert','forbidden'
-            ].includes(String(searchParams.error)) && 'Đã xảy ra lỗi.'}
-          </p>
-        )}
       </header>
       {supabaseClient ? (
         <div className="flex flex-col gap-10">

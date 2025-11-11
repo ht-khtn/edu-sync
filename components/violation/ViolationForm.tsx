@@ -105,31 +105,19 @@ async function submitViolation(formData: FormData) {
   redirect('/violation-entry?ok=1')
 }
 
+import ViolationFormClient from './ViolationFormClient'
+
 export function ViolationForm({ students, criteria }: Props) {
   // For now, we don't have server-side auth context; limit-by-class not applied here
   const effectiveStudents = filterStudentsByClass(students, [])
 
   return (
     <section className="flex flex-col gap-6">
-      <form action={submitViolation} className="grid gap-6 lg:grid-cols-2">
-        <SelectFields students={effectiveStudents} criteria={criteria} />
-
-        <section className="lg:col-span-2">
-          <Label className="mb-2">Lý do / ghi chú</Label>
-          <Input type="text" name="reason" placeholder="Tuỳ chọn" />
-        </section>
-
-        <section className="lg:col-span-2">
-          <Label className="mb-2">Link minh chứng (tuỳ chọn)</Label>
-          <Input type="url" name="evidence_url" placeholder="https://..." />
-        </section>
-
-        <section className="lg:col-span-2 flex gap-3 items-center">
-          <Button type="submit">Ghi nhận</Button>
-          <Button type="reset" variant="outline">Làm mới</Button>
-        </section>
-      </form>
-      <p className="text-xs text-muted-foreground">Mô phỏng frontend — chưa ghi xuống database.</p>
+      <ViolationFormClient
+        students={effectiveStudents}
+        criteria={criteria}
+        action={submitViolation}
+      />
     </section>
   )
 }

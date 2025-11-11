@@ -1,10 +1,12 @@
 import { ViolationForm } from '@/components/violation/ViolationForm'
 import RecentRecordsList from '@/components/violation/RecentRecordsList'
-import { fetchCriteriaFromDB, fetchStudentsFromDB, filterStudentsByClass, type Criteria, type Student } from '@/lib/violations'
+import { fetchCriteriaFromDB, fetchStudentsFromDB, type Criteria, type Student } from '@/lib/violations'
 import getSupabase from '@/lib/supabase'
 import getSupabaseServer from '@/lib/supabase-server'
 import { getAllowedClassIdsForWrite } from '@/lib/rbac'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +18,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
   } catch {
     // Supabase env not configured, allow graceful fallback
   }
+
   let criteria: Criteria[] = []
   let students: Student[] = []
   if (supabaseClient) {
@@ -51,19 +54,16 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
           for (const c of classes || []) classMap.set(c.id, c.name)
 
           // If user is a CC with targets, resolve targets to class IDs.
-          // Targets may contain class names or (temporarily) user_name values — try both.
           const classTargets = (roles || [])
             .filter((r: any) => r.role_id === 'CC' && r.target)
             .map((r: any) => String(r.target))
 
-          // Resolve targets -> class ids by matching class.name first.
           const managedClassIds = new Set<string>()
           for (const t of classTargets) {
             const match = (classes || []).find((c: any) => c.name === t)
             if (match?.id) managedClassIds.add(match.id)
           }
 
-          // If no class matched, try resolving targets as user_name to find their class_id
           if (managedClassIds.size === 0 && classTargets.length > 0) {
             try {
               const { data: usersByName } = await supabaseServer
@@ -76,7 +76,6 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
             } catch {}
           }
 
-          // If exactly one managed class id, set currentClass for UX
           if (managedClassIds.size === 1) {
             const onlyId = Array.from(managedClassIds)[0]
             const match = (classes || []).find((c: any) => c.id === onlyId)
@@ -86,9 +85,8 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
           // Determine which class ids the user may write to
           const allowedSet = await getAllowedClassIdsForWrite(supabaseServer, appUserId)
 
-          // Build allowedClasses list (for client select) — we'll intersect with managedClassIds if present
+          // Build allowedClasses list (for client select)
           if (allowedSet === null) {
-            // all classes allowed
             for (const c of classes || []) allowedClasses.push({ id: c.id, name: c.name })
           } else {
             for (const id of Array.from(allowedSet || [])) {
@@ -143,30 +141,37 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
   return (
     <main className="mx-auto max-w-6xl p-6 flex flex-col gap-8">
       <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Nhập lỗi vi phạm</CardTitle>
-          <CardDescription>Danh sách tiêu chí lấy trực tiếp từ bảng criteria.</CardDescription>
+        <CardHeader className="border-b flex items-center justify-between">
+          <div>
+            <CardTitle>Ghi nhận hôm nay</CardTitle>
+            <CardDescription>Danh sách các lỗi vi phạm được ghi nhận trong ngày.</CardDescription>
+          </div>
+          <div>
+            {/* Sheet trigger to open the add-violation form */}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button aria-label="Thêm ghi nhận">＋</Button>
+              </SheetTrigger>
+              <SheetContent side="right">
+                <SheetHeader>
+                  <SheetTitle>Thêm lỗi vi phạm</SheetTitle>
+                  <SheetDescription>Điền thông tin để ghi nhận vi phạm mới.</SheetDescription>
+                </SheetHeader>
+                {/* Render server-side ViolationForm inside the sheet */}
+                <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
+              </SheetContent>
+            </Sheet>
+          </div>
         </CardHeader>
         <CardContent>
           {supabaseClient ? (
-            <>
-                <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
-            </>
+            <RecentRecordsList />
           ) : (
             <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
           )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle>Gần đây</CardTitle>
-          <CardDescription>20 ghi nhận gần nhất trong phạm vi quyền của bạn.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RecentRecordsList />
-        </CardContent>
-      </Card>
     </main>
   )
 }
+ 

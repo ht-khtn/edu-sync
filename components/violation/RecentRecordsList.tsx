@@ -15,19 +15,25 @@ export default async function RecentRecordsList() {
   const allowedWriteClassIds = await getAllowedClassIdsForWrite(supabase, appUser.id)
   if (!allowedWriteClassIds.size) return null
 
+  // Only show records created from start of current day
+  const startOfDay = new Date()
+  startOfDay.setHours(0, 0, 0, 0)
+  const startIso = startOfDay.toISOString()
+
   const { data: rows } = await supabase
     .from('records')
     .select('id, created_at, score, note, classes(name), criteria(name,code), users:student_id(user_profiles(full_name))')
     .is('deleted_at', null)
     .in('class_id', Array.from(allowedWriteClassIds))
+    .gte('created_at', startIso)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(50)
 
   if (!rows?.length) return null
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Gần đây</h2>
+      <h2 className="text-lg font-semibold">Ghi nhận hôm nay</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border border-input rounded-md">
           <thead className="bg-muted">

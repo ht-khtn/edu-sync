@@ -29,6 +29,7 @@ export function useAuth() {
 }
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
   const [state, setState] = useState<AuthState>({
     loading: true,
     userId: null,
@@ -76,13 +77,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         try {
           const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
             if (!mounted) return
-            // refresh server components so header and other RSCs update
-            try {
-              // use next/navigation's router to refresh
-              // (router declared below via hook)
-              // eslint-disable-next-line @typescript-eslint/no-use-before-define
-              router.refresh()
-            } catch {}
+            try { router.refresh() } catch {}
 
             const newUid = sess?.user?.id ?? null
             if (!newUid) {
@@ -90,7 +85,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             }
           })
           // cleanup on unmount
-          ;(subscription as any)?.unsubscribe?.()
+          return () => {
+            try { (subscription as any)?.subscription?.unsubscribe?.() } catch {}
+          }
         } catch {}
       } catch (e: any) {
         console.warn('AuthProvider init error', e?.message)
@@ -102,7 +99,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     }
   }, [])
 
-  const router = useRouter()
+  
 
   const value = useMemo(() => state, [state])
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>

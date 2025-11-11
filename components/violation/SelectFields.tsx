@@ -15,23 +15,29 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
   const [selectedStudent, setSelectedStudent] = useState("")
   const [selectedCriteria, setSelectedCriteria] = useState("")
   const [isClassMode, setIsClassMode] = useState(false)
-  const [selectedClass, setSelectedClass] = useState("")
 
   return (
     <>
+      {/* Current class info */}
+      {currentClass && (
+        <div className="mb-4 text-sm text-muted-foreground">
+          Lớp đang ghi nhận hiện tại: <span className="font-medium text-foreground">{currentClass.name}</span>
+        </div>
+      )}
+
       <section>
-        <Label className="mb-2">Ghi nhận cho lớp (bật nếu muốn)</Label>
-        <div className="flex items-center gap-3 mb-2">
+        <Label className="mb-2">Ghi nhận cho lớp</Label>
+        <div className="flex items-center gap-3 mb-3">
           <input id="class-mode" type="checkbox" checked={isClassMode} onChange={(e) => {
             const val = e.target.checked
             setIsClassMode(val)
             if (val) setSelectedStudent("")
           }} />
-          <label htmlFor="class-mode" className="text-sm">Ghi nhận cho lớp</label>
+          <label htmlFor="class-mode" className="text-sm">Bật nếu ghi lỗi cho cả lớp (không chọn học sinh)</label>
         </div>
 
         <input type="hidden" name="student_id" value={isClassMode ? "" : selectedStudent} />
-        <input type="hidden" name="class_id" value={isClassMode ? selectedClass : ""} />
+        <input type="hidden" name="class_id" value={isClassMode && currentClass ? currentClass.id : ""} />
 
         <Select value={selectedStudent} onValueChange={setSelectedStudent} disabled={isClassMode}>
           <SelectTrigger data-student-trigger>
@@ -39,31 +45,10 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           </SelectTrigger>
           <SelectContent>
             {students.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.student_code} - {s.full_name} {s.class_name ? `(${s.class_name})` : ''}</SelectItem>
+              <SelectItem key={s.id} value={s.id}>{s.full_name} {s.class_name ? `(${s.class_name})` : ''}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-
-        {isClassMode && (
-          <div className="mt-3">
-            <Label className="mb-2">Chọn lớp</Label>
-            {/* If there's a currentClass (single target), auto-select it without showing options */}
-            {currentClass ? (
-              <div className="text-sm text-muted-foreground">{currentClass.name}</div>
-            ) : (
-              <Select value={selectedClass} onValueChange={setSelectedClass}>
-                <SelectTrigger data-class-trigger>
-                  <SelectValue placeholder="-- Chọn lớp --" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(allowedClasses || []).map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        )}
       </section>
 
       <section>
@@ -75,7 +60,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           </SelectTrigger>
           <SelectContent>
             {(isClassMode ? criteria.filter((c) => c.category === 'class') : criteria).map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.code} - {c.name} ({c.points})</SelectItem>
+              <SelectItem key={c.id} value={c.id}>{c.name} ({c.points})</SelectItem>
             ))}
           </SelectContent>
         </Select>

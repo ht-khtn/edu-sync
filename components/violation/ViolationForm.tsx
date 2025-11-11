@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import SelectFields from '@/components/violation/SelectFields'
+import { getSupabaseServer } from '@/lib/supabase-server'
+import { getUserRolesWithScope, canWriteForClass } from '@/lib/rbac'
 import { redirect } from 'next/navigation'
 
 type Props = {
@@ -14,7 +16,6 @@ type Props = {
 // Server action to handle form submission: insert into records
 async function submitViolation(formData: FormData) {
   'use server'
-  const { getSupabaseServer } = await import('@/lib/supabase-server')
   const supabase = await getSupabaseServer()
 
   const student_id = String(formData.get('student_id') || '')
@@ -49,6 +50,19 @@ async function submitViolation(formData: FormData) {
     .maybeSingle()
   if (sErr || !studentRow) {
     redirect('/violation-entry?error=nostudent')
+  }
+
+  // Resolve class name for permission check
+  let className: string | null = null
+  if (studentRow.class_id) {
+    const { data: cls } = await supabase.from('classes').select('name').eq('id', studentRow.class_id).maybeSingle()
+    className = cls?.name ?? null
+  }
+
+  // RBAC: verify user can write for this class
+  const roles = await getUserRolesWithScope(supabase, appUser.id)
+  if (!canWriteForClass(roles, className)) {
+    redirect('/violation-entry?error=forbidden')
   }
 
   // Fetch criteria score

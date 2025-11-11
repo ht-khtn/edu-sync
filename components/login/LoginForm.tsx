@@ -98,11 +98,11 @@ export default function LoginForm() {
               control={control}
               name="password"
               render={({ field }) => (
-                <FormItem className="space-y-2">
+                <FormItem className="space-y-2 relative">
                   <FormLabel htmlFor="password" className="text-sm font-medium">
                     Mật khẩu
                   </FormLabel>
-                  <FormControl className="relative">
+                  <FormControl>
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
@@ -112,17 +112,17 @@ export default function LoginForm() {
                       className="pr-10"
                       {...field}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setShowPassword((s) => !s)}
-                      aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                      className="absolute inset-y-0 right-0 h-auto px-3 text-neutral-500 hover:text-neutral-700"
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
                   </FormControl>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                    className="absolute inset-y-0 right-0 h-auto px-3 text-neutral-500 hover:text-neutral-700"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
                   <FormMessage />
                 </FormItem>
               )}
@@ -152,7 +152,7 @@ export default function LoginForm() {
             />
 
             {error && (
-              <FormMessage
+              <p
                 ref={errorRef}
                 role="alert"
                 tabIndex={-1}
@@ -161,7 +161,7 @@ export default function LoginForm() {
               >
                 <AlertCircle className="h-4 w-4 mt-[2px] flex-shrink-0" />
                 {error}
-              </FormMessage>
+              </p>
             )}
 
             <Button type="submit" disabled={loading || !form.getValues("email") || !form.getValues("password")} className="w-full font-medium">

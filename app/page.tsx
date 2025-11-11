@@ -1,94 +1,121 @@
-import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardAction } from '@/components/ui/card'
+import Link from 'next/link'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  CardAction,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { ClipboardList, ShieldCheck, BarChart3, LogIn } from 'lucide-react'
-import getSupabaseServer from '@/lib/supabase-server'
+import { Alert } from '@/components/ui/alert'
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose } from '@/components/ui/sheet'
+import { FilePen, ListChecks, BarChart3, LogIn, Menu } from 'lucide-react'
 
-export default async function Home() {
-  let user: { id?: string; email?: string } | null = null
-  let hasCC = false
-  try {
-    const supabase = await getSupabaseServer()
-    const { data: userRes } = await supabase.auth.getUser()
-    const authUid = userRes?.user?.id
-    user = userRes?.user ?? null
-    if (authUid) {
-      const { data: appUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', authUid)
-        .maybeSingle()
-      const appUserId = appUser?.id as string | undefined
-      if (appUserId) {
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('role_id')
-          .eq('user_id', appUserId)
-        hasCC = Array.isArray(roles) && roles.some(r => r.role_id === 'CC')
-      }
-    }
-  } catch {
-    // Supabase not configured; render generic dashboard
-  }
-
+export default function HomePage() {
   return (
-    <main className="mx-auto max-w-6xl p-6">
-      <section className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>EduSync</CardTitle>
-            <CardDescription>Hệ thống hỗ trợ quản lý phong trào và thi đua THPT</CardDescription>
-            {user && (
-              <CardAction>
-                <Badge variant="secondary">{hasCC ? 'Ban thi đua (CC)' : 'Người dùng'}</Badge>
-              </CardAction>
-            )}
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3 pt-4">
-            {user ? (
-              <>
-                {hasCC && (
-                  <>
-                    <Button asChild>
-                      <Link href="/violation-entry"><ShieldCheck className="mr-2 h-4 w-4"/>Nhập vi phạm</Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link href="/score-entry"><ClipboardList className="mr-2 h-4 w-4"/>Nhập điểm</Link>
-                    </Button>
-                  </>
-                )}
-                <Button asChild variant="ghost">
-                  <Link href="/leaderboard"><BarChart3 className="mr-2 h-4 w-4"/>Bảng xếp hạng</Link>
+    <>
+      {/* Header */}
+      <Card>
+        <CardHeader>
+          <CardTitle>EduSync</CardTitle>
+          <CardDescription>Đồng bộ mọi nhịp đập học đường</CardDescription>
+          <CardAction>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" aria-label="Open menu">
+                  <Menu />
                 </Button>
-              </>
-            ) : (
-              <>
+              </SheetTrigger>
+              <SheetContent side="right">
+                <SheetHeader>
+                  <SheetTitle>Menu</SheetTitle>
+                  <SheetDescription>Chọn hành động</SheetDescription>
+                </SheetHeader>
                 <Button asChild>
-                  <Link href="/login"><LogIn className="mr-2 h-4 w-4"/>Đăng nhập</Link>
+                  <Link href="/login">Đăng nhập</Link>
                 </Button>
-                <Button asChild variant="ghost">
-                  <Link href="/leaderboard"><BarChart3 className="mr-2 h-4 w-4"/>Xem bảng xếp hạng</Link>
+                <Button asChild variant="outline">
+                  <Link href="/leaderboard">Bảng xếp hạng</Link>
                 </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                <SheetClose asChild>
+                  <Button variant="ghost">Đóng</Button>
+                </SheetClose>
+              </SheetContent>
+            </Sheet>
+            <Button asChild>
+              <Link href="/login">Đăng nhập</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/leaderboard">Bảng xếp hạng</Link>
+            </Button>
+          </CardAction>
+        </CardHeader>
+      </Card>
 
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Hướng dẫn nhanh</CardTitle>
-            <CardDescription>Ghi nhận trực tiếp, không cần duyệt. Quyền ghi nhận giới hạn theo vai trò.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-700">
-              <li>CC: “Nhập vi phạm” để ghi nhận cho lớp thuộc phạm vi.</li>
-              <li>Điểm theo tiêu chí từ bảng criteria; điểm trừ tự động.</li>
-              <li>Xem “Bảng xếp hạng” để theo dõi tổng điểm theo lớp.</li>
-            </ul>
-          </CardContent>
-        </Card>
-      </section>
-    </main>
-  );
+      {/* Hero */}
+      <Card>
+        <CardHeader>
+          <Avatar>
+            <AvatarFallback>ES</AvatarFallback>
+          </Avatar>
+          <CardTitle>EduSync – Đồng bộ mọi nhịp đập học đường</CardTitle>
+          <CardDescription>Hệ thống hỗ trợ quản lý phong trào và thi đua THPT</CardDescription>
+          <CardDescription>Ghi nhận trực tiếp, không cần duyệt. Quyền ghi nhận giới hạn theo vai trò.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild>
+            <Link href="/login">Đăng nhập ngay</Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link href="#guide">Xem hướng dẫn</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* Quick guide */}
+      <Card id="guide">
+        <CardHeader>
+          <CardTitle>Hướng dẫn nhanh</CardTitle>
+          <CardDescription>Những điều cần biết để bắt đầu</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <FilePen /> CC: 'Nhập vi phạm' để ghi nhận cho lớp thuộc phạm vi.
+          </Alert>
+          <Alert>
+            <ListChecks /> Điểm theo tiêu chí từ bảng criteria, điểm trừ tự động.
+          </Alert>
+          <Alert>
+            <BarChart3 /> Xem 'Bảng xếp hạng' để theo dõi tổng điểm theo lớp.
+          </Alert>
+        </CardContent>
+      </Card>
+
+      {/* Footer */}
+      <Card>
+        <CardContent>
+          <small>© 2025 EduSync – Quản lý điểm số. Đơn giản. Thông minh.</small>
+        </CardContent>
+        <CardFooter>
+          <Button asChild variant="link" size="sm">
+            <Link href="#">Chính sách</Link>
+          </Button>
+          <Button asChild variant="link" size="sm">
+            <Link href="#">Liên hệ</Link>
+          </Button>
+          <Button asChild variant="link" size="sm">
+            <Link href="https://github.com">Github</Link>
+          </Button>
+        </CardFooter>
+      </Card>
+    </>
+  )
 }
+

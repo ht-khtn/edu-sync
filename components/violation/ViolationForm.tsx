@@ -12,6 +12,7 @@ type Props = {
   students: Student[]
   criteria: Criteria[]
   allowedClasses: { id: string; name: string }[]
+  currentClass?: { id: string; name: string } | null
 }
 
 // Server action to handle form submission: insert into records
@@ -125,7 +126,7 @@ async function submitViolation(formData: FormData) {
 
 import ViolationFormClient from './ViolationFormClient'
 
-export function ViolationForm({ students, criteria, allowedClasses }: Props) {
+export function ViolationForm({ students, criteria, allowedClasses, currentClass }: Props) {
   // For now, we don't have server-side auth context; limit-by-class not applied here
   const effectiveStudents = filterStudentsByClass(students, [])
 
@@ -135,6 +136,7 @@ export function ViolationForm({ students, criteria, allowedClasses }: Props) {
         students={effectiveStudents}
         criteria={criteria}
         allowedClasses={allowedClasses}
+        currentClass={currentClass}
         action={submitViolation}
       />
     </section>

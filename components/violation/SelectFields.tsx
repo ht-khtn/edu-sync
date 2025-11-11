@@ -8,9 +8,10 @@ type Props = {
   students: Student[]
   criteria: Criteria[]
   allowedClasses?: { id: string; name: string }[]
+  currentClass?: { id: string; name: string } | null
 }
 
-export default function SelectFields({ students, criteria, allowedClasses }: Props) {
+export default function SelectFields({ students, criteria, allowedClasses, currentClass }: Props) {
   const [selectedStudent, setSelectedStudent] = useState("")
   const [selectedCriteria, setSelectedCriteria] = useState("")
   const [isClassMode, setIsClassMode] = useState(false)
@@ -46,17 +47,21 @@ export default function SelectFields({ students, criteria, allowedClasses }: Pro
         {isClassMode && (
           <div className="mt-3">
             <Label className="mb-2">Chọn lớp</Label>
-            {/* If allowedClasses prop is available, render a select. Otherwise fallback to input. */}
-            <Select value={selectedClass} onValueChange={setSelectedClass}>
-              <SelectTrigger data-class-trigger>
-                <SelectValue placeholder="-- Chọn lớp --" />
-              </SelectTrigger>
-              <SelectContent>
-                {(allowedClasses || []).map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* If there's a currentClass (single target), auto-select it without showing options */}
+            {currentClass ? (
+              <div className="text-sm text-muted-foreground">{currentClass.name}</div>
+            ) : (
+              <Select value={selectedClass} onValueChange={setSelectedClass}>
+                <SelectTrigger data-class-trigger>
+                  <SelectValue placeholder="-- Chọn lớp --" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(allowedClasses || []).map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         )}
       </section>

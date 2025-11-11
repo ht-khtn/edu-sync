@@ -12,6 +12,7 @@ type Props = {
   students: Student[]
   criteria: Criteria[]
   allowedClasses: { id: string; name: string }[]
+  currentClass?: { id: string; name: string } | null
   action: (formData: FormData) => void | Promise<void>
 }
 
@@ -25,7 +26,7 @@ function PendingButtons() {
   )
 }
 
-export default function ViolationFormClient({ students, criteria, allowedClasses, action }: Props) {
+export default function ViolationFormClient({ students, criteria, allowedClasses, currentClass, action }: Props) {
   function handleBeforeSubmit(form: HTMLFormElement) {
     const studentId = (form.querySelector('input[name="student_id"]') as HTMLInputElement)?.value
     const classId = (form.querySelector('input[name="class_id"]') as HTMLInputElement)?.value
@@ -54,7 +55,7 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
       }}
       className="grid gap-6 lg:grid-cols-2"
     >
-      <SelectFields students={students} criteria={criteria} allowedClasses={allowedClasses} />
+  <SelectFields students={students} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
 
       <section className="lg:col-span-2">
         <Label className="mb-2">Lý do / ghi chú</Label>

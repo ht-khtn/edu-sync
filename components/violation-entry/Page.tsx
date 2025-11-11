@@ -28,6 +28,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
   // Server-side auth-based filtering: map auth user -> app user id -> roles/classes
   let effectiveStudents = students
   let allowedClasses: { id: string; name: string }[] = []
+  let currentClass: { id: string; name: string } | null = null
   try {
     if (supabaseServer) {
       const { data: userRes } = await supabaseServer.auth.getUser()
@@ -40,34 +41,51 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
           .maybeSingle()
         const appUserId = appUser?.id
         if (appUserId) {
-          // Determine which class ids the user may write to
-          const allowedSet = await getAllowedClassIdsForWrite(supabaseServer, appUserId)
+          // Fetch roles and all classes
+          const [{ data: roles }, { data: classes }] = await Promise.all([
+            supabaseServer.from('user_roles').select('role_id,target').eq('user_id', appUserId),
+            supabaseServer.from('classes').select('id,name')
+          ])
 
-          // Fetch class names to map ids -> names
-          const { data: classes } = await supabaseServer.from('classes').select('id,name')
           const classMap = new Map<string, string>()
           for (const c of classes || []) classMap.set(c.id, c.name)
 
+          // If user is a CC with a single target (target stores class name), set currentClass
+          const classTargets = (roles || [])
+            .filter((r: any) => r.role_id === 'CC' && r.target)
+            .map((r: any) => String(r.target))
+          if (classTargets.length === 1) {
+            const targetName = classTargets[0]
+            const match = (classes || []).find((c: any) => c.name === targetName)
+            if (match?.id) {
+              currentClass = { id: match.id, name: match.name }
+            }
+          }
+
+          // Determine which class ids the user may write to
+          const allowedSet = await getAllowedClassIdsForWrite(supabaseServer, appUserId)
+
           // Build allowedClasses list (for client select)
-          if (allowedSet && allowedSet.size > 0) {
-            for (const id of allowedSet) {
+          if (allowedSet === null) {
+            // all classes allowed
+            for (const c of classes || []) allowedClasses.push({ id: c.id, name: c.name })
+          } else {
+            for (const id of Array.from(allowedSet || [])) {
               const name = classMap.get(id) ?? id
               allowedClasses.push({ id, name })
             }
-          } else if (allowedSet && allowedSet.size === 0) {
-            // no classes allowed -> empty list
-            allowedClasses = []
-          } else {
-            // allowedSet could be null which means all classes allowed
-            for (const c of classes || []) allowedClasses.push({ id: c.id, name: c.name })
           }
 
-          // Attach class_name to students and filter by allowedSet
+          // Attach class_name to students and filter by allowedSet (or currentClass)
           const studentsWithClass = students.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
-          if (allowedSet === null) {
+          if (currentClass) {
+            effectiveStudents = studentsWithClass.filter(s => s.class_id === currentClass?.id)
+            // limit allowedClasses to the single class as well
+            allowedClasses = [{ id: currentClass.id, name: currentClass.name }]
+          } else if (allowedSet === null) {
             effectiveStudents = studentsWithClass
           } else {
-            const allowedIds = new Set(Array.from(allowedSet))
+            const allowedIds = new Set(Array.from(allowedSet || []))
             effectiveStudents = studentsWithClass.filter(s => allowedIds.has(s.class_id))
           }
         }
@@ -86,7 +104,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
         </CardHeader>
         <CardContent>
           {supabaseClient ? (
-            <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} />
+            <ViolationForm students={effectiveStudents} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
           ) : (
             <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
           )}

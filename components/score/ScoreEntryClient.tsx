@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { ParsedRow } from "@/lib/csv";
 import { submitBatchMock } from "@/lib/score";
 
@@ -43,14 +44,15 @@ export default function ScoreEntryClient() {
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <section>
               <Label className="mb-1">Chọn hoạt động</Label>
-              <select
-                value={activityId}
-                onChange={(e) => setActivityId(e.target.value)}
-                className="border px-3 py-2 rounded w-full"
-              >
-                <option value="activity-demo-1">Hoạt động: Vệ sinh lớp - 2025</option>
-                <option value="activity-demo-2">Hoạt động: Tình nguyện - 2025</option>
-              </select>
+              <Select value={activityId} onValueChange={setActivityId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn hoạt động" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="activity-demo-1">Hoạt động: Vệ sinh lớp - 2025</SelectItem>
+                  <SelectItem value="activity-demo-2">Hoạt động: Tình nguyện - 2025</SelectItem>
+                </SelectContent>
+              </Select>
             </section>
 
             <section>

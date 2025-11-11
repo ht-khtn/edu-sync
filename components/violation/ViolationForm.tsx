@@ -3,6 +3,7 @@ import { filterStudentsByClass } from '@/lib/violations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import SelectFields from '@/components/violation/SelectFields'
 import { redirect } from 'next/navigation'
 
 type Props = {
@@ -85,25 +86,7 @@ export function ViolationForm({ students, criteria }: Props) {
   return (
     <section className="flex flex-col gap-6">
       <form action={submitViolation} className="grid gap-6 lg:grid-cols-2">
-        <section>
-          <Label className="mb-2">Học sinh</Label>
-          <select name="student_id" required className="w-full border rounded-md h-9 px-2">
-            <option value="">-- Chọn học sinh --</option>
-            {effectiveStudents.map((s) => (
-              <option key={s.id} value={s.id}>{s.student_code} - {s.full_name}</option>
-            ))}
-          </select>
-        </section>
-
-        <section>
-          <Label className="mb-2">Loại lỗi</Label>
-          <select name="criteria_id" required className="w-full border rounded-md h-9 px-2">
-            <option value="">-- Chọn loại lỗi --</option>
-            {criteria.map((c) => (
-              <option key={c.id} value={c.id}>{c.code} - {c.name} ({c.points})</option>
-            ))}
-          </select>
-        </section>
+        <SelectFields students={effectiveStudents} criteria={criteria} />
 
         <section className="lg:col-span-2">
           <Label className="mb-2">Lý do / ghi chú</Label>

@@ -41,6 +41,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     let mounted = true
+    let cleanup: (() => void) | undefined
     ;(async () => {
       try {
         const supabase = await getSupabase()
@@ -48,31 +49,28 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         const uid = session.session?.user.id ?? null
         if (!uid) {
           if (mounted) setState((s) => ({ ...s, loading: false }))
-          return
+        } else {
+          const [{ data: roles, error: rErr }, { data: classes, error: cErr }] = await Promise.all([
+            supabase.from('user_roles').select('role_id,target').eq('user_id', uid),
+            supabase.from('classes').select('id').eq('homeroom_teacher_id', uid),
+          ])
+          if (rErr) console.warn('user_roles error', rErr.message)
+          if (cErr) console.warn('classes homeroom error', cErr.message)
+          const classTargets = (roles || [])
+            .filter((r) => r.role_id === 'CC' && r.target)
+            .map((r) => String(r.target))
+          const homeroomOf = (classes || []).map((c: any) => String(c.id))
+            const canComplaint = homeroomOf.length > 0
+          if (mounted)
+            setState({
+              loading: false,
+              userId: uid,
+              roles: (roles as Role[]) || [],
+              classTargets,
+              homeroomOf,
+              canComplaint,
+            })
         }
-
-        const [{ data: roles, error: rErr }, { data: classes, error: cErr }] = await Promise.all([
-          supabase.from('user_roles').select('role_id,target').eq('user_id', uid),
-          supabase.from('classes').select('id').eq('homeroom_teacher_id', uid),
-        ])
-        if (rErr) console.warn('user_roles error', rErr.message)
-        if (cErr) console.warn('classes homeroom error', cErr.message)
-
-        const classTargets = (roles || [])
-          .filter((r) => r.role_id === 'CC' && r.target)
-          .map((r) => String(r.target))
-        const homeroomOf = (classes || []).map((c: any) => String(c.id))
-        const canComplaint = homeroomOf.length > 0
-
-        if (mounted)
-          setState({
-            loading: false,
-            userId: uid,
-            roles: (roles as Role[]) || [],
-            classTargets,
-            homeroomOf,
-            canComplaint,
-          })
         // subscribe to auth changes to keep client state and server components in sync
         try {
           const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
@@ -83,11 +81,25 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             if (!newUid) {
               setState((s) => ({ ...s, userId: null, loading: false, roles: [], classTargets: [], homeroomOf: [], canComplaint: false }))
             }
+            if (newUid && newUid !== state.userId) {
+              // refetch roles for new session
+              ;(async () => {
+                try {
+                  const [{ data: roles }, { data: classes }] = await Promise.all([
+                    supabase.from('user_roles').select('role_id,target').eq('user_id', newUid),
+                    supabase.from('classes').select('id').eq('homeroom_teacher_id', newUid),
+                  ])
+                  const classTargets = (roles || [])
+                    .filter((r) => r.role_id === 'CC' && r.target)
+                    .map((r) => String(r.target))
+                  const homeroomOf = (classes || []).map((c: any) => String(c.id))
+                  const canComplaint = homeroomOf.length > 0
+                  if (mounted) setState({ loading: false, userId: newUid, roles: (roles as Role[]) || [], classTargets, homeroomOf, canComplaint })
+                } catch {}
+              })()
+            }
           })
-          // cleanup on unmount
-          return () => {
-            try { (subscription as any)?.subscription?.unsubscribe?.() } catch {}
-          }
+          cleanup = () => { try { (subscription as any)?.subscription?.unsubscribe?.() } catch {} }
         } catch {}
       } catch (e: any) {
         console.warn('AuthProvider init error', e?.message)
@@ -96,6 +108,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     })()
     return () => {
       mounted = false
+      if (cleanup) cleanup()
     }
   }, [])
 

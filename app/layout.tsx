@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Script from 'next/script'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,10 +26,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <header className="border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+          <nav className="mx-auto max-w-6xl px-4 py-3 w-full flex items-center justify-between">
+            <Link href="/" className="font-semibold tracking-tight text-zinc-900">EduSync</Link>
+            <ul className="flex gap-4 text-sm">
+              <li><Link href="/violation-entry">Nhập vi phạm</Link></li>
+              <li><Link href="/login">Đăng nhập</Link></li>
+            </ul>
+          </nav>
+        </header>
+        <main>{children}</main>
+        <Script id="material-web" type="module" src="https://esm.run/@material/web/all.js" strategy="afterInteractive" />
       </body>
     </html>
   );

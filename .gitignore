@@ -17,6 +17,11 @@
 /.next/
 /out/
 
+# caches & artifacts
+/.turbo/
+/.swc/
+/.cache/
+
 # production
 /build
 
@@ -32,6 +37,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -42,5 +48,12 @@ next-env.d.ts
 
 # else
 /.vscode/
-/..else/
-/supabase/
+/..specific/
+/.idea/
+*.pid
+*.pid.lock
+*.orig
+Thumbs.db
+# do not ignore supabase project sources; track SQL and functions
+# (remove the next line if present in history)
+# /supabase/

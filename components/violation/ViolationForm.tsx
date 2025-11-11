@@ -137,7 +137,6 @@ export function ViolationForm({ students, criteria, allowedClasses, currentClass
         criteria={criteria}
         allowedClasses={allowedClasses}
         currentClass={currentClass}
-        action={submitViolation}
       />
     </section>
   )

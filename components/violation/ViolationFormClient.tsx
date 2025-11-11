@@ -6,18 +6,17 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { useFormStatus } from 'react-dom'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 type Props = {
   students: Student[]
   criteria: Criteria[]
   allowedClasses: { id: string; name: string }[]
   currentClass?: { id: string; name: string } | null
-  action: (formData: FormData) => void | Promise<void>
 }
 
-function PendingButtons() {
-  const { pending } = useFormStatus()
+function PendingButtons({ pending }: { pending: boolean }) {
   return (
     <section className="lg:col-span-2 flex gap-3 items-center">
       <Button type="submit" disabled={pending} className="shadow-md border-2 border-primary">{pending ? 'Đang ghi...' : 'Ghi nhận'}</Button>
@@ -26,7 +25,10 @@ function PendingButtons() {
   )
 }
 
-export default function ViolationFormClient({ students, criteria, allowedClasses, currentClass, action }: Props) {
+export default function ViolationFormClient({ students, criteria, allowedClasses, currentClass }: Props) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+
   function handleBeforeSubmit(form: HTMLFormElement) {
     const studentId = (form.querySelector('input[name="student_id"]') as HTMLInputElement)?.value
     const classId = (form.querySelector('input[name="class_id"]') as HTMLInputElement)?.value
@@ -48,10 +50,38 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
 
   return (
     <form
-      action={async (fd: FormData) => {
-        const formEl = (document?.activeElement?.closest('form') as HTMLFormElement) || (document.querySelector('form[action]') as HTMLFormElement | null)
-        if (formEl && !handleBeforeSubmit(formEl)) return
-        await action(fd)
+      onSubmit={async (e) => {
+        e.preventDefault()
+        const formEl = e.target as HTMLFormElement
+        if (!handleBeforeSubmit(formEl)) return
+
+        // Close modal immediately (click the dialog close button if present)
+        const closeBtn = document.querySelector('[data-slot="dialog-close"]') as HTMLElement | null
+        if (closeBtn) closeBtn.click()
+
+        const fd = new FormData(formEl)
+        const payload: Record<string, any> = {}
+        fd.forEach((v, k) => { payload[k] = v })
+
+        setPending(true)
+        try {
+          const res = await fetch('/api/records', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            toast.error(data?.error || 'Lỗi khi ghi nhận')
+          } else {
+            toast.success('Đã gửi ghi nhận. Danh sách sẽ được làm mới khi hoàn tất.')
+          }
+        } catch (err) {
+          toast.error('Lỗi mạng khi gửi ghi nhận')
+        } finally {
+          setPending(false)
+          router.refresh()
+        }
       }}
       className="grid gap-6 lg:grid-cols-2"
     >
@@ -67,7 +97,7 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
         <Input type="url" name="evidence_url" placeholder="https://..." />
       </section>
 
-      <PendingButtons />
+      <PendingButtons pending={pending} />
     </form>
   )
 }

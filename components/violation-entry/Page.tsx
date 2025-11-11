@@ -76,17 +76,40 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
             }
           }
 
-          // Attach class_name to students and filter by allowedSet (or currentClass)
-          const studentsWithClass = students.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
-          if (currentClass) {
-            effectiveStudents = studentsWithClass.filter(s => s.class_id === currentClass?.id)
-            // limit allowedClasses to the single class as well
-            allowedClasses = [{ id: currentClass.id, name: currentClass.name }]
-          } else if (allowedSet === null) {
-            effectiveStudents = studentsWithClass
-          } else {
-            const allowedIds = new Set(Array.from(allowedSet || []))
-            effectiveStudents = studentsWithClass.filter(s => allowedIds.has(s.class_id))
+          // Prefer fetching students server-side with RLS using allowed classes
+          try {
+            let usersQuery = supabaseServer.from('users')
+              .select('id,class_id,user_profiles(full_name,email)')
+            if (currentClass?.id) {
+              usersQuery = usersQuery.eq('class_id', currentClass.id)
+            } else if (allowedSet && allowedSet.size > 0) {
+              usersQuery = usersQuery.in('class_id', Array.from(allowedSet))
+            }
+            const { data: usersData, error: usersErr } = await usersQuery
+            if (!usersErr && Array.isArray(usersData)) {
+              const serverStudents: Student[] = (usersData as any[]).map((u: any) => ({
+                id: u.id,
+                student_code: u.user_profiles?.[0]?.email ?? String(u.id).slice(0, 8),
+                full_name: u.user_profiles?.[0]?.full_name ?? 'Chưa cập nhật',
+                class_id: u.class_id,
+                class_name: classMap.get(u.class_id) ?? '',
+              }))
+              effectiveStudents = serverStudents
+            }
+          } catch {}
+
+          // Fallback to client-fetched students if server fetch failed or returned empty
+          if (!effectiveStudents?.length) {
+            const studentsWithClass = students.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
+            if (currentClass) {
+              effectiveStudents = studentsWithClass.filter(s => s.class_id === currentClass?.id)
+              allowedClasses = [{ id: currentClass.id, name: currentClass.name }]
+            } else if (allowedSet === null) {
+              effectiveStudents = studentsWithClass
+            } else {
+              const allowedIds = new Set(Array.from(allowedSet || []))
+              effectiveStudents = studentsWithClass.filter(s => allowedIds.has(s.class_id))
+            }
           }
         }
       }

@@ -59,7 +59,10 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
             <SelectValue placeholder="-- Chọn loại lỗi --" />
           </SelectTrigger>
           <SelectContent>
-            {(isClassMode ? criteria.filter((c) => c.category === 'class') : criteria).map((c) => (
+            {(isClassMode
+              ? criteria.filter((c) => c.category === 'class')
+              : criteria.filter((c) => c.category === 'student')
+            ).map((c) => (
               <SelectItem key={c.id} value={c.id}>{c.name} ({c.points})</SelectItem>
             ))}
           </SelectContent>

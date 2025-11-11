@@ -1,1 +1,1 @@
-export { default as LeaderboardPageContent, dynamic } from './Page'
+export { default as LeaderboardPageContent } from './Page'

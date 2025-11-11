@@ -1,6 +1,5 @@
-import { LeaderboardPageContent, dynamic } from '@/components/leaderboard/LeaderboardComponents'
-
-export { dynamic }
+import { LeaderboardPageContent } from '@/components/leaderboard/LeaderboardComponents'
+export const dynamic = 'force-dynamic'
 
 export default function LeaderboardPage() {
   return <LeaderboardPageContent />

@@ -20,7 +20,8 @@ export default function LoginForm() {
   const form = useForm<LoginValues>({
     defaultValues: { email: "", password: "", remember: false },
   });
-  const { control } = form;
+  const { control, watch } = form;
+  const watched = watch(["email", "password"])
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +47,15 @@ export default function LoginForm() {
         setError(error.message);
       } else {
         // Persist session to server-side cookies so server components can read auth state
+        const access_token = (data as any)?.session?.access_token
+        const refresh_token = (data as any)?.session?.refresh_token
+        const expires_in = (data as any)?.session?.expires_in
+        // persist session preference if needed
+        if (values.remember) {
+          // custom logic can be added here
+        }
+        // Try to set the session cookie then refresh server components so header/home update
         try {
-          const access_token = (data as any)?.session?.access_token
-          const refresh_token = (data as any)?.session?.refresh_token
-          const expires_in = (data as any)?.session?.expires_in
           if (access_token && refresh_token) {
             await fetch('/api/auth/set-session', {
               method: 'POST',
@@ -57,12 +63,10 @@ export default function LoginForm() {
               body: JSON.stringify({ access_token, refresh_token, expires_in }),
             })
           }
+          // revalidate server components on the client so header updates without full reload
+          router.refresh()
         } catch (e) {
-          // ignore cookie set failures; still continue with client-side session
-        }
-        // persist session preference if needed
-        if (values.remember) {
-          // custom logic can be added here
+          // ignore cookie set failures
         }
         // navigate to dashboard
         router.push("/");
@@ -180,7 +184,11 @@ export default function LoginForm() {
               </p>
             )}
 
-            <Button type="submit" disabled={loading || !form.getValues("email") || !form.getValues("password")} className="w-full font-medium">
+            <Button
+              type="submit"
+              disabled={loading || !watched[0] || !watched[1]}
+              className="w-full font-medium bg-indigo-600 text-white border border-indigo-700 hover:bg-indigo-700"
+            >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Đăng nhập
             </Button>
 

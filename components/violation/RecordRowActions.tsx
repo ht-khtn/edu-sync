@@ -147,7 +147,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
 
             <div className="grid gap-1">
               <Label className="text-xs text-muted-foreground">Lỗi vi phạm</Label>
-              <Select value={criteriaId} onValueChange={(v) => setCriteriaId(v)}>
+              <Select value={criteriaId || undefined} onValueChange={(v) => setCriteriaId(v ?? '')}>
                 <SelectTrigger>
                   <SelectValue placeholder="-- Chọn tiêu chí --" />
                 </SelectTrigger>
@@ -161,7 +161,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
 
             <div className="grid gap-1">
               <Label className="text-xs text-muted-foreground">Học sinh</Label>
-              <Select value={studentId} onValueChange={(v) => setStudentId(v)}>
+              <Select value={studentId || undefined} onValueChange={(v) => setStudentId(v ?? '')}>
                 <SelectTrigger>
                   <SelectValue placeholder="-- (không) --" />
                 </SelectTrigger>

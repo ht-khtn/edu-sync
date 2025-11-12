@@ -51,7 +51,7 @@ export default function Filters({
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Lớp</Label>
-        <Select value={classId} onValueChange={setClassId}>
+        <Select value={classId || undefined} onValueChange={(v) => setClassId(v ?? '')}>
           <SelectTrigger>
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>
@@ -65,7 +65,7 @@ export default function Filters({
 
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Học sinh</Label>
-        <Select value={studentId} onValueChange={setStudentId}>
+        <Select value={studentId || undefined} onValueChange={(v) => setStudentId(v ?? '')}>
           <SelectTrigger>
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>
@@ -79,7 +79,7 @@ export default function Filters({
 
       <div className="flex flex-col gap-1">
         <Label className="text-xs">Tiêu chí</Label>
-        <Select value={criteriaId} onValueChange={setCriteriaId}>
+        <Select value={criteriaId || undefined} onValueChange={(v) => setCriteriaId(v ?? '')}>
           <SelectTrigger>
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>

@@ -114,6 +114,8 @@ export default function NavClient() {
         const { data } = supabase.auth.onAuthStateChange((event, session) => {
           if (event === 'SIGNED_IN') {
             isSignedInRef.current = true
+            // Reset derived role flags; will be recomputed for the new user
+            setSelfRoles(null)
             // Prefer server; fallback only if still null
             fetchInfo(true).then(async () => {
               if (!info?.user) await deriveRolesClientFallback()
@@ -122,6 +124,7 @@ export default function NavClient() {
             isSignedInRef.current = false
             usedFallbackRef.current = false
             setInfo(null)
+            setSelfRoles(null)
             // If logout was initiated by our UI, the button handler will show success toast.
             // Otherwise, debounce a success toast in case multiple events fire.
             if (!manualLogoutRef.current) {
@@ -200,6 +203,7 @@ export default function NavClient() {
               isSignedInRef.current = false
               usedFallbackRef.current = false
               setInfo(null)
+              setSelfRoles(null)
               // Single server logout request (no repeat) + toast
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
               toast.success('Đăng xuất thành công')

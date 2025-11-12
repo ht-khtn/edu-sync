@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { getSupabase } from '@/lib/supabase'
@@ -10,16 +10,27 @@ type SessionInfo = { user: { id: string } | null; hasCC?: boolean; hasSchoolScop
 
 export default function NavClient() {
   const [info, setInfo] = useState<SessionInfo | null>(null)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const isSignedInRef = useRef<boolean>(false)
+  const usedFallbackRef = useRef<boolean>(false)
 
   async function fetchInfo() {
     try {
       const res = await fetch('/api/session', { cache: 'no-store' })
       const json = await res.json()
+      // If client believes we're signed in but server still returns null (cookie race),
+      // do not overwrite to null to avoid flicker.
+      if (!json?.user && isSignedInRef.current) {
+        // keep existing info until server catches up
+        return
+      }
       setInfo(json)
     } catch (e) {
-      setInfo(null)
+      // don't force null during transient failures if client is signed in
+      if (!isSignedInRef.current) setInfo(null)
     }
+    setLoading(false)
   }
 
   async function deriveRolesClientFallback() {
@@ -47,48 +58,51 @@ export default function NavClient() {
           ccClassId = cls?.id ?? null
         }
       }
+      usedFallbackRef.current = true
       setInfo({ user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId })
+      setLoading(false)
     } catch {}
   }
 
   useEffect(() => {
-    fetchInfo().then(() => {
-      // If after initial fetch we still have no user but client session exists, fallback.
-      if (!info?.user) deriveRolesClientFallback()
-    })
-
-    // Listen to Supabase auth changes to refresh menu immediately
     let unsub: (() => void) | null = null
     ;(async () => {
       try {
         const supabase = await getSupabase()
-        const { data } = supabase.auth.onAuthStateChange((event) => {
+        // Set initial auth state
+        const { data: initial } = await supabase.auth.getUser()
+        isSignedInRef.current = !!initial?.user
+
+        await fetchInfo()
+        if (!info?.user && isSignedInRef.current) {
+          // If server not ready but client is signed in, use fallback once
+          await deriveRolesClientFallback()
+        }
+
+        const { data } = supabase.auth.onAuthStateChange((event, session) => {
           if (event === 'SIGNED_IN') {
-            // Attempt server fetch first
-            fetchInfo().then(() => {
-              // If server still not reflecting roles, derive client-side immediately
-              if (!info?.user) deriveRolesClientFallback()
+            isSignedInRef.current = true
+            // Prefer server; fallback only if still null
+            fetchInfo().then(async () => {
+              if (!info?.user) await deriveRolesClientFallback()
             })
-            router.refresh()
           } else if (event === 'SIGNED_OUT') {
+            isSignedInRef.current = false
+            usedFallbackRef.current = false
             setInfo(null)
           }
         })
-        // store unsubscribe
         // @ts-ignore
         unsub = data?.subscription?.unsubscribe || (() => {})
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     })()
 
     return () => {
-      try {
-        if (unsub) unsub()
-      } catch {}
+      try { if (unsub) unsub() } catch {}
     }
   }, [])
 
+  if (loading) return <li className="text-sm text-zinc-500">Đang tải…</li>
   if (!info || !info.user) return <Link href="/login">Đăng nhập</Link>
 
   const hasCC = !!info.hasCC

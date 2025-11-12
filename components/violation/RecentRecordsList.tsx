@@ -15,18 +15,14 @@ export default async function RecentRecordsList() {
   const allowedWriteClassIds = await getAllowedClassIdsForWrite(supabase, appUser.id)
   if (!allowedWriteClassIds.size) return null
 
-  // Show records from the last 24 hours to be resilient to timezone differences
-  const start24 = new Date(Date.now() - 24 * 60 * 60 * 1000)
-  const start24Iso = start24.toISOString()
-
+  // Show all records for allowed classes (no date filter) so user can inspect history
   const { data: rows } = await supabase
     .from('records')
-    .select('id, created_at, score, note, classes(name), criteria(name,code), users:student_id(user_profiles(full_name), user_name)')
+    .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(name,code), users:student_id(user_profiles(full_name), user_name)')
     .is('deleted_at', null)
     .in('class_id', Array.from(allowedWriteClassIds))
-    .gte('created_at', start24Iso)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(500)
 
   if (!rows?.length) return null
 
@@ -49,8 +45,8 @@ export default async function RecentRecordsList() {
             {rows.map((r: any) => (
               <tr key={r.id} className="even:bg-muted/40">
                 <td className="px-3 py-1.5 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
-                <td className="px-3 py-1.5">{r.classes?.name || '—'}</td>
-                <td className="px-3 py-1.5">{(r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'}</td>
+                <td className="px-3 py-1.5">{r.classes?.name || '—'} <span className="text-xs text-muted-foreground">{r.class_id}</span></td>
+                <td className="px-3 py-1.5">{(r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'} <span className="text-xs text-muted-foreground">{r.student_id}</span></td>
                 <td className="px-3 py-1.5">{r.criteria?.code ? `${r.criteria.code} — ${r.criteria.name}` : r.criteria?.name || '—'}</td>
                 <td className="px-3 py-1.5">{r.score}</td>
                 <td className="px-3 py-1.5">{r.note || ''}</td>

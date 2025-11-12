@@ -15,6 +15,8 @@ export default function NavClient() {
   const router = useRouter()
   const isSignedInRef = useRef<boolean>(false)
   const usedFallbackRef = useRef<boolean>(false)
+  const manualLogoutRef = useRef<boolean>(false)
+  const lastSignedOutToastAtRef = useRef<number>(0)
 
   async function fetchInfo() {
     try {
@@ -91,7 +93,15 @@ export default function NavClient() {
             isSignedInRef.current = false
             usedFallbackRef.current = false
             setInfo(null)
-            toast.info('Bạn đã đăng xuất')
+            // If logout was initiated by our UI, the button handler will show success toast.
+            // Otherwise, debounce a success toast in case multiple events fire.
+            if (!manualLogoutRef.current) {
+              const now = Date.now()
+              if (now - lastSignedOutToastAtRef.current > 2000) {
+                lastSignedOutToastAtRef.current = now
+                toast.success('Đăng xuất thành công')
+              }
+            }
           }
         })
         // @ts-ignore
@@ -145,7 +155,7 @@ export default function NavClient() {
           onClick={async () => {
             if (loading) return
             setLoading(true)
-            toast.loading('Đang đăng xuất...')
+            manualLogoutRef.current = true
             try {
               const supabase = await getSupabase()
               try { await supabase.auth.signOut() } catch {}
@@ -159,6 +169,8 @@ export default function NavClient() {
             } finally {
               setLoading(false)
               router.replace('/login')
+              // Reset the manual flag shortly after navigation
+              setTimeout(() => { manualLogoutRef.current = false }, 1000)
             }
           }}
           disabled={loading}

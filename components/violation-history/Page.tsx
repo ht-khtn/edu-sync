@@ -28,9 +28,12 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
   const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
   const appUserId = appUser?.id as string | undefined
   if (!appUserId) redirect('/login')
-  const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
-  const hasCC = Array.isArray(roles) && roles.some(r => r.role_id === 'CC')
-  if (!hasCC) redirect('/')
+  // Fetch roles with scope info so we allow both CC (class-committee) and school-scoped roles
+  const { data: roles } = await supabase.from('user_roles').select('role_id, permissions(scope)').eq('user_id', appUserId)
+  const roleList = Array.isArray(roles) ? roles : []
+  const hasCC = roleList.some((r: any) => r.role_id === 'CC')
+  const hasSchoolScope = roleList.some((r: any) => r?.permissions?.scope === 'school')
+  if (!hasCC && !hasSchoolScope) redirect('/')
 
   // Allowed classes for viewing (null => all)
   const allowedViewClassIds = await getAllowedClassIdsForView(supabase, appUserId)

@@ -55,29 +55,30 @@ export async function fetchCriteriaFromDB(supabase: any): Promise<Criteria[]> {
 }
 
 // Fetch students from users + user_profiles. Optionally filter by classId.
-export async function fetchStudentsFromDB(supabase: any, classId?: string): Promise<Student[]> {
+// Optimized: single query join users -> user_profiles; optional filter by classId or a set of classIds
+export async function fetchStudentsFromDB(
+  supabase: any,
+  classId?: string,
+  classIdsSet?: Set<string> | null
+): Promise<Student[]> {
   try {
-    // Join users with user_profiles via RPC or multiple calls
-    // Here we do two queries and merge client-side to avoid requiring a view.
-  const usersQ = classId ? supabase.from('users').select('id,class_id,user_name').eq('class_id', classId) : supabase.from('users').select('id,class_id,user_name')
-    const profilesQ = supabase.from('user_profiles').select('user_id,full_name,email')
+    let q = supabase.from('users').select('id,class_id,user_name,user_profiles(full_name,email)')
+    if (classId) {
+      q = q.eq('class_id', classId)
+    } else if (classIdsSet && classIdsSet.size > 0) {
+      q = q.in('class_id', Array.from(classIdsSet))
+    }
 
-    const [{ data: users, error: uErr }, { data: profiles, error: pErr }] = await Promise.all([usersQ, profilesQ])
-    if (uErr) {
-      console.warn('fetchStudentsFromDB users error:', uErr.message)
+    const { data: users, error } = await q
+    if (error) {
+      console.warn('fetchStudentsFromDB error:', error.message)
       return []
     }
-    if (pErr) {
-      console.warn('fetchStudentsFromDB profiles error:', pErr.message)
-      return []
-    }
-    const profileMap = new Map<string, { full_name: string | null; email: string | null }>()
-    for (const p of profiles || []) profileMap.set(p.user_id, { full_name: p.full_name, email: p.email })
 
     return (users || []).map((u: any) => {
-      const p = profileMap.get(u.id)
-      const fullname = p?.full_name ?? 'Chưa cập nhật'
-      const code = p?.email ?? String(u.id).slice(0, 8)
+      const prof = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
+      const fullname = prof?.full_name ?? 'Chưa cập nhật'
+      const code = prof?.email ?? String(u.id).slice(0, 8)
       return {
         id: u.id,
         student_code: code,

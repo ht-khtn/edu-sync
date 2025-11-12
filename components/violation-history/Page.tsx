@@ -45,8 +45,12 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
   }
 
   // Fetch students (filtered to allowed classes)
-  const allStudents = await fetchStudentsFromDB(supabase)
-  const students = allowedViewClassIds ? allStudents.filter(s => allowedViewClassIds.has(s.class_id)) : allStudents
+  // Fetch students directly filtered by allowed class ids (single query) for performance
+  const students = await fetchStudentsFromDB(
+    supabase,
+    undefined,
+    allowedViewClassIds === null ? null : allowedViewClassIds
+  )
 
   // Fetch criteria list
   const criteriaList = await fetchCriteriaFromDB(supabase)

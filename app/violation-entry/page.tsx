@@ -2,6 +2,7 @@ import { ViolationEntryPageContent } from '@/components/violation-entry/Violatio
 import QueryToasts from '@/components/common/QueryToasts'
 import getSupabaseServer from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
+import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListener'
 export const dynamic = 'force-dynamic'
 
 export default async function ViolationEntryPage({ searchParams }: { searchParams?: { ok?: string, error?: string } }) {
@@ -30,6 +31,8 @@ export default async function ViolationEntryPage({ searchParams }: { searchParam
     <>
       <ViolationEntryPageContent searchParams={searchParams} />
       <QueryToasts ok={searchParams?.ok} error={searchParams?.error} />
+      {/* Realtime listener to auto-refresh recent records + toast */}
+      <RecordsRealtimeListener />
     </>
   )
 }

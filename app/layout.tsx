@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -76,7 +82,21 @@ export default async function RootLayout({
             <ul className="flex gap-4 text-sm items-center">
               {user && hasCC && (
                 <>
-                  <li><Link href="/violation-entry">Nhập vi phạm</Link></li>
+                  <li>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="text-zinc-700 hover:text-zinc-900 focus:outline-none text-sm">
+                        Quản lý vi phạm ▾
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[180px]">
+                        <DropdownMenuItem>
+                          <Link href="/violation-entry" className="block w-full">Nhập vi phạm</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Link href="/violation-history" className="block w-full">Lịch sử ghi nhận</Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </li>
                   <li><Link href="/score-entry">Nhập điểm</Link></li>
                 </>
               )}

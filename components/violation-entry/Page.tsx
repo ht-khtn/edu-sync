@@ -1,7 +1,6 @@
 import { ViolationForm } from '@/components/violation/ViolationForm'
 import RecentRecordsList from '@/components/violation/RecentRecordsList'
 import { fetchCriteriaFromDB, fetchStudentsFromDB, type Criteria, type Student } from '@/lib/violations'
-import getSupabase from '@/lib/supabase'
 import getSupabaseServer from '@/lib/supabase-server'
 import { getAllowedClassIdsForWrite } from '@/lib/rbac'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
@@ -10,22 +9,10 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, Dialog
 export const dynamic = 'force-dynamic'
 
 export default async function ViolationEntryPageContent({ searchParams }: { searchParams?: { ok?: string, error?: string } }) {
-  let supabaseClient: any = null
-  let supabaseServer: any = null
-  try {
-    ;[supabaseClient, supabaseServer] = await Promise.all([getSupabase(), getSupabaseServer()])
-  } catch {
-    // Supabase env not configured, allow graceful fallback
-  }
-
-  let criteria: Criteria[] = []
+  const supabaseServer = await getSupabaseServer()
+  // Fetch criteria server-side (works regardless of client env)
+  const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer)
   let students: Student[] = []
-  if (supabaseClient) {
-    ;[criteria, students] = await Promise.all([
-      fetchCriteriaFromDB(supabaseClient),
-      fetchStudentsFromDB(supabaseClient),
-    ])
-  }
 
   // Server-side auth-based filtering: map auth user -> app user id -> roles/classes
   let effectiveStudents = students
@@ -94,33 +81,22 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
             }
           }
 
-          // Prefer fetching students server-side with RLS using managedClassIds (if any) else allowedSet
+          // Fetch students server-side with optional class filters for better performance
           try {
-            let usersQuery = supabaseServer.from('users').select('id,class_id,user_name,user_profiles(full_name,email)')
-            if (currentClass?.id) {
-              usersQuery = usersQuery.eq('class_id', currentClass.id)
-            } else if (managedClassIds.size > 0) {
-              usersQuery = usersQuery.in('class_id', Array.from(managedClassIds))
-            } else if (allowedSet && allowedSet.size > 0) {
-              usersQuery = usersQuery.in('class_id', Array.from(allowedSet))
-            }
-            const { data: usersData, error: usersErr } = await usersQuery
-            if (!usersErr && Array.isArray(usersData)) {
-              const serverStudents: Student[] = (usersData as any[]).map((u: any) => ({
-                id: u.id,
-                student_code: u.user_profiles?.[0]?.email ?? String(u.id).slice(0, 8),
-                full_name: u.user_profiles?.[0]?.full_name ?? 'Chưa cập nhật',
-                user_name: u.user_name ?? undefined,
-                class_id: u.class_id,
-                class_name: classMap.get(u.class_id) ?? '',
-              }))
-              effectiveStudents = serverStudents
+            const classFilterSet = currentClass?.id
+              ? new Set<string>([currentClass.id])
+              : (managedClassIds.size > 0 ? managedClassIds : (allowedSet && allowedSet.size > 0 ? allowedSet : null))
+            const fetched = await fetchStudentsFromDB(supabaseServer, undefined, classFilterSet === null ? null : classFilterSet || undefined)
+            if (Array.isArray(fetched) && fetched.length) {
+              effectiveStudents = fetched.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
             }
           } catch {}
 
           // Fallback to client-fetched students if server fetch failed or returned empty
           if (!effectiveStudents?.length) {
-            const studentsWithClass = students.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
+            // As ultimate fallback, fetch all students without filter (server)
+            const fetchedAll = await fetchStudentsFromDB(supabaseServer)
+            const studentsWithClass = fetchedAll.map((s) => ({ ...s, class_name: classMap.get(s.class_id) ?? '' }))
             if (currentClass) {
               effectiveStudents = studentsWithClass.filter(s => s.class_id === currentClass?.id)
               allowedClasses = [{ id: currentClass.id, name: currentClass.name }]
@@ -170,11 +146,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
         </Dialog>
 
         <CardContent>
-          {supabaseClient ? (
-            <RecentRecordsList />
-          ) : (
-            <p className="text-sm text-red-600">Supabase chưa được cấu hình. Thiếu NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.</p>
-          )}
+          <RecentRecordsList />
         </CardContent>
       </Card>
     </main>

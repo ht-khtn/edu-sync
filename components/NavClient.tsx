@@ -87,9 +87,21 @@ export default function NavClient() {
         </>
       )}
       <li>
-        <form action="/api/auth/logout" method="post">
-          <button type="submit" className="text-zinc-700 hover:text-zinc-900">Đăng xuất</button>
-        </form>
+        <button
+          onClick={async () => {
+            try {
+              await fetch('/api/auth/logout', { method: 'POST' })
+              // after logout, refresh nav and redirect to login
+              setInfo(null)
+              router.push('/login')
+            } catch {
+              router.push('/login')
+            }
+          }}
+          className="text-zinc-700 hover:text-zinc-900"
+        >
+          Đăng xuất
+        </button>
       </li>
     </>
   )

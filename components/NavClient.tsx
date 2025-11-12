@@ -135,6 +135,22 @@ export default function NavClient() {
   const hasSchoolScope = !!info.hasSchoolScope
   const ccClassId = info.ccClassId
 
+  // We'll derive student/self roles (S, YUM) client-side for nav visibility by querying roles once when menu renders.
+  // Lightweight: only fetch if we don't already have management roles.
+  const [selfRoles, setSelfRoles] = useState<{ hasSelf: boolean } | null>(null)
+  useEffect(() => {
+    if (selfRoles !== null) return
+    if (!info || !info.user) return
+    ;(async () => {
+      try {
+        const supabase = await getSupabase()
+  const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', info.user!.id)
+        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM')
+        setSelfRoles({ hasSelf })
+      } catch { setSelfRoles({ hasSelf: false }) }
+    })()
+  }, [info, selfRoles])
+
   return (
     <>
       <li><NotificationsBell /></li>
@@ -164,6 +180,11 @@ export default function NavClient() {
           </li>
           {hasCC && !hasSchoolScope && <li><Link href="/score-entry">Nhập điểm</Link></li>}
         </>
+      )}
+      {selfRoles?.hasSelf && (
+        <li>
+          <Link href="/my-violations" className="text-sm text-zinc-700 hover:text-zinc-900">Vi phạm của tôi</Link>
+        </li>
       )}
       <li>
         <button

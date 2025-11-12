@@ -33,7 +33,7 @@ export default function NavClient() {
       try {
         const supabase = await getSupabase()
         const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', info.user!.id)
-        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM')
+        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
         setSelfRoles({ hasSelf })
       } catch { setSelfRoles({ hasSelf: false }) }
     })()
@@ -183,7 +183,7 @@ export default function NavClient() {
           {hasCC && !hasSchoolScope && <li><Link href="/score-entry">Nhập điểm</Link></li>}
         </>
       )}
-      {selfRoles?.hasSelf && (
+      {(selfRoles?.hasSelf || hasCC) && (
         <li>
           <Link href="/my-violations" className="text-sm text-zinc-700 hover:text-zinc-900">Vi phạm của tôi</Link>
         </li>

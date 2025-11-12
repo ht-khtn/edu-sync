@@ -17,10 +17,10 @@ export default async function MyViolationsPageContent() {
   const appUserId = appUser?.id as string | undefined
   if (!appUserId) redirect('/login')
 
-  // Role gate: allow only S or YUM
+  // Role gate: allow only S, CC, or YUM
   const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
   const roleList = Array.isArray(roles) ? roles : []
-  const allowed = roleList.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM')
+  const allowed = roleList.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
   if (!allowed) redirect('/')
 
   // Fetch own violations

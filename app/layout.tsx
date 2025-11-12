@@ -33,27 +33,48 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   let user: { id?: string, email?: string } | null = null
   let hasCC = false
-  try {
-    const { getSupabaseServer } = await import('@/lib/supabase-server')
-    const supabase = await getSupabaseServer()
-    const { data } = await supabase.auth.getUser()
-    user = data?.user ?? null
-    // Resolve CC role for nav visibility
-    if (user?.id) {
-      const { data: appUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', user.id)
-        .maybeSingle()
-      const appUserId = appUser?.id as string | undefined
-      if (appUserId) {
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('role_id')
-          .eq('user_id', appUserId)
-        hasCC = Array.isArray(roles) && roles.some(r => r.role_id === 'CC')
+  let hasSchoolScope = false
+  let ccClassId: string | null = null
+    try {
+      const { getSupabaseServer } = await import('@/lib/supabase-server')
+      const supabase = await getSupabaseServer()
+      const { data } = await supabase.auth.getUser()
+      user = data?.user ?? null
+      // Resolve roles for nav visibility
+      if (user?.id) {
+        const { data: appUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_uid', user.id)
+          .maybeSingle()
+        const appUserId = appUser?.id as string | undefined
+        if (appUserId) {
+          // fetch roles with scope info
+          const { data: roles } = await supabase
+            .from('user_roles')
+            .select('role_id,target,permissions(scope)')
+            .eq('user_id', appUserId)
+
+          const roleList = Array.isArray(roles) ? roles : []
+          // hasSchoolScope: any role with permissions.scope === 'school'
+          hasSchoolScope = roleList.some((r: any) => r?.permissions?.scope === 'school')
+          // hasCC: presence of CC role
+          hasCC = roleList.some((r: any) => r.role_id === 'CC')
+
+          // If user has a CC role but not school-scope, try to resolve their class target id
+          // We'll attach class id as a query param when linking to history
+          if (hasCC && !hasSchoolScope) {
+            const ccRole = roleList.find((r: any) => r.role_id === 'CC' && r.target)
+            if (ccRole?.target) {
+              const { data: cls } = await supabase.from('classes').select('id').eq('name', ccRole.target).maybeSingle()
+              // store resolved class id for building class-scoped history link
+              ccClassId = cls?.id ?? null
+            }
+          }
+          // If hasSchoolScope, mark hasCC true as well if any CC present — but school-scope overrides menu choices
+          if (hasSchoolScope) hasCC = roleList.some((r: any) => r.role_id === 'CC')
+        }
       }
-    }
   } catch {
     // Supabase not configured; render public nav only
   }
@@ -80,7 +101,7 @@ export default async function RootLayout({
           <nav className="mx-auto max-w-6xl px-4 py-3 w-full flex items-center justify-between">
             <Link href="/" className="font-semibold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">EduSync</Link>
             <ul className="flex gap-4 text-sm items-center">
-              {user && hasCC && (
+              {user && (hasCC || hasSchoolScope) && (
                 <>
                   <li>
                     <DropdownMenu>
@@ -88,19 +109,26 @@ export default async function RootLayout({
                         Quản lý vi phạm ▾
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="min-w-[180px]">
+                        {hasCC && (
+                          <DropdownMenuItem>
+                            <Link href="/violation-entry" className="block w-full">Nhập vi phạm</Link>
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem>
-                          <Link href="/violation-entry" className="block w-full">Nhập vi phạm</Link>
+                          <Link href={ccClassId && !hasSchoolScope ? `/violation-history?classId=${ccClassId}` : '/violation-history'} className="block w-full">Lịch sử ghi nhận</Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Link href="/violation-history" className="block w-full">Lịch sử ghi nhận</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Link href="/violation-stats" className="block w-full">Thống kê vi phạm</Link>
-                        </DropdownMenuItem>
+                        {hasSchoolScope && (
+                          <DropdownMenuItem>
+                            <Link href="/violation-stats" className="block w-full">Thống kê vi phạm</Link>
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </li>
-                  <li><Link href="/score-entry">Nhập điểm</Link></li>
+                  {/* show score-entry only for CC (class-scoped roles) */}
+                  {hasCC && !hasSchoolScope && (
+                    <li><Link href="/score-entry">Nhập điểm</Link></li>
+                  )}
                 </>
               )}
               {!user ? (

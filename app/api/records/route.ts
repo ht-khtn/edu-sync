@@ -59,8 +59,10 @@ export async function POST(req: Request) {
       if ((criteriaRow.category ?? '') !== 'class') return NextResponse.json({ error: 'forbidden_category' }, { status: 400 })
     }
 
-    const score = -Math.abs(criteriaRow.score ?? 0)
-    const note = [reason || '', evidence_url || ''].filter(Boolean).join(' | ')
+  const score = -Math.abs(criteriaRow.score ?? 0)
+  const note = [reason || '', evidence_url || ''].filter(Boolean).join(' | ')
+
+  console.debug('[api/records] creating record', { student_id, criteria_id, class_id: targetClassId, score, note, recorded_by: appUser.id })
 
     const { data: inserted, error: insErr } = await supabase.from('records').insert({
       class_id: targetClassId,
@@ -70,7 +72,11 @@ export async function POST(req: Request) {
       note,
       recorded_by: appUser.id,
     }).select('id').maybeSingle()
-    if (insErr) return NextResponse.json({ error: 'insert_failed' }, { status: 500 })
+    if (insErr) {
+      console.error('[api/records] insert error', insErr)
+      // Return error details to aid debugging (temporary)
+      return NextResponse.json({ error: 'insert_failed', details: insErr?.message || String(insErr) }, { status: 500 })
+    }
 
     try {
       await supabase.from('audit_logs').insert({

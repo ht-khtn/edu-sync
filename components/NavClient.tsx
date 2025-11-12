@@ -83,7 +83,6 @@ export default function NavClient() {
         const { data } = supabase.auth.onAuthStateChange((event, session) => {
           if (event === 'SIGNED_IN') {
             isSignedInRef.current = true
-            toast.success('Đăng nhập thành công')
             // Prefer server; fallback only if still null
             fetchInfo().then(async () => {
               if (!info?.user) await deriveRolesClientFallback()

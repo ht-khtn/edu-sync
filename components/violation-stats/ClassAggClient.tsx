@@ -11,7 +11,7 @@ type AggRow = { id: string; name: string; total: number; count: number }
 export default function ClassAggClient({ classAgg }: { classAgg: AggRow[] }) {
   // Default base score assumed to be 0. If you'd prefer 100, change initial state.
   const [useBase, setUseBase] = useState(false)
-  const [baseScoreStr, setBaseScoreStr] = useState('0')
+  const [baseScoreStr, setBaseScoreStr] = useState('500')
 
   // Persist toggle + base score in localStorage so user input is remembered
   const STORAGE_KEY = 'violationStats.settings'

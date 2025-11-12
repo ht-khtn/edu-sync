@@ -3,6 +3,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import ClassAggClient from '@/components/violation-stats/ClassAggClient'
+import ExportReportDialog from '@/components/violation-stats/ExportDialog'
 import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
@@ -76,6 +77,7 @@ export default async function ViolationStatsPageContent() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Thống kê vi phạm</h1>
         <p className="text-sm text-muted-foreground mt-1">Tổng quan theo toàn bộ dữ liệu (chỉ dành cho người dùng phạm vi trường).</p>
+        <div className="mt-3"><ExportReportDialog /></div>
       </div>
 
       <Tabs defaultValue="criteria" className="w-full">

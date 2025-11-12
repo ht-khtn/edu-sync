@@ -24,6 +24,21 @@ export default function NavClient() {
   const lastFetchAtRef = useRef<number>(0)
   const MIN_FETCH_INTERVAL = 3000 // ms
 
+  // Must declare hooks unconditionally before any early returns
+  const [selfRoles, setSelfRoles] = useState<{ hasSelf: boolean } | null>(null)
+  useEffect(() => {
+    if (selfRoles !== null) return
+    if (!info || !info.user) return
+    ;(async () => {
+      try {
+        const supabase = await getSupabase()
+        const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', info.user!.id)
+        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM')
+        setSelfRoles({ hasSelf })
+      } catch { setSelfRoles({ hasSelf: false }) }
+    })()
+  }, [info, selfRoles])
+
   async function fetchInfo(force = false) {
     const now = Date.now()
     if (!force) {
@@ -137,19 +152,6 @@ export default function NavClient() {
 
   // We'll derive student/self roles (S, YUM) client-side for nav visibility by querying roles once when menu renders.
   // Lightweight: only fetch if we don't already have management roles.
-  const [selfRoles, setSelfRoles] = useState<{ hasSelf: boolean } | null>(null)
-  useEffect(() => {
-    if (selfRoles !== null) return
-    if (!info || !info.user) return
-    ;(async () => {
-      try {
-        const supabase = await getSupabase()
-  const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', info.user!.id)
-        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM')
-        setSelfRoles({ hasSelf })
-      } catch { setSelfRoles({ hasSelf: false }) }
-    })()
-  }, [info, selfRoles])
 
   return (
     <>

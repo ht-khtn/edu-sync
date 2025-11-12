@@ -10,6 +10,8 @@ import { toast } from 'sonner'
 export default function RecordsRealtimeListener() {
 	const router = useRouter()
 	const subscribed = useRef(false)
+	const pendingCountRef = useRef(0)
+	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(() => {
 		if (subscribed.current) return
@@ -23,16 +25,24 @@ export default function RecordsRealtimeListener() {
 					{ event: 'INSERT', schema: 'public', table: 'records' },
 					(payload) => {
 						if (!active) return
-						toast.info('Có ghi nhận mới được thêm. Đang cập nhật...', { duration: 2000 })
-						// Refresh server components so RecentRecordsList updates
-						router.refresh()
+						pendingCountRef.current += 1
+						if (timerRef.current) return
+						timerRef.current = setTimeout(() => {
+							const n = pendingCountRef.current
+							pendingCountRef.current = 0
+							timerRef.current = null
+							toast.info(n > 1 ? `Có ${n} ghi nhận mới. Đang cập nhật...` : 'Có ghi nhận mới được thêm. Đang cập nhật...', { duration: 1800 })
+							// Debounced refresh
+							router.refresh()
+						}, 800)
 					}
 				)
 				.subscribe()
 
 			return () => {
 				active = false
-				supabase.removeChannel(channel)
+				try { supabase.removeChannel(channel) } catch {}
+				if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
 			}
 		})()
 	}, [router])

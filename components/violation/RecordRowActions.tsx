@@ -11,27 +11,22 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { MoreHorizontal } from 'lucide-react'
+import { useEffect } from 'react'
 
-export default function RecordRowActions({ id, initialScore, initialNote }: { id: string, initialScore?: number, initialNote?: string }) {
+export default function RecordRowActions({ id, initialScore, initialNote, initialStudentId, initialCriteriaId, classId }: { id: string, initialScore?: number, initialNote?: string, initialStudentId?: string, initialCriteriaId?: string, classId?: string }) {
   const router = useRouter()
   const [openEdit, setOpenEdit] = useState(false)
   const [openDelete, setOpenDelete] = useState(false)
   const [score, setScore] = useState<number | ''>(typeof initialScore === 'number' ? initialScore : '')
   const [note, setNote] = useState<string>(initialNote ?? '')
+  const [studentId, setStudentId] = useState<string | ''>(initialStudentId ?? '')
+  const [criteriaId, setCriteriaId] = useState<string | ''>(initialCriteriaId ?? '')
+  const [students, setStudents] = useState<Array<any>>([])
+  const [criteriaList, setCriteriaList] = useState<Array<any>>([])
   const [loading, setLoading] = useState(false)
 
   async function onSave() {
@@ -40,8 +35,29 @@ export default function RecordRowActions({ id, initialScore, initialNote }: { id
       const supabase = await getSupabase()
       const payload: any = { note: note ?? null }
       if (score !== '') payload.score = Number(score)
+      if (studentId) payload.student_id = studentId
+      if (criteriaId) payload.criteria_id = criteriaId
+
+      // capture before state
+      const { data: before } = await supabase.from('records').select('*').eq('id', id).maybeSingle()
+
       const { error } = await supabase.from('records').update(payload).eq('id', id)
       if (error) throw error
+
+      // write audit log (best-effort)
+      try {
+        const { data: userRes } = await supabase.auth.getUser()
+        const actor_id = userRes?.user?.id
+        await supabase.from('audit_logs').insert({
+          table_name: 'records',
+          record_id: id,
+          action: 'update',
+          actor_id: actor_id ?? null,
+          diff: { before, after: payload },
+          meta: { source: 'record-row-actions' },
+        })
+      } catch {}
+
       toast.success('Đã cập nhật ghi nhận')
       setOpenEdit(false)
       router.refresh()
@@ -56,11 +72,24 @@ export default function RecordRowActions({ id, initialScore, initialNote }: { id
     setLoading(true)
     try {
       const supabase = await getSupabase()
+      const { data: before } = await supabase.from('records').select('*').eq('id', id).maybeSingle()
       const { error } = await supabase
         .from('records')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
+      try {
+        const { data: userRes } = await supabase.auth.getUser()
+        const actor_id = userRes?.user?.id
+        await supabase.from('audit_logs').insert({
+          table_name: 'records',
+          record_id: id,
+          action: 'delete',
+          actor_id: actor_id ?? null,
+          diff: { before },
+          meta: { source: 'record-row-actions' },
+        })
+      } catch {}
       toast.success('Đã xoá ghi nhận')
       setOpenDelete(false)
       router.refresh()
@@ -70,6 +99,22 @@ export default function RecordRowActions({ id, initialScore, initialNote }: { id
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!openEdit) return
+    // fetch students and criteria when opening edit dialog
+    (async () => {
+      try {
+        const supabase = await getSupabase()
+        const critQ = await supabase.from('criteria').select('id,name')
+        let usersQ: any
+        if (classId) usersQ = await supabase.from('users').select('id,user_profiles(full_name),user_name').eq('class_id', classId)
+        else usersQ = await supabase.from('users').select('id,user_profiles(full_name),user_name')
+        setCriteriaList(critQ.data || [])
+        setStudents((usersQ.data || []).map((u: any) => ({ id: u.id, name: (u.user_profiles && u.user_profiles[0]?.full_name) || u.user_name || u.id })))
+      } catch {}
+    })()
+  }, [openEdit, classId])
 
   return (
     <>
@@ -95,10 +140,28 @@ export default function RecordRowActions({ id, initialScore, initialNote }: { id
               <label className="text-xs text-muted-foreground">Điểm</label>
               <Input type="number" value={score} onChange={(e) => setScore(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs text-muted-foreground">Lỗi vi phạm</label>
+              <select value={criteriaId} onChange={(e) => setCriteriaId(e.target.value)} className="border rounded px-2 py-1 text-sm bg-white">
+                <option value="">-- Chọn tiêu chí --</option>
+                {criteriaList.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs text-muted-foreground">Học sinh</label>
+              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="border rounded px-2 py-1 text-sm bg-white">
+                <option value="">-- (không) --</option>
+                {students.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+
             <div className="grid gap-1">
               <label className="text-xs text-muted-foreground">Ghi chú</label>
-              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} />
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} />
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setOpenEdit(false)} disabled={loading}>Huỷ</Button>
               <Button onClick={onSave} disabled={loading}>Lưu</Button>
@@ -107,18 +170,20 @@ export default function RecordRowActions({ id, initialScore, initialNote }: { id
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Xoá ghi nhận?</AlertDialogTitle>
-            <AlertDialogDescription>Hành động này sẽ ẩn ghi nhận khỏi danh sách (xoá mềm). Bạn có chắc không?</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>Huỷ</AlertDialogCancel>
-            <AlertDialogAction onClick={onDelete} disabled={loading} className="bg-red-600 hover:bg-red-700">Xoá</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={openDelete} onOpenChange={setOpenDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Xoá ghi nhận?</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <p className="text-sm text-muted-foreground">Hành động này sẽ ẩn ghi nhận khỏi danh sách (xoá mềm). Bạn có chắc không?</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setOpenDelete(false)} disabled={loading}>Huỷ</Button>
+              <Button onClick={onDelete} disabled={loading} className="bg-red-600 hover:bg-red-700">Xoá</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

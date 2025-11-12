@@ -33,25 +33,24 @@ export default async function RecentRecordsList() {
   if (!rows?.length) return null
 
   return (
-    <section className="flex flex-col divide-y border rounded-md bg-white">
+    <section className="flex flex-col">
       {rows.map((r: any) => {
         const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
         const criteriaLabel = r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')
+        // format time in Asia/Ho_Chi_Minh (UTC+7)
+        const created = new Date(r.created_at)
+        const timeStr = created.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })
+        const dateStr = created.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
         return (
-          <div key={r.id} className="flex items-start gap-3 px-4 py-3 group">
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-foreground truncate max-w-[240px] sm:max-w-[320px]">{criteriaLabel}</span>
-                <span className="text-sm text-muted-foreground truncate">{fullName}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{new Date(r.created_at).toLocaleTimeString()}</span>
-              </div>
-              <div className="mt-1 text-sm flex flex-wrap items-center gap-3">
-                <span className="font-medium text-red-600">{r.score}</span>
-                {r.note && <span className="text-muted-foreground truncate max-w-[320px]">{r.note}</span>}
-              </div>
+          <div key={r.id} className="bg-white rounded-lg p-3 mb-3 shadow-sm flex items-center gap-4">
+            <div className="w-16 text-sm font-medium text-red-600 text-right">{r.score}</div>
+            <div className="flex-1 min-w-0 grid grid-cols-[1fr,1fr,120px] gap-4 items-center">
+              <div className="truncate text-sm font-semibold text-foreground">{criteriaLabel}</div>
+              <div className="truncate text-sm text-muted-foreground">{fullName}</div>
+              <div className="text-xs text-muted-foreground text-right tabular-nums">{dateStr} {timeStr}</div>
             </div>
-            <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-              <RecordRowActions id={r.id} initialScore={r.score} initialNote={r.note} />
+            <div className="flex-none">
+              <RecordRowActions id={r.id} initialScore={r.score} initialNote={r.note} initialStudentId={r.student_id} initialCriteriaId={r.criteria?.id} classId={r.class_id} />
             </div>
           </div>
         )

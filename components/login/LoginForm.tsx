@@ -54,22 +54,21 @@ export default function LoginForm() {
         if (values.remember) {
           // custom logic can be added here
         }
-        // Try to set the session cookie then refresh server components so header/home update
-        try {
-          if (access_token && refresh_token) {
-            await fetch('/api/auth/set-session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ access_token, refresh_token, expires_in }),
-            })
+        // Tighten login: wait for /api/auth/set-session to succeed before navigation/refresh
+        if (access_token && refresh_token) {
+          const res = await fetch('/api/auth/set-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token, refresh_token, expires_in }),
+          })
+          if (!res.ok) {
+            setError('Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.')
+            return
           }
-          // revalidate server components on the client so header updates without full reload
-          router.refresh()
-        } catch (e) {
-          // ignore cookie set failures
         }
-        // navigate to dashboard
-        router.push("/");
+        // Now that cookies are set on the server, refresh and navigate
+        router.refresh()
+        router.push("/")
       }
     } catch (err: any) {
       setError(err?.message ?? "Lỗi không xác định");

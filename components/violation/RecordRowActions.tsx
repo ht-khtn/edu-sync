@@ -152,7 +152,6 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
                   <SelectValue placeholder="-- Chọn tiêu chí --" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">-- Chọn tiêu chí --</SelectItem>
                   {criteriaList.map((c: any) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   ))}
@@ -167,7 +166,6 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
                   <SelectValue placeholder="-- (không) --" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">-- (không) --</SelectItem>
                   {students.map((s: any) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}

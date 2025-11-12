@@ -56,7 +56,6 @@ export default function Filters({
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">-- Tất cả --</SelectItem>
             {classes.map((c) => (
               <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
             ))}
@@ -71,7 +70,6 @@ export default function Filters({
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">-- Tất cả --</SelectItem>
             {students.map((s) => (
               <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
             ))}
@@ -86,7 +84,6 @@ export default function Filters({
             <SelectValue placeholder="-- Tất cả --" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">-- Tất cả --</SelectItem>
             {criteria.map((c) => (
               <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
             ))}

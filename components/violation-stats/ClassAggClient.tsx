@@ -74,7 +74,10 @@ export default function ClassAggClient({ classAgg }: { classAgg: AggRow[] }) {
           </TableHeader>
           <TableBody>
             {classAgg.map((c) => {
-              const totalDeduction = Number(c.total || 0)
+              // In the DB we store violation scores as negative numbers (deductions).
+              // For display and base-score arithmetic we treat the deduction as a
+              // positive amount = absolute value of the stored score sum.
+              const totalDeduction = Math.abs(Number(c.total || 0))
               const displayed = useBase ? baseScore - totalDeduction : totalDeduction
               return (
                 <TableRow key={c.id}>

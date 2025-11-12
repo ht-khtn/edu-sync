@@ -1,5 +1,6 @@
 import getSupabaseServer from '@/lib/supabase-server'
 import { getAllowedClassIdsForWrite } from '@/lib/rbac'
+import RecordRowActions from './RecordRowActions'
 
 export default async function RecentRecordsList() {
   let supabase: any = null
@@ -32,21 +33,29 @@ export default async function RecentRecordsList() {
   if (!rows?.length) return null
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {rows.map((r: any) => {
-          const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
-          return (
-            <div key={r.id} className="border rounded-md p-3 shadow-sm bg-white">
-              <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</div>
-              <div className="mt-1 font-medium">{fullName}</div>
-              <div className="text-sm">{r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')}</div>
-              <div className="mt-1 text-sm"><span className="font-medium">Điểm:</span> {r.score}</div>
-              {r.note ? <div className="mt-1 text-sm text-muted-foreground">{r.note}</div> : null}
+    <section className="flex flex-col divide-y border rounded-md bg-white">
+      {rows.map((r: any) => {
+        const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
+        const criteriaLabel = r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')
+        return (
+          <div key={r.id} className="flex items-start gap-3 px-4 py-3 group">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium truncate max-w-[200px] sm:max-w-[260px]">{fullName}</span>
+                <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full">{criteriaLabel}</span>
+                <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleTimeString()}</span>
+              </div>
+              <div className="mt-1 text-sm flex flex-wrap items-center gap-3">
+                <span className="font-medium text-red-600">{r.score}</span>
+                {r.note && <span className="text-muted-foreground truncate max-w-[320px]">{r.note}</span>}
+              </div>
             </div>
-          )
-        })}
-      </div>
+            <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <RecordRowActions id={r.id} initialScore={r.score} initialNote={r.note} />
+            </div>
+          </div>
+        )
+      })}
     </section>
   )
 }

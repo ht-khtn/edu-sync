@@ -12,8 +12,15 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from '@/components/ui/select'
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect } from 'react'
 
@@ -139,19 +146,33 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
             {/* Score is not editable */}
 
             <div className="grid gap-1">
-              <label className="text-xs text-muted-foreground">Lỗi vi phạm</label>
-              <select value={criteriaId} onChange={(e) => setCriteriaId(e.target.value)} className="border rounded px-2 py-1 text-sm bg-white">
-                <option value="">-- Chọn tiêu chí --</option>
-                {criteriaList.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <Label className="text-xs text-muted-foreground">Lỗi vi phạm</Label>
+              <Select value={criteriaId} onValueChange={(v) => setCriteriaId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="-- Chọn tiêu chí --" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">-- Chọn tiêu chí --</SelectItem>
+                  {criteriaList.map((c: any) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-1">
-              <label className="text-xs text-muted-foreground">Học sinh</label>
-              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="border rounded px-2 py-1 text-sm bg-white">
-                <option value="">-- (không) --</option>
-                {students.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <Label className="text-xs text-muted-foreground">Học sinh</Label>
+              <Select value={studentId} onValueChange={(v) => setStudentId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="-- (không) --" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">-- (không) --</SelectItem>
+                  {students.map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-1">

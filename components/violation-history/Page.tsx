@@ -5,6 +5,7 @@ import { getAllowedClassIdsForView } from '@/lib/rbac'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import Link from 'next/link'
 import Filters from '@/components/violation-history/Filters'
+import ErrorBoundary from '@/components/ui/ErrorBoundary'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,7 +84,8 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
         <p className="text-sm text-muted-foreground mt-1">Tra cứu các ghi nhận vi phạm với bộ lọc linh hoạt.</p>
       </div>
 
-      <Filters
+      <ErrorBoundary>
+        <Filters
         initial={{
           classId: searchParams?.classId || '',
           studentId: searchParams?.studentId || '',
@@ -94,7 +96,8 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
         classes={(classes || []).map((c: any) => ({ id: c.id, name: c.name || c.id }))}
         students={students.map((s) => ({ id: s.id, name: s.full_name || s.user_name || s.id.slice(0,8) }))}
         criteria={criteriaList.map((c) => ({ id: c.id, name: c.name }))}
-      />
+        />
+      </ErrorBoundary>
 
       {rowsErr && (
         <div className="border rounded p-3 bg-red-50 text-red-700 text-sm">Lỗi truy vấn records: {String(rowsErr.message || rowsErr)}</div>

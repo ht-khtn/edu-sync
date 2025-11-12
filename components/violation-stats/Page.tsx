@@ -2,6 +2,7 @@ import getSupabaseServer from '@/lib/supabase-server'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import ClassAggClient from '@/components/violation-stats/ClassAggClient'
 import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
@@ -134,31 +135,7 @@ export default async function ViolationStatsPageContent() {
               <CardTitle>Tổng hợp theo lớp</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="border rounded-md bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lớp</TableHead>
-                      <TableHead className="text-right">Số lần</TableHead>
-                      <TableHead className="text-right">Tổng điểm</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {classAgg.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
-                        <TableCell className="text-right">{c.count}</TableCell>
-                        <TableCell className="text-right">{c.total}</TableCell>
-                      </TableRow>
-                    ))}
-                    {classAgg.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-muted-foreground">Không có dữ liệu.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              <ClassAggClient classAgg={classAgg} />
             </CardContent>
           </Card>
         </TabsContent>

@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormItem, FormControl, FormLabel, FormMessage, FormField } from "@/components/ui/form";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import { toast } from 'sonner'
 
 type LoginValues = {
   email: string;
@@ -45,6 +46,7 @@ export default function LoginForm() {
       });
       if (error) {
         setError(error.message);
+        toast.error('Đăng nhập thất bại')
       } else {
         // Persist session to server-side cookies so server components can read auth state
         const access_token = (data as any)?.session?.access_token
@@ -64,15 +66,18 @@ export default function LoginForm() {
           })
           if (!res.ok) {
             setError('Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.')
+            toast.error('Thiết lập phiên thất bại')
             return
           }
         }
         // Now that cookies are set on the server, refresh and navigate
         router.refresh()
         router.push("/")
+        toast.success('Đăng nhập thành công')
       }
     } catch (err: any) {
       setError(err?.message ?? "Lỗi không xác định");
+      toast.error('Đăng nhập lỗi: ' + (err?.message || 'Không xác định'))
     } finally {
       setLoading(false);
     }

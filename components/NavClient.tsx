@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import Link from 'next/link'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { getSupabase } from '@/lib/supabase'
@@ -82,6 +83,7 @@ export default function NavClient() {
         const { data } = supabase.auth.onAuthStateChange((event, session) => {
           if (event === 'SIGNED_IN') {
             isSignedInRef.current = true
+            toast.success('Đăng nhập thành công')
             // Prefer server; fallback only if still null
             fetchInfo().then(async () => {
               if (!info?.user) await deriveRolesClientFallback()
@@ -90,6 +92,7 @@ export default function NavClient() {
             isSignedInRef.current = false
             usedFallbackRef.current = false
             setInfo(null)
+            toast.info('Bạn đã đăng xuất')
           }
         })
         // @ts-ignore
@@ -141,22 +144,28 @@ export default function NavClient() {
       <li>
         <button
           onClick={async () => {
+            if (loading) return
+            setLoading(true)
+            toast.loading('Đang đăng xuất...')
             try {
               const supabase = await getSupabase()
-              // Sign out on client so auth state updates immediately
               try { await supabase.auth.signOut() } catch {}
               isSignedInRef.current = false
               usedFallbackRef.current = false
               setInfo(null)
-              // Clear server cookies
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+              toast.success('Đăng xuất thành công')
+            } catch (e: any) {
+              toast.error('Đăng xuất thất bại')
             } finally {
-              router.push('/login')
+              setLoading(false)
+              router.replace('/login')
             }
           }}
-          className="text-zinc-700 hover:text-zinc-900"
+          disabled={loading}
+          className="text-zinc-700 hover:text-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Đăng xuất
+          {loading ? 'Đang xử lý...' : 'Đăng xuất'}
         </button>
       </li>
     </>

@@ -37,13 +37,37 @@ export default async function RecentRecordsList() {
   )
 
   // Show all records for allowed classes (no date filter) so user can inspect history
-  const { data: rows } = await supabase
+  const { data: rows, error: rowsErr } = await supabase
     .from('records')
     .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(name,code), users:student_id(user_profiles(full_name), user_name)')
     .is('deleted_at', null)
     .in('class_id', Array.from(allowedWriteClassIds))
     .order('created_at', { ascending: false })
     .limit(500)
+
+  if (rowsErr) {
+    // attempt a lightweight debug query to help diagnose DB/RLS issues
+    const { data: debugRows, error: debugErr } = await supabase
+      .from('records')
+      .select('id,class_id,student_id,created_at')
+      .limit(10)
+    return (
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Ghi nhận hôm nay</h2>
+        <p className="text-sm text-red-600">Lỗi khi truy vấn records: {String(rowsErr.message || rowsErr)}.</p>
+        {debugErr ? (
+          <p className="text-sm text-red-600">Lỗi debug: {String(debugErr.message || debugErr)}</p>
+        ) : (
+          <div>
+            <p className="text-sm">Một số dòng (debug):</p>
+            <ul className="text-xs list-disc pl-6 text-muted-foreground">
+              {(debugRows || []).map((r: any) => <li key={r.id}>{r.id} — class_id: {r.class_id} — student_id: {r.student_id} — {r.created_at}</li>)}
+            </ul>
+          </div>
+        )}
+      </section>
+    )
+  }
 
   if (!rows?.length) return (
     <section className="flex flex-col gap-3">

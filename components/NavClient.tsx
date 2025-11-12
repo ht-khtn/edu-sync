@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { getSupabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import NotificationsBell from '@/components/common/NotificationsBell'
 
 type SessionInfo = { user: { id: string } | null; hasCC?: boolean; hasSchoolScope?: boolean; ccClassId?: string | null }
 
@@ -136,6 +137,7 @@ export default function NavClient() {
 
   return (
     <>
+      <li><NotificationsBell /></li>
       { (hasCC || hasSchoolScope) && (
         <>
           <li>

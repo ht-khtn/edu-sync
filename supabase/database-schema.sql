@@ -56,6 +56,21 @@ CREATE TABLE public.grades (
   created_at timestamp without time zone DEFAULT now(),
   CONSTRAINT grades_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.notifications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  receiver_auth_uid uuid NOT NULL,
+  actor_user_id uuid,
+  record_id uuid,
+  title text,
+  body text,
+  payload jsonb DEFAULT '{}'::jsonb,
+  read_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notifications_pkey PRIMARY KEY (id),
+  CONSTRAINT notifications_receiver_auth_uid_fkey FOREIGN KEY (receiver_auth_uid) REFERENCES auth.users(id),
+  CONSTRAINT notifications_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id),
+  CONSTRAINT notifications_record_id_fkey FOREIGN KEY (record_id) REFERENCES public.records(id)
+);
 CREATE TABLE public.permissions (
   id text NOT NULL,
   name text NOT NULL,

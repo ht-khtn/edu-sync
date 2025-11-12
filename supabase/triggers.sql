@@ -90,6 +90,118 @@ BEGIN
   END IF;
 END$$;
 
+-- -----------------------------------------------------------------------------
+-- Notifications: create table + policies + trigger on records insert
+-- Sends in-app notifications to the affected student and homeroom teacher
+-- -----------------------------------------------------------------------------
+
+-- Table for in-app notifications (addressed by auth user id for simple RLS)
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  receiver_auth_uid uuid NOT NULL REFERENCES auth.users(id),
+  actor_user_id uuid NULL REFERENCES public.users(id),
+  record_id uuid NULL REFERENCES public.records(id),
+  title text,
+  body text,
+  payload jsonb DEFAULT '{}'::jsonb,
+  read_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+-- Policy: users can select and update only their own notifications
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='notifications' AND policyname='select_own_notifications'
+  ) THEN
+    CREATE POLICY select_own_notifications ON public.notifications
+      FOR SELECT USING (receiver_auth_uid = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='notifications' AND policyname='update_own_notifications'
+  ) THEN
+    CREATE POLICY update_own_notifications ON public.notifications
+      FOR UPDATE USING (receiver_auth_uid = auth.uid());
+  END IF;
+END$$;
+
+-- Trigger function: when a record is inserted, notify student and homeroom teacher
+CREATE OR REPLACE FUNCTION public.fn_notify_on_record_insert() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_student_auth uuid;
+  v_teacher_auth uuid;
+  v_criteria_name text;
+  v_class_name text;
+  v_actor uuid;
+BEGIN
+  -- try resolve actor via auth.uid(); may be null on service role
+  BEGIN v_actor := auth.uid(); EXCEPTION WHEN others THEN v_actor := NULL; END;
+
+  -- Resolve student auth uid
+  IF NEW.student_id IS NOT NULL THEN
+    SELECT u.auth_uid INTO v_student_auth FROM public.users u WHERE u.id = NEW.student_id LIMIT 1;
+  END IF;
+  -- Resolve homeroom teacher auth uid
+  IF NEW.class_id IS NOT NULL THEN
+    SELECT c.name, t.auth_uid INTO v_class_name, v_teacher_auth
+    FROM public.classes c
+    LEFT JOIN public.users t ON t.id = c.homeroom_teacher_id
+    WHERE c.id = NEW.class_id;
+  END IF;
+
+  -- Resolve criteria name (best-effort)
+  IF NEW.criteria_id IS NOT NULL THEN
+    SELECT name INTO v_criteria_name FROM public.criteria WHERE id = NEW.criteria_id;
+  END IF;
+
+  -- Build body
+  IF v_criteria_name IS NULL THEN v_criteria_name := 'Vi phạm'; END IF;
+  IF v_class_name IS NULL THEN v_class_name := 'Lớp'; END IF;
+
+  -- Student notification
+  IF v_student_auth IS NOT NULL THEN
+    INSERT INTO public.notifications(receiver_auth_uid, actor_user_id, record_id, title, body, payload)
+    VALUES (
+      v_student_auth,
+      NEW.recorded_by,
+      NEW.id,
+      'Ghi nhận vi phạm',
+      format('%s - %s (%s điểm)', v_class_name, v_criteria_name, NEW.score),
+      jsonb_build_object('class_id', NEW.class_id, 'student_id', NEW.student_id, 'criteria_id', NEW.criteria_id)
+    );
+  END IF;
+
+  -- Homeroom teacher notification
+  IF v_teacher_auth IS NOT NULL THEN
+    INSERT INTO public.notifications(receiver_auth_uid, actor_user_id, record_id, title, body, payload)
+    VALUES (
+      v_teacher_auth,
+      NEW.recorded_by,
+      NEW.id,
+      'Lớp có ghi nhận mới',
+      format('%s - %s (%s điểm)', v_class_name, v_criteria_name, NEW.score),
+      jsonb_build_object('class_id', NEW.class_id, 'student_id', NEW.student_id, 'criteria_id', NEW.criteria_id)
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_records_notify_insert') THEN
+    CREATE TRIGGER trg_records_notify_insert
+      AFTER INSERT ON public.records
+      FOR EACH ROW EXECUTE PROCEDURE public.fn_notify_on_record_insert();
+  END IF;
+END$$;
+
 -- NOTE: When performing writes from server code (service role key) auth.uid() will be NULL.
 -- To record the real actor for server-side operations, call the Edge Function below which
 -- performs the DB write using the service role key AND also inserts an explicit audit row

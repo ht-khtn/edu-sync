@@ -6,6 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import NavClient from '@/components/NavClient'
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -37,7 +38,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <Link href="/" className="font-semibold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">EduSync</Link>
             <ul className="flex gap-4 text-sm items-center">
               {/* Client nav handles auth state and role-based menu so it updates immediately after login */}
-              {/* @ts-expect-error Server -> Client component import: rendered on client */}
               <NavClient />
             </ul>
           </nav>

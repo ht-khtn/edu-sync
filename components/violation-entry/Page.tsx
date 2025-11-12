@@ -96,7 +96,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
 
           // Prefer fetching students server-side with RLS using managedClassIds (if any) else allowedSet
           try {
-            let usersQuery = supabaseServer.from('users').select('id,class_id,user_profiles(full_name,email)')
+            let usersQuery = supabaseServer.from('users').select('id,class_id,user_name,user_profiles(full_name,email)')
             if (currentClass?.id) {
               usersQuery = usersQuery.eq('class_id', currentClass.id)
             } else if (managedClassIds.size > 0) {

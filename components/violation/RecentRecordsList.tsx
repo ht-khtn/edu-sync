@@ -39,7 +39,7 @@ export default async function RecentRecordsList() {
   // Show all records for allowed classes (no date filter) so user can inspect history
   const { data: rows, error: rowsErr } = await supabase
     .from('records')
-    .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(name,code), users:student_id(user_profiles(full_name), user_name)')
+    .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(name,id), users:student_id(user_profiles(full_name), user_name)')
     .is('deleted_at', null)
     .in('class_id', Array.from(allowedWriteClassIds))
     .order('created_at', { ascending: false })
@@ -101,7 +101,7 @@ export default async function RecentRecordsList() {
                 <td className="px-3 py-1.5 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
                 <td className="px-3 py-1.5">{r.classes?.name || '—'} <span className="text-xs text-muted-foreground">{r.class_id}</span></td>
                 <td className="px-3 py-1.5">{(r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'} <span className="text-xs text-muted-foreground">{r.student_id}</span></td>
-                <td className="px-3 py-1.5">{r.criteria?.code ? `${r.criteria.code} — ${r.criteria.name}` : r.criteria?.name || '—'}</td>
+                <td className="px-3 py-1.5">{r.criteria?.name ? `${r.criteria.name}` : (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')}</td>
                 <td className="px-3 py-1.5">{r.score}</td>
                 <td className="px-3 py-1.5">{r.note || ''}</td>
               </tr>

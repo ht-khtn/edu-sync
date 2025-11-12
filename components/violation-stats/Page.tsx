@@ -12,7 +12,7 @@ type RecordRow = {
   class_id: string
   classes: { name: string | null } | null
 }
-
+// file touched to ensure editors/TS server reload recognize the latest content
 export default async function ViolationStatsPageContent() {
   const supabase = await getSupabaseServer()
   const { data: userRes } = await supabase.auth.getUser()
@@ -78,9 +78,19 @@ export default async function ViolationStatsPageContent() {
       </div>
 
       <Tabs defaultValue="criteria" className="w-full">
-        <TabsList>
-          <TabsTrigger value="criteria">Theo lỗi</TabsTrigger>
-          <TabsTrigger value="class">Theo lớp</TabsTrigger>
+        <TabsList className="border-b bg-white">
+          <TabsTrigger
+            value="criteria"
+            className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-700"
+          >
+            Theo lỗi
+          </TabsTrigger>
+          <TabsTrigger
+            value="class"
+            className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-700"
+          >
+            Theo lớp
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="criteria" className="mt-4">
@@ -154,56 +164,8 @@ export default async function ViolationStatsPageContent() {
         </TabsContent>
       </Tabs>
 
-      {/* Full history table (all records) */}
-      <div className="pt-2">
-        <AllHistoryTable />
-      </div>
+      {/* Lịch sử vi phạm không hiển thị ở trang thống kê (đã có trang riêng) */}
     </section>
   )
 }
-
-async function AllHistoryTable() {
-  // Reuse the same query as history but without filters and larger limit
-  const supabase = await getSupabaseServer()
-  const { data: rows, error } = await supabase
-    .from('records')
-    .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(id,name), users:student_id(user_profiles(full_name), user_name)')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(500)
-
-  if (error) return <div className="text-sm text-red-600">Lỗi tải lịch sử: {String(error.message || error)}</div>
-  if (!rows || rows.length === 0) return <p className="text-sm text-muted-foreground">Không có ghi nhận.</p>
-
-  return (
-    <div className="border rounded-md bg-white p-2">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Thời gian</TableHead>
-            <TableHead>Lớp</TableHead>
-            <TableHead>Học sinh</TableHead>
-            <TableHead>Tiêu chí</TableHead>
-            <TableHead>Điểm</TableHead>
-            <TableHead>Ghi chú</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r: any) => {
-            const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
-            return (
-              <TableRow key={r.id}>
-                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</TableCell>
-                <TableCell className="text-sm">{r.classes?.name || r.class_id}</TableCell>
-                <TableCell className="text-sm">{fullName}</TableCell>
-                <TableCell className="text-sm">{r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')}</TableCell>
-                <TableCell className="text-sm font-medium">{r.score}</TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate" title={r.note}>{r.note || '—'}</TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
+ 

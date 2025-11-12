@@ -4,6 +4,7 @@ import { fetchCriteriaFromDB, fetchStudentsFromDB } from '@/lib/violations'
 import { getAllowedClassIdsForView } from '@/lib/rbac'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import Link from 'next/link'
+import Filters from '@/components/violation-history/Filters'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,41 +83,18 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
         <p className="text-sm text-muted-foreground mt-1">Tra cứu các ghi nhận vi phạm với bộ lọc linh hoạt.</p>
       </div>
 
-      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6" method="get">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium">Lớp</label>
-          <select name="classId" defaultValue={searchParams?.classId || ''} className="border rounded px-2 py-1 text-sm bg-white">
-            <option value="">-- Tất cả --</option>
-            {(classes || []).map((c: any) => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium">Học sinh</label>
-            <select name="studentId" defaultValue={searchParams?.studentId || ''} className="border rounded px-2 py-1 text-sm bg-white">
-              <option value="">-- Tất cả --</option>
-              {students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.user_name || s.id.slice(0,8)}</option>)}
-            </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium">Tiêu chí</label>
-          <select name="criteriaId" defaultValue={searchParams?.criteriaId || ''} className="border rounded px-2 py-1 text-sm bg-white">
-            <option value="">-- Tất cả --</option>
-            {criteriaList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium">Từ ngày</label>
-          <input type="date" name="start" defaultValue={searchParams?.start || ''} className="border rounded px-2 py-1 text-sm bg-white" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium">Đến ngày</label>
-          <input type="date" name="end" defaultValue={searchParams?.end || ''} className="border rounded px-2 py-1 text-sm bg-white" />
-        </div>
-        <div className="flex items-end gap-2">
-          <button type="submit" className="h-[34px] px-3 rounded bg-indigo-600 text-white text-sm">Lọc</button>
-          <Link href="/violation-history" className="h-[34px] px-3 rounded bg-zinc-200 text-zinc-800 text-sm flex items-center">Xoá lọc</Link>
-        </div>
-      </form>
+      <Filters
+        initial={{
+          classId: searchParams?.classId || '',
+          studentId: searchParams?.studentId || '',
+          criteriaId: searchParams?.criteriaId || '',
+          start: searchParams?.start || '',
+          end: searchParams?.end || '',
+        }}
+        classes={(classes || []).map((c: any) => ({ id: c.id, name: c.name || c.id }))}
+        students={students.map((s) => ({ id: s.id, name: s.full_name || s.user_name || s.id.slice(0,8) }))}
+        criteria={criteriaList.map((c) => ({ id: c.id, name: c.name }))}
+      />
 
       {rowsErr && (
         <div className="border rounded p-3 bg-red-50 text-red-700 text-sm">Lỗi truy vấn records: {String(rowsErr.message || rowsErr)}</div>
@@ -144,7 +122,7 @@ export default async function ViolationHistoryPageContent({ searchParams }: { se
                 const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
                 return (
                   <TableRow key={r.id}>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</TableCell>
                     <TableCell className="text-sm">{r.classes?.name || r.class_id}</TableCell>
                     <TableCell className="text-sm">{fullName}</TableCell>
                     <TableCell className="text-sm">{r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')}</TableCell>

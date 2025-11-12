@@ -142,11 +142,15 @@ export default function NavClient() {
         <button
           onClick={async () => {
             try {
-              await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-              // after logout, refresh nav and redirect to login
+              const supabase = await getSupabase()
+              // Sign out on client so auth state updates immediately
+              try { await supabase.auth.signOut() } catch {}
+              isSignedInRef.current = false
+              usedFallbackRef.current = false
               setInfo(null)
-              router.push('/login')
-            } catch {
+              // Clear server cookies
+              await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+            } finally {
               router.push('/login')
             }
           }}

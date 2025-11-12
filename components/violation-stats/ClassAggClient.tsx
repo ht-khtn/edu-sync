@@ -1,7 +1,7 @@
 "use client"
 
 import React from 'react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,30 @@ export default function ClassAggClient({ classAgg }: { classAgg: AggRow[] }) {
   // Default base score assumed to be 0. If you'd prefer 100, change initial state.
   const [useBase, setUseBase] = useState(false)
   const [baseScoreStr, setBaseScoreStr] = useState('0')
+
+  // Persist toggle + base score in localStorage so user input is remembered
+  const STORAGE_KEY = 'violationStats.settings'
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (typeof parsed.useBase === 'boolean') setUseBase(parsed.useBase)
+        if (typeof parsed.baseScoreStr === 'string') setBaseScoreStr(parsed.baseScoreStr)
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ useBase, baseScoreStr }))
+    } catch (e) {
+      // ignore quota errors
+    }
+  }, [useBase, baseScoreStr])
 
   const baseScore = Number(baseScoreStr) || 0
 
@@ -46,7 +70,8 @@ export default function ClassAggClient({ classAgg }: { classAgg: AggRow[] }) {
           </TableHeader>
           <TableBody>
             {classAgg.map((c) => {
-              const displayed = useBase ? baseScore - Number(c.total || 0) : c.total
+              const totalDeduction = Number(c.total || 0)
+              const displayed = useBase ? baseScore - totalDeduction : totalDeduction
               return (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>

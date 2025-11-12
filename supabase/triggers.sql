@@ -126,6 +126,15 @@ BEGIN
     CREATE POLICY update_own_notifications ON public.notifications
       FOR UPDATE USING (receiver_auth_uid = auth.uid());
   END IF;
+
+  -- Allow inserts via triggers: rows can be inserted for any receiver
+  -- We keep SELECT/UPDATE restricted to the receiver via policies above.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='notifications' AND policyname='insert_notifications_any'
+  ) THEN
+    CREATE POLICY insert_notifications_any ON public.notifications
+      FOR INSERT WITH CHECK (true);
+  END IF;
 END$$;
 
 -- Trigger function: when a record is inserted, notify student and homeroom teacher

@@ -51,7 +51,11 @@ export default function ClassAggClient({ classAgg }: { classAgg: AggRow[] }) {
           <Input
             aria-label="Điểm cơ sở"
             value={baseScoreStr}
-            onChange={(e) => setBaseScoreStr(e.target.value)}
+            onChange={(e) => {
+              setBaseScoreStr(e.target.value)
+              // enable the toggle when user modifies the base score so totals update
+              setUseBase(true)
+            }}
             type="number"
             className="h-8 text-sm"
           />

@@ -28,72 +28,7 @@ export const metadata: Metadata = {
 // Ensure header reflects session immediately after auth changes
 export const dynamic = 'force-dynamic'
 
-export default async function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
-  let user: { id?: string, email?: string } | null = null
-  let hasCC = false
-  let hasSchoolScope = false
-  let ccClassId: string | null = null
-    try {
-      const { getSupabaseServer } = await import('@/lib/supabase-server')
-      const supabase = await getSupabaseServer()
-      const { data } = await supabase.auth.getUser()
-      user = data?.user ?? null
-      // Resolve roles for nav visibility
-      if (user?.id) {
-        const { data: appUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_uid', user.id)
-          .maybeSingle()
-        const appUserId = appUser?.id as string | undefined
-        if (appUserId) {
-          // fetch roles with scope info
-          const { data: roles } = await supabase
-            .from('user_roles')
-            .select('role_id,target,permissions(scope)')
-            .eq('user_id', appUserId)
-
-          const roleList = Array.isArray(roles) ? roles : []
-          // hasSchoolScope: any role with permissions.scope === 'school'
-          hasSchoolScope = roleList.some((r: any) => r?.permissions?.scope === 'school')
-          // hasCC: presence of CC role
-          hasCC = roleList.some((r: any) => r.role_id === 'CC')
-
-          // If user has a CC role but not school-scope, try to resolve their class target id
-          // We'll attach class id as a query param when linking to history
-          if (hasCC && !hasSchoolScope) {
-            const ccRole = roleList.find((r: any) => r.role_id === 'CC' && r.target)
-            if (ccRole?.target) {
-              const { data: cls } = await supabase.from('classes').select('id').eq('name', ccRole.target).maybeSingle()
-              // store resolved class id for building class-scoped history link
-              ccClassId = cls?.id ?? null
-            }
-          }
-          // If hasSchoolScope, mark hasCC true as well if any CC present — but school-scope overrides menu choices
-          if (hasSchoolScope) hasCC = roleList.some((r: any) => r.role_id === 'CC')
-        }
-      }
-  } catch {
-    // Supabase not configured; render public nav only
-  }
-
-  async function logout() {
-    'use server'
-    const { cookies } = await import('next/headers')
-    const { redirect } = await import('next/navigation')
-    const store = await cookies()
-    store.delete('sb-access-token')
-    store.delete('sb-refresh-token')
-    try {
-      const { getSupabaseServer } = await import('@/lib/supabase-server')
-      const supabase = await getSupabaseServer()
-      await supabase.auth.signOut()
-    } catch {}
-    redirect('/login')
-  }
-
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-neutral-50 dark:bg-zinc-900`}>
@@ -101,45 +36,9 @@ export default async function RootLayout({
           <nav className="mx-auto max-w-6xl px-4 py-3 w-full flex items-center justify-between">
             <Link href="/" className="font-semibold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">EduSync</Link>
             <ul className="flex gap-4 text-sm items-center">
-              {user && (hasCC || hasSchoolScope) && (
-                <>
-                  <li>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="text-zinc-700 hover:text-zinc-900 focus:outline-none text-sm">
-                        Quản lý vi phạm ▾
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[180px]">
-                        {hasCC && (
-                          <DropdownMenuItem>
-                            <Link href="/violation-entry" className="block w-full">Nhập vi phạm</Link>
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem>
-                          <Link href={ccClassId && !hasSchoolScope ? `/violation-history?classId=${ccClassId}` : '/violation-history'} className="block w-full">Lịch sử ghi nhận</Link>
-                        </DropdownMenuItem>
-                        {hasSchoolScope && (
-                          <DropdownMenuItem>
-                            <Link href="/violation-stats" className="block w-full">Thống kê vi phạm</Link>
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
-                  {/* show score-entry only for CC (class-scoped roles) */}
-                  {hasCC && !hasSchoolScope && (
-                    <li><Link href="/score-entry">Nhập điểm</Link></li>
-                  )}
-                </>
-              )}
-              {!user ? (
-                <li><Link href="/login">Đăng nhập</Link></li>
-              ) : (
-                <li>
-                  <form action={logout}>
-                    <button type="submit" className="text-zinc-700 hover:text-zinc-900">Đăng xuất</button>
-                  </form>
-                </li>
-              )}
+              {/* Client nav handles auth state and role-based menu so it updates immediately after login */}
+              {/* @ts-expect-error Server -> Client component import: rendered on client */}
+              <NavClient />
             </ul>
           </nav>
         </header>

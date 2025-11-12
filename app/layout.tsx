@@ -94,6 +94,9 @@ export default async function RootLayout({
                         <DropdownMenuItem>
                           <Link href="/violation-history" className="block w-full">Lịch sử ghi nhận</Link>
                         </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Link href="/violation-stats" className="block w-full">Thống kê vi phạm</Link>
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </li>

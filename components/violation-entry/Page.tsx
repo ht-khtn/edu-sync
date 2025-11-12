@@ -110,6 +110,7 @@ export default async function ViolationEntryPageContent({ searchParams }: { sear
                 id: u.id,
                 student_code: u.user_profiles?.[0]?.email ?? String(u.id).slice(0, 8),
                 full_name: u.user_profiles?.[0]?.full_name ?? 'Chưa cập nhật',
+                user_name: u.user_name ?? undefined,
                 class_id: u.class_id,
                 class_name: classMap.get(u.class_id) ?? '',
               }))

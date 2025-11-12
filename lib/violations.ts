@@ -12,6 +12,7 @@ export type Student = {
   id: string
   student_code: string
   full_name: string
+  user_name?: string
   class_id: string
   class_name?: string
 }
@@ -58,7 +59,7 @@ export async function fetchStudentsFromDB(supabase: any, classId?: string): Prom
   try {
     // Join users with user_profiles via RPC or multiple calls
     // Here we do two queries and merge client-side to avoid requiring a view.
-    const usersQ = classId ? supabase.from('users').select('id,class_id').eq('class_id', classId) : supabase.from('users').select('id,class_id')
+  const usersQ = classId ? supabase.from('users').select('id,class_id,user_name').eq('class_id', classId) : supabase.from('users').select('id,class_id,user_name')
     const profilesQ = supabase.from('user_profiles').select('user_id,full_name,email')
 
     const [{ data: users, error: uErr }, { data: profiles, error: pErr }] = await Promise.all([usersQ, profilesQ])
@@ -81,6 +82,7 @@ export async function fetchStudentsFromDB(supabase: any, classId?: string): Prom
         id: u.id,
         student_code: code,
         full_name: fullname,
+        user_name: u.user_name ?? undefined,
         class_id: u.class_id ?? ''
       } as Student
     })

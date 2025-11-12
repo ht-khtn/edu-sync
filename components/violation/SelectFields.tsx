@@ -40,7 +40,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
           </SelectTrigger>
           <SelectContent className="bg-white dark:bg-white">
             {students.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.full_name} {s.class_name ? `(${s.class_name})` : ''}</SelectItem>
+              <SelectItem key={s.id} value={s.id}>{s.full_name && s.full_name !== 'Chưa cập nhật' ? s.full_name : s.user_name}</SelectItem>
             ))}
           </SelectContent>
         </Select>

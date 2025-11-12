@@ -43,9 +43,11 @@ CREATE TABLE public.criteria (
   description text,
   type text DEFAULT 'normal'::text CHECK (type = ANY (ARRAY['normal'::text, 'serious'::text, 'critical'::text])),
   score integer CHECK (score > 0),
-  category text,
+  category text DEFAULT 'student'::text,
   created_at timestamp without time zone DEFAULT now(),
   updated_at timestamp without time zone DEFAULT now(),
+  group text,
+  subgroup text,
   CONSTRAINT criteria_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.grades (

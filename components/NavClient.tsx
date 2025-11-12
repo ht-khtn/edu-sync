@@ -18,7 +18,19 @@ export default function NavClient() {
   const manualLogoutRef = useRef<boolean>(false)
   const lastSignedOutToastAtRef = useRef<number>(0)
 
-  async function fetchInfo() {
+  // Rate-limit + dedupe server session fetches to avoid bursts
+  const fetchingRef = useRef<boolean>(false)
+  const lastFetchAtRef = useRef<number>(0)
+  const MIN_FETCH_INTERVAL = 3000 // ms
+
+  async function fetchInfo(force = false) {
+    const now = Date.now()
+    if (!force) {
+      if (fetchingRef.current) return
+      if (now - lastFetchAtRef.current < MIN_FETCH_INTERVAL) return
+    }
+    fetchingRef.current = true
+    lastFetchAtRef.current = now
     try {
       const res = await fetch('/api/session', { cache: 'no-store' })
       const json = await res.json()
@@ -34,6 +46,7 @@ export default function NavClient() {
       if (!isSignedInRef.current) setInfo(null)
     }
     setLoading(false)
+    fetchingRef.current = false
   }
 
   async function deriveRolesClientFallback() {
@@ -76,7 +89,7 @@ export default function NavClient() {
         const { data: initial } = await supabase.auth.getUser()
         isSignedInRef.current = !!initial?.user
 
-        await fetchInfo()
+  await fetchInfo(true)
         if (!info?.user && isSignedInRef.current) {
           // If server not ready but client is signed in, use fallback once
           await deriveRolesClientFallback()
@@ -86,7 +99,7 @@ export default function NavClient() {
           if (event === 'SIGNED_IN') {
             isSignedInRef.current = true
             // Prefer server; fallback only if still null
-            fetchInfo().then(async () => {
+            fetchInfo(true).then(async () => {
               if (!info?.user) await deriveRolesClientFallback()
             })
           } else if (event === 'SIGNED_OUT') {
@@ -162,6 +175,7 @@ export default function NavClient() {
               isSignedInRef.current = false
               usedFallbackRef.current = false
               setInfo(null)
+              // Single server logout request (no repeat) + toast
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
               toast.success('Đăng xuất thành công')
             } catch (e: any) {

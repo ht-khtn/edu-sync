@@ -1,21 +1,28 @@
-// Minimal Supabase client helper
-// Usage (client-side): import { getSupabase } from '@/lib/supabase' and call inside event handlers or effects
+// Minimal Supabase client helper (singleton)
+// Avoid creating many Supabase clients (each would register auth listeners & refresh timers → request explosion)
+// Usage: import { getSupabase } from '@/lib/supabase'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-export async function getSupabase() {
+let browserClient: SupabaseClient | null = null
+
+export async function getSupabase(): Promise<SupabaseClient> {
+	if (browserClient) return browserClient
+	if (typeof window === 'undefined') {
+		throw new Error('getSupabase() should only be called client-side. Use getSupabaseServer() on the server.')
+	}
 	const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 	const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-
 	if (!supabaseUrl || !supabaseAnonKey) {
-		throw new Error(
-			'Supabase client not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your .env.local'
-		)
+		throw new Error('Supabase client not configured. Set NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY.')
 	}
-
-  // Dynamically import to avoid evaluating createClient during server-side prerender/build
-  const { createClient } = await import('@supabase/supabase-js')
-  
-  return createClient(supabaseUrl, supabaseAnonKey)
+	browserClient = createClient(supabaseUrl, supabaseAnonKey, {
+		auth: {
+			// We manage session via cookies + client; keep defaults
+			persistSession: true,
+			autoRefreshToken: true,
+		},
+	})
+	return browserClient
 }
 
 export default getSupabase

@@ -59,6 +59,7 @@ export default function LoginForm() {
           const res = await fetch('/api/auth/set-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ access_token, refresh_token, expires_in }),
           })
           if (!res.ok) {

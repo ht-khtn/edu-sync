@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 
 import getSupabaseServer from '@/lib/supabase-server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const supabase = await getSupabaseServer()
@@ -31,8 +33,11 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId })
+    return NextResponse.json(
+      { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
   } catch (err) {
-    return NextResponse.json({ user: null })
+    return NextResponse.json({ user: null }, { headers: { 'Cache-Control': 'no-store' } })
   }
 }

@@ -68,11 +68,18 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
           const res = await fetch('/api/records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify(payload),
           })
           const data = await res.json()
           if (!res.ok) {
-            toast.error(data?.error || 'Lỗi khi ghi nhận')
+            if (res.status === 401) {
+              toast.error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.')
+            } else if (res.status === 403) {
+              toast.error('Bạn không có quyền ghi nhận cho lớp này.')
+            } else {
+              toast.error(data?.error || 'Lỗi khi ghi nhận')
+            }
           } else {
             toast.success('Đã gửi ghi nhận. Danh sách sẽ được làm mới khi hoàn tất.')
           }

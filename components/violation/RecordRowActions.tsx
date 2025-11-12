@@ -21,7 +21,8 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
   const router = useRouter()
   const [openEdit, setOpenEdit] = useState(false)
   const [openDelete, setOpenDelete] = useState(false)
-  const [score, setScore] = useState<number | ''>(typeof initialScore === 'number' ? initialScore : '')
+  // Score is not editable per request; keep initial for display only if needed
+  const [score] = useState<number | ''>(typeof initialScore === 'number' ? initialScore : '')
   const [note, setNote] = useState<string>(initialNote ?? '')
   const [studentId, setStudentId] = useState<string | ''>(initialStudentId ?? '')
   const [criteriaId, setCriteriaId] = useState<string | ''>(initialCriteriaId ?? '')
@@ -33,8 +34,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
     setLoading(true)
     try {
       const supabase = await getSupabase()
-      const payload: any = { note: note ?? null }
-      if (score !== '') payload.score = Number(score)
+  const payload: any = { note: note ?? null }
       if (studentId) payload.student_id = studentId
       if (criteriaId) payload.criteria_id = criteriaId
 
@@ -136,10 +136,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
             <DialogTitle>Chỉnh sửa ghi nhận</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <div className="grid gap-1">
-              <label className="text-xs text-muted-foreground">Điểm</label>
-              <Input type="number" value={score} onChange={(e) => setScore(e.target.value === '' ? '' : Number(e.target.value))} />
-            </div>
+            {/* Score is not editable */}
 
             <div className="grid gap-1">
               <label className="text-xs text-muted-foreground">Lỗi vi phạm</label>

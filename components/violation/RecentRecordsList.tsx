@@ -42,15 +42,19 @@ export default async function RecentRecordsList() {
         const timeStr = created.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })
         const dateStr = created.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
         return (
-          <div key={r.id} className="bg-white rounded-lg p-3 mb-3 shadow-sm flex items-center gap-4">
-            <div className="w-16 text-sm font-medium text-red-600 text-right">{r.score}</div>
-            <div className="flex-1 min-w-0 grid grid-cols-[1fr,1fr,120px] gap-4 items-center">
-              <div className="truncate text-sm font-semibold text-foreground">{criteriaLabel}</div>
-              <div className="truncate text-sm text-muted-foreground">{fullName}</div>
-              <div className="text-xs text-muted-foreground text-right tabular-nums">{dateStr} {timeStr}</div>
-            </div>
-            <div className="flex-none">
-              <RecordRowActions id={r.id} initialScore={r.score} initialNote={r.note} initialStudentId={r.student_id} initialCriteriaId={r.criteria?.id} classId={r.class_id} />
+          <div key={r.id} className="bg-white rounded-lg p-3 mb-3 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-16 text-sm font-medium text-red-600 text-right flex-shrink-0">{r.score}</div>
+              <div className="flex-1 min-w-0 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-sm font-semibold text-foreground">{criteriaLabel}</div>
+                </div>
+                <div className="w-64 truncate text-sm text-muted-foreground">{fullName}</div>
+                <div className="w-40 text-xs text-muted-foreground text-right tabular-nums">{dateStr} {timeStr}</div>
+              </div>
+              <div className="flex-none ml-2">
+                <RecordRowActions id={r.id} initialNote={r.note} initialStudentId={r.student_id} initialCriteriaId={r.criteria?.id} classId={r.class_id} />
+              </div>
             </div>
           </div>
         )

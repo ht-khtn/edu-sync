@@ -41,9 +41,9 @@ export default async function RecentRecordsList() {
           <div key={r.id} className="flex items-start gap-3 px-4 py-3 group">
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium truncate max-w-[200px] sm:max-w-[260px]">{fullName}</span>
-                <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full">{criteriaLabel}</span>
-                <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleTimeString()}</span>
+                <span className="text-sm font-semibold text-foreground truncate max-w-[240px] sm:max-w-[320px]">{criteriaLabel}</span>
+                <span className="text-sm text-muted-foreground truncate">{fullName}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{new Date(r.created_at).toLocaleTimeString()}</span>
               </div>
               <div className="mt-1 text-sm flex flex-wrap items-center gap-3">
                 <span className="font-medium text-red-600">{r.score}</span>

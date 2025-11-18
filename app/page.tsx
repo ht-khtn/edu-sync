@@ -4,7 +4,7 @@ import getSupabaseServer from "@/lib/supabase-server";
 export const dynamic = "force-dynamic";
 
 export default async function RootPage() {
-  redirect("/admin");
+  redirect("/client");
   return (
     <div
       className="min-h-screen flex items-center justify-center"

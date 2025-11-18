@@ -1,5 +1,5 @@
 import getSupabaseServer from '@/lib/supabase-server'
-import { redirect } from 'next/navigation'
+// import { redirect } from 'next/navigation'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 
 export const dynamic = 'force-dynamic'
@@ -10,18 +10,20 @@ export default async function MyViolationsPageContent() {
   if (!supabase) return <p className="text-sm text-red-600">Không khởi tạo được Supabase server.</p>
 
   // Auth
-  const { data: userRes } = await supabase.auth.getUser()
-  const authUid = userRes?.user?.id
-  if (!authUid) redirect('/login')
-  const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
-  const appUserId = appUser?.id as string | undefined
-  if (!appUserId) redirect('/login')
+  // const { data: userRes } = await supabase.auth.getUser()
+  // const authUid = userRes?.user?.id
+  // if (!authUid) redirect('/login')
+  // const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
+  // const appUserId = appUser?.id as string | undefined
+  // if (!appUserId) redirect('/login')
 
-  // Role gate: allow only S, CC, or YUM
-  const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
-  const roleList = Array.isArray(roles) ? roles : []
-  const allowed = roleList.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
-  if (!allowed) redirect('/')
+  // // Role gate: allow only S, CC, or YUM
+  // const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
+  // const roleList = Array.isArray(roles) ? roles : []
+  // const allowed = roleList.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
+  // if (!allowed) redirect('/')
+
+  const appUserId = 'mock-user-id' // Mock for development
 
   // Fetch own violations
   const { data: rows, error: rowsErr } = await supabase
@@ -66,7 +68,7 @@ export default async function MyViolationsPageContent() {
                   <TableCell className="text-sm">{r.classes?.name || '—'}</TableCell>
                   <TableCell className="text-sm">{r.criteria?.name || '—'}</TableCell>
                   <TableCell className="text-sm font-medium">{r.score}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate" title={r.note}>{r.note || '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-60 truncate" title={r.note}>{r.note || '—'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

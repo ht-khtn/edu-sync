@@ -169,26 +169,26 @@ export default function NavClient() {
               <DropdownMenuContent align="end" className="min-w-[180px]">
                 {hasCC && (
                   <DropdownMenuItem>
-                    <Link href="/violation-entry" className="block w-full">Nhập vi phạm</Link>
+                    <Link href="/admin/violation-entry" className="block w-full">Nhập vi phạm</Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem>
-                  <Link href={ccClassId && !hasSchoolScope ? `/violation-history?classId=${ccClassId}` : '/violation-history'} className="block w-full">Lịch sử ghi nhận</Link>
+                  <Link href={ccClassId && !hasSchoolScope ? `/admin/violation-history?classId=${ccClassId}` : '/admin/violation-history'} className="block w-full">Lịch sử ghi nhận</Link>
                 </DropdownMenuItem>
                 {hasSchoolScope && (
                   <DropdownMenuItem>
-                    <Link href="/violation-stats" className="block w-full">Thống kê vi phạm</Link>
+                    <Link href="/admin/violation-stats" className="block w-full">Thống kê vi phạm</Link>
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
           </li>
-          {hasCC && !hasSchoolScope && <li><Link href="/score-entry">Nhập điểm</Link></li>}
+          {hasCC && !hasSchoolScope && <li><Link href="/admin/score-entry">Nhập điểm</Link></li>}
         </>
       )}
       {(selfRoles?.hasSelf || hasCC) && (
         <li>
-          <Link href="/my-violations" className="text-sm text-zinc-700 hover:text-zinc-900">Vi phạm của tôi</Link>
+          <Link href="/client/my-violations" className="text-sm text-zinc-700 hover:text-zinc-900">Vi phạm của tôi</Link>
         </li>
       )}
       <li>
@@ -204,7 +204,6 @@ export default function NavClient() {
               usedFallbackRef.current = false
               setInfo(null)
               setSelfRoles(null)
-              // Single server logout request (no repeat) + toast
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
               toast.success('Đăng xuất thành công')
             } catch (e: any) {
@@ -212,7 +211,6 @@ export default function NavClient() {
             } finally {
               setLoading(false)
               router.replace('/login')
-              // Reset the manual flag shortly after navigation
               setTimeout(() => { manualLogoutRef.current = false }, 1000)
             }
           }}

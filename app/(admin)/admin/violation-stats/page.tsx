@@ -3,7 +3,7 @@ import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListe
 
 export const dynamic = 'force-dynamic'
 
-export default function Page() {
+export default function ViolationStatsPage() {
   return (
     <>
       <RecordsRealtimeListener />

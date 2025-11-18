@@ -3,7 +3,11 @@ import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListe
 
 export const dynamic = 'force-dynamic'
 
-export default function ViolationHistoryPage({ searchParams }: { searchParams?: any }) {
+export default function ViolationHistoryPage({ 
+  searchParams 
+}: { 
+  searchParams?: any 
+}) {
   return (
     <>
       <ViolationHistoryPageContent searchParams={searchParams} />

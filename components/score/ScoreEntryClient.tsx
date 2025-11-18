@@ -1,12 +1,24 @@
-"use client"
-import React, { useState } from "react";
+"use client";
+import React, { useState, useCallback } from "react";
 import CSVUploader from "@/components/score/CSVUploader";
 import ScorePreviewTable from "@/components/score/ScorePreviewTable";
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { ParsedRow } from "@/lib/csv";
 import { submitBatchMock } from "@/lib/score";
 
@@ -16,7 +28,7 @@ export default function ScoreEntryClient() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
 
-  async function handleSubmit() {
+  const handleSubmit = useCallback(async () => {
     if (!rows.length) return;
     setSubmitting(true);
     setResult(null);
@@ -32,57 +44,73 @@ export default function ScoreEntryClient() {
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [rows, activityId]);
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Thiết lập batch</CardTitle>
+      <Card className="shadow-sm">
+        <CardHeader className="border-b bg-muted/30">
+          <CardTitle className="text-xl font-semibold">
+            Thiết lập batch
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <section>
-              <Label className="mb-1">Chọn hoạt động</Label>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="activity-select">Chọn hoạt động</Label>
               <Select value={activityId} onValueChange={setActivityId}>
-                <SelectTrigger>
+                <SelectTrigger id="activity-select">
                   <SelectValue placeholder="Chọn hoạt động" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="activity-demo-1">Hoạt động: Vệ sinh lớp - 2025</SelectItem>
-                  <SelectItem value="activity-demo-2">Hoạt động: Tình nguyện - 2025</SelectItem>
+                  <SelectItem value="activity-demo-1">
+                    Hoạt động: Vệ sinh lớp - 2025
+                  </SelectItem>
+                  <SelectItem value="activity-demo-2">
+                    Hoạt động: Tình nguyện - 2025
+                  </SelectItem>
                 </SelectContent>
               </Select>
-            </section>
+            </div>
 
-            <section>
-              <Label className="mb-1">Tùy chọn khác</Label>
-              <Input placeholder="Ghi chú batch (tùy chọn)" />
-            </section>
-          </section>
+            <div className="space-y-2">
+              <Label htmlFor="batch-note">Tùy chọn khác</Label>
+              <Input id="batch-note" placeholder="Ghi chú batch (tùy chọn)" />
+            </div>
+          </div>
 
-          <section className="mt-4">
-            <CSVUploader onParsed={setRows} />
-          </section>
+          <CSVUploader onParsed={setRows} />
         </CardContent>
 
-        <CardFooter>
-          <footer className="w-full flex items-center justify-end gap-3">
-            <Button variant="outline" size="sm">Hủy</Button>
-            <Button onClick={handleSubmit} disabled={submitting || rows.length === 0} size="sm">
-              {submitting ? "Đang gửi..." : "Gửi batch"}
-            </Button>
-          </footer>
+        <CardFooter className="flex justify-end gap-3">
+          <Button variant="outline" size="sm">
+            Hủy
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || rows.length === 0}
+            size="sm"
+          >
+            {submitting ? "Đang gửi..." : "Gửi batch"}
+          </Button>
         </CardFooter>
       </Card>
 
-      <section className="mt-6">
-        <ScorePreviewTable rows={rows} setRows={setRows} />
-      </section>
+      {rows.length > 0 && (
+        <div className="mt-6">
+          <ScorePreviewTable rows={rows} setRows={setRows} />
+        </div>
+      )}
 
-      <section className="mt-4">
-        {result && <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>}
-      </section>
+      {result && (
+        <Card className="mt-4">
+          <CardContent className="pt-6">
+            <pre className="text-sm overflow-x-auto">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

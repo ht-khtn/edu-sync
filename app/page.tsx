@@ -1,45 +1,50 @@
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { redirect } from "next/navigation";
+import getSupabaseServer from "@/lib/supabase-server";
 
-export default async function HomePage() {
-  // Resolve auth on the server to hide the login button when already signed in
-  let user: { id?: string } | null = null
-  try {
-    const { getSupabaseServer } = await import('@/lib/supabase-server')
-    const supabase = await getSupabaseServer()
-    const { data } = await supabase.auth.getUser()
-    user = data?.user ?? null
-  } catch {
-    // Supabase not configured; render as public
-    user = null
-  }
+export const dynamic = "force-dynamic";
 
+export default async function RootPage() {
+  redirect("/admin");
   return (
-    <>
-      <section className="mx-auto max-w-3xl min-h-[70vh] px-4 flex flex-col items-center justify-center text-center">
-        <div className="space-y-2">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">EduSync</h1>
-          <p className="text-base sm:text-lg text-muted-foreground">
-            Hệ thống hỗ trợ quản lý phong trào và thi đua dành cho học sinh THPT.
-          </p>
-        </div>
-        <div className="mt-8 flex flex-col sm:flex-row items-center gap-3">
-          {!user && (
-            <Button asChild>
-              <Link href="/login">Đăng nhập</Link>
-            </Button>
-          )}
-          <Button asChild variant="outline">
-            <Link href="#guide">Xem hướng dẫn</Link>
-          </Button>
-        </div>
-      </section>
+    <div
+      className="min-h-screen flex items-center justify-center"
+      suppressHydrationWarning
+    >
+      <p>Đang chuyển hướng...</p>
+    </div>
+  );
+  // try {
+  //   const supabase = await getSupabaseServer();
+  //   const { data: userRes } = await supabase.auth.getUser();
+  //   const authUid = userRes?.user?.id;
 
-      <section id="guide" className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <h2 className="text-lg font-semibold tracking-tight">Hướng dẫn</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Nội dung hướng dẫn sẽ được cập nhật.</p>
-      </section>
-    </>
-  )
+  //   if (authUid) {
+  //     const { data: appUser } = await supabase
+  //       .from("users")
+  //       .select("id")
+  //       .eq("auth_uid", authUid)
+  //       .maybeSingle();
+
+  //     const appUserId = appUser?.id as string | undefined;
+
+  //     if (appUserId) {
+  //       const { data: roles } = await supabase
+  //         .from("user_roles")
+  //         .select("role_id")
+  //         .eq("user_id", appUserId);
+
+  //       const hasAdminAccess =
+  //         Array.isArray(roles) &&
+  //         roles.some((r) => r.role_id === "CC" || r.role_id === "Admin");
+
+  //       if (hasAdminAccess) {
+  //         redirect("/admin");
+  //       }
+  //     }
+  //   }
+
+  //   redirect("/admin");
+  // } catch {
+  //   redirect("/admin");
+  // }
 }
-

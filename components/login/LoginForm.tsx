@@ -6,10 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormItem, FormControl, FormLabel, FormMessage, FormField } from "@/components/ui/form";
+import {
+  Form,
+  FormItem,
+  FormControl,
+  FormLabel,
+  FormMessage,
+  FormField,
+} from "@/components/ui/form";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
-import { toast } from 'sonner'
+import { toast } from "sonner";
 
 type LoginValues = {
   email: string;
@@ -22,7 +29,7 @@ export default function LoginForm() {
     defaultValues: { email: "", password: "", remember: false },
   });
   const { control, watch } = form;
-  const watched = watch(["email", "password"])
+  const watched = watch(["email", "password"]);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,49 +51,50 @@ export default function LoginForm() {
         email: values.email.trim(),
         password: values.password,
       });
+      console.log("Data:", data, "Error:", error);
       if (error) {
         setError(error.message);
-        toast.error('Đăng nhập thất bại')
+        toast.error("Đăng nhập thất bại");
       } else {
         // Persist session to server-side cookies so server components can read auth state
-        const access_token = (data as any)?.session?.access_token
-        const refresh_token = (data as any)?.session?.refresh_token
-        const expires_in = (data as any)?.session?.expires_in
+        const access_token = (data as any)?.session?.access_token;
+        const refresh_token = (data as any)?.session?.refresh_token;
+        const expires_in = (data as any)?.session?.expires_in;
         // persist session preference if needed
         if (values.remember) {
           // custom logic can be added here
         }
         // Tighten login: wait for /api/auth/set-session to succeed before navigation/refresh
         if (access_token && refresh_token) {
-          const res = await fetch('/api/auth/set-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+          const res = await fetch("/api/auth/set-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({ access_token, refresh_token, expires_in }),
-          })
+          });
           if (!res.ok) {
-            setError('Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.')
-            toast.error('Thiết lập phiên thất bại')
-            return
+            setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
+            toast.error("Thiết lập phiên thất bại");
+            return;
           }
         }
         // Now that cookies are set on the server, refresh and navigate
-        router.refresh()
-        router.push("/")
-        toast.success('Đăng nhập thành công')
+        router.refresh();
+        router.push("/");
+        toast.success("Đăng nhập thành công");
       }
     } catch (err: any) {
       setError(err?.message ?? "Lỗi không xác định");
-      toast.error('Đăng nhập lỗi: ' + (err?.message || 'Không xác định'))
+      toast.error("Đăng nhập lỗi: " + (err?.message || "Không xác định"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto overflow-hidden border border-neutral-200/60 shadow-lg bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+    <Card className="w-full max-w-md mx-auto overflow-hidden border border-neutral-200/60 shadow-lg bg-white/90 backdrop-blur supports-backdrop-filter:bg-white/70">
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+        <CardTitle className="text-2xl font-semibold bg-clip-text text-transparent bg-linear-to-r from-indigo-600 to-purple-600">
           Đăng nhập
         </CardTitle>
         <p className="text-sm text-neutral-600">
@@ -95,7 +103,11 @@ export default function LoginForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-5">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            noValidate
+            className="space-y-5"
+          >
             <FormField
               control={control}
               name="email"
@@ -146,7 +158,11 @@ export default function LoginForm() {
                     className="absolute inset-y-0 right-0 h-auto px-3 text-neutral-500 hover:text-neutral-700"
                     tabIndex={-1}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
                   </Button>
                   <FormMessage />
                 </FormItem>
@@ -184,7 +200,7 @@ export default function LoginForm() {
                 aria-live="assertive"
                 className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-700"
               >
-                <AlertCircle className="h-4 w-4 mt-[2px] flex-shrink-0" />
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 {error}
               </p>
             )}
@@ -194,12 +210,16 @@ export default function LoginForm() {
               disabled={loading || !watched[0] || !watched[1]}
               className="w-full font-medium bg-indigo-600 text-white border border-indigo-700 hover:bg-indigo-700"
             >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Đăng nhập
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Đăng
+              nhập
             </Button>
 
             <FormItem className="pt-1 text-center text-xs sm:text-sm text-neutral-600">
               Chưa có tài khoản?{" "}
-              <a href="/register" className="text-indigo-600 hover:text-indigo-500 font-medium hover:underline">
+              <a
+                href="/register"
+                className="text-indigo-600 hover:text-indigo-500 font-medium hover:underline"
+              >
                 Đăng ký ngay
               </a>
             </FormItem>

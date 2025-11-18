@@ -101,7 +101,6 @@ export function filterStudentsByClass(students: Student[], classIds: string[] | 
 
 function genId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    // @ts-ignore
     return crypto.randomUUID()
   }
   return Math.random().toString(36).slice(2)

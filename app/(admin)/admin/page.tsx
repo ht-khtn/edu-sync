@@ -11,26 +11,26 @@ export const dynamic = "force-dynamic";
 
 const dashboardCards = [
   {
-    title: "Leaderboard",
-    description: "View student rankings",
+    title: "Bảng xếp hạng",
+    description: "Xem bảng xếp hạng của các lớp trong khối",
     icon: Trophy,
     href: "/admin/leaderboard",
   },
   {
-    title: "Violation Entry",
-    description: "Record new violations",
+    title: "Ghi nhận vi phạm",
+    description: "Ghi nhận các vi phạm mới",
     icon: FileText,
     href: "/admin/violation-entry",
   },
   {
-    title: "Violation History",
-    description: "Browse historical records",
+    title: "Lịch sử vi phạm",
+    description: "Xem lại các vi phạm đã ghi nhận",
     icon: Users,
     href: "/admin/violation-history",
   },
   {
-    title: "Statistics",
-    description: "Analyze violation trends",
+    title: "Thống kê",
+    description: "Phân tích xu hướng vi phạm",
     icon: BarChart3,
     href: "/admin/violation-stats",
   },

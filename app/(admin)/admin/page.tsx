@@ -5,11 +5,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { BarChart3, FileText, Trophy, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
+import { getServerRoles, summarizeRoles } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
-const dashboardCards = [
+type DashboardCard = {
+  title: string
+  description: string
+  icon: LucideIcon
+  href: string
+  requires?: "violation-entry" | "violation-stats"
+}
+
+const baseDashboardCards: ReadonlyArray<DashboardCard> = [
   {
     title: "Bảng xếp hạng",
     description: "Xem bảng xếp hạng của các lớp trong khối",
@@ -21,6 +31,7 @@ const dashboardCards = [
     description: "Ghi nhận các vi phạm mới",
     icon: FileText,
     href: "/admin/violation-entry",
+    requires: "violation-entry",
   },
   {
     title: "Lịch sử vi phạm",
@@ -33,10 +44,19 @@ const dashboardCards = [
     description: "Phân tích xu hướng vi phạm",
     icon: BarChart3,
     href: "/admin/violation-stats",
+    requires: "violation-stats",
   },
 ] as const;
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
+  const roles = await getServerRoles();
+  const summary = summarizeRoles(roles);
+  const dashboardCards = baseDashboardCards.filter((card) => {
+    if (card.requires === "violation-entry") return summary.canEnterViolations;
+    if (card.requires === "violation-stats") return summary.canViewViolationStats;
+    return true;
+  });
+
   return (
     <div className="space-y-6" suppressHydrationWarning>
       <div suppressHydrationWarning>
@@ -50,7 +70,7 @@ export default function AdminDashboardPage() {
         className="grid gap-4 md:grid-cols-2 lg:grid-cols-4"
         suppressHydrationWarning
       >
-        {dashboardCards.map((card) => {
+  {dashboardCards.map((card) => {
           const Icon = card.icon;
           return (
             <Link key={card.href} href={card.href} className="group">

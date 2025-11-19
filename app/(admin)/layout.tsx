@@ -23,14 +23,17 @@ export default async function AdminLayout({
   if (!appUserId) return redirect('/login')
 
   const roles = await getServerRoles()
-  const { isStudentOnly } = summarizeRoles(roles)
-  if (isStudentOnly) return redirect('/client')
+  const summary = summarizeRoles(roles)
+  if (summary.isStudentOnly) return redirect('/client')
 
   const user = { id: appUserId }
 
   return (
     <SidebarProvider defaultOpen={true} suppressHydrationWarning>
-      <AdminSidebar />
+      <AdminSidebar
+        canEnterViolations={summary.canEnterViolations}
+        canViewViolationStats={summary.canViewViolationStats}
+      />
       <SidebarInset suppressHydrationWarning>
         <AdminHeader user={user} />
         <AdminMainContent>{children}</AdminMainContent>

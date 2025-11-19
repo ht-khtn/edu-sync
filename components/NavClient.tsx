@@ -167,7 +167,7 @@ export default function NavClient() {
                 Quản lý vi phạm ▾
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[180px]">
-                {hasCC && (
+                {hasCC && !hasSchoolScope && (
                   <DropdownMenuItem>
                     <Link href="/admin/violation-entry" className="block w-full">Nhập vi phạm</Link>
                   </DropdownMenuItem>
@@ -183,7 +183,6 @@ export default function NavClient() {
               </DropdownMenuContent>
             </DropdownMenu>
           </li>
-          {hasCC && !hasSchoolScope && <li><Link href="/admin/score-entry">Nhập điểm</Link></li>}
         </>
       )}
       {(selfRoles?.hasSelf || hasCC) && (

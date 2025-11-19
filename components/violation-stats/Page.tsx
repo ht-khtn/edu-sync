@@ -1,4 +1,4 @@
-import { getServerAuthContext, getServerRoles } from "@/lib/server-auth";
+import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 import {
   Table,
   TableHeader,
@@ -28,8 +28,10 @@ export default async function ViolationStatsPageContent() {
 
   // Require at least one role with permissions.scope = 'school'
   const roles = await getServerRoles();
-  const hasSchoolScope = roles.some((r: any) => r?.permissions?.scope === "school");
-  if (!hasSchoolScope) redirect("/");
+  const summary = summarizeRoles(roles);
+  if (!summary.canViewViolationStats) {
+    return redirect(summary.canEnterViolations ? "/admin/violation-entry" : "/admin");
+  }
 
   // Fetch minimal record fields for aggregation; exclude soft-deleted
   const { data: recs, error } = await supabase

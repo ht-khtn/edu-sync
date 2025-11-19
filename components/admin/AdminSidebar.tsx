@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Trophy,
   FileText,
-  ClipboardList,
   BarChart3,
   History,
 } from "lucide-react";
@@ -26,7 +25,19 @@ import {
 
 import type { LucideIcon } from "lucide-react";
 
-const adminNavItems = [
+type AdminSidebarProps = {
+  canEnterViolations: boolean
+  canViewViolationStats: boolean
+}
+
+type NavItem = {
+  title: string
+  href: string
+  icon: LucideIcon
+  requires?: "violation-entry" | "violation-stats"
+}
+
+const baseAdminNavItems: ReadonlyArray<NavItem> = [
   {
     title: "Bảng điều khiển",
     href: "/admin",
@@ -41,11 +52,7 @@ const adminNavItems = [
     title: "Nhập vi phạm",
     href: "/admin/violation-entry",
     icon: FileText,
-  },
-  {
-    title: "Nhập điểm",
-    href: "/admin/score-entry",
-    icon: ClipboardList,
+    requires: "violation-entry",
   },
   {
     title: "Lịch sử vi phạm",
@@ -56,15 +63,19 @@ const adminNavItems = [
     title: "Thống kê vi phạm",
     href: "/admin/violation-stats",
     icon: BarChart3,
+    requires: "violation-stats",
   },
-] as const satisfies ReadonlyArray<{
-  title: string;
-  href: string;
-  icon: LucideIcon;
-}>;
+] as const;
 
-function AdminSidebarComponent() {
+function AdminSidebarComponent({ canEnterViolations, canViewViolationStats }: AdminSidebarProps) {
   const pathname = usePathname();
+  const adminNavItems = React.useMemo(() => {
+    return baseAdminNavItems.filter((item) => {
+      if (item.requires === "violation-entry") return canEnterViolations;
+      if (item.requires === "violation-stats") return canViewViolationStats;
+      return true;
+    });
+  }, [canEnterViolations, canViewViolationStats]);
 
   return (
     <Sidebar

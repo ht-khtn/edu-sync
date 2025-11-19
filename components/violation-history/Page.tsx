@@ -1,4 +1,4 @@
-import { getServerAuthContext, getServerRoles } from "@/lib/server-auth";
+import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 import { redirect } from "next/navigation";
 import { fetchCriteriaFromDB, fetchStudentsFromDB } from "@/lib/violations";
 import { getAllowedClassIdsForView } from "@/lib/rbac";
@@ -34,12 +34,10 @@ export default async function ViolationHistoryPageContent({
   const { supabase, appUserId } = await getServerAuthContext();
   if (!appUserId) redirect("/login");
   // Fetch roles with scope info so we allow both CC (class-committee) and school-scoped roles
-  const roleList = await getServerRoles();
-  const hasCC = roleList.some((r: any) => r.role_id === "CC");
-  const hasSchoolScope = roleList.some(
-    (r: any) => r?.permissions?.scope === "school"
-  );
-  if (!hasCC && !hasSchoolScope) redirect("/");
+  const summary = summarizeRoles(await getServerRoles());
+  if (!summary.hasCC && !summary.hasSchoolScope) {
+    return redirect("/");
+  }
 
   // Allowed classes for viewing (null => all)
   const allowedViewClassIds = await getAllowedClassIdsForView(

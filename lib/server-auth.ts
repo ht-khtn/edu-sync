@@ -30,32 +30,74 @@ export const getServerAuthContext = cache(async (): Promise<ServerAuthContext> =
   return { supabase, authUid, appUserId }
 })
 
-export type RoleRow = { role_id: string | null; permissions?: { scope?: string | null } | null; target?: string | null }
+export type RoleRow = {
+  role_id: string | null
+  permissions?: { scope?: string | null } | null
+  target?: string | null
+}
 
 const STUDENT_ROLES = new Set(['S', 'YUM'])
+const normalizeScope = (scope?: string | null) => (scope ?? '').trim().toLowerCase()
 
 export const normalizeRoleId = (roleId: string | null | undefined) =>
   (roleId ?? '').trim().toUpperCase()
 
 export const getServerRoles = cache(async (): Promise<RoleRow[]> => {
-  const { supabase, appUserId } = await getServerAuthContext()
-  if (!appUserId) return []
-  const { data: roles } = await supabase
+  const { supabase, authUid } = await getServerAuthContext()
+  if (!authUid) return []
+  const { data: roles, error } = await supabase
     .from('user_roles')
-    .select('role_id, target, permissions(scope)')
-    .eq('user_id', appUserId)
-  return Array.isArray(roles) ? (roles as RoleRow[]) : []
+    .select('role_id, target, permissions(scope), users!inner(auth_uid)')
+    .eq('users.auth_uid', authUid)
+
+  if (error) return []
+  if (!Array.isArray(roles)) return []
+  return roles as RoleRow[]
 })
 
-export function summarizeRoles(roleRows: RoleRow[]) {
+export type RoleSummary = {
+  roleIds: string[]
+  hasElevatedRole: boolean
+  isStudentOnly: boolean
+  hasSchoolScope: boolean
+  hasClassScope: boolean
+  hasCC: boolean
+  canEnterViolations: boolean
+  canViewViolationStats: boolean
+}
+
+export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
   const roleIds = roleRows
     .map((r) => normalizeRoleId(r.role_id))
     .filter((id) => id.length > 0)
 
-  const hasElevatedRole = roleIds.some((id) => !STUDENT_ROLES.has(id))
-  const isStudentOnly = roleIds.length === 0 || !hasElevatedRole
+  let hasSchoolScope = false
+  let hasClassScope = false
+  for (const row of roleRows) {
+    const scope = normalizeScope(row.permissions?.scope)
+    if (scope === 'school') hasSchoolScope = true
+    if (scope === 'class') hasClassScope = true
+  }
 
-  return { roleIds, hasElevatedRole, isStudentOnly }
+  const hasCC = roleIds.includes('CC')
+  const hasExplicitElevatedRole = roleIds.some((id) => !STUDENT_ROLES.has(id))
+  const hasAnyScope = hasSchoolScope || hasClassScope
+  const hasElevatedRole = hasExplicitElevatedRole || hasAnyScope
+  const isStudentOnly = !hasElevatedRole
+
+  const canEnterViolations = hasCC && !hasSchoolScope
+  const canViewViolationStats = hasSchoolScope
+
+  return {
+    roleIds,
+    hasElevatedRole,
+    isStudentOnly,
+    hasSchoolScope,
+    hasClassScope,
+    hasCC,
+    canEnterViolations,
+    canViewViolationStats,
+  }
 }
 
 export default getServerAuthContext

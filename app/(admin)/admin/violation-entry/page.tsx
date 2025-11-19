@@ -1,6 +1,8 @@
+import { redirect } from 'next/navigation'
 import { ViolationEntryPageContent } from '@/components/violation-entry/ViolationEntryComponents'
 import QueryToasts from '@/components/common/QueryToasts'
 import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListener'
+import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,6 +11,14 @@ export default async function ViolationEntryPage({
 }: { 
   searchParams?: { ok?: string, error?: string } 
 }) {
+  const { appUserId } = await getServerAuthContext()
+  if (!appUserId) return redirect('/login')
+
+  const summary = summarizeRoles(await getServerRoles())
+  if (!summary.canEnterViolations) {
+    return redirect(summary.canViewViolationStats ? '/admin/violation-stats' : '/admin')
+  }
+
   return (
     <>
       <ViolationEntryPageContent searchParams={searchParams} />

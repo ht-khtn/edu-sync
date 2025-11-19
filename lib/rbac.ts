@@ -42,19 +42,18 @@ export async function getAllowedClassIdsForView(supabase: SupabaseClient, userId
   if (!roles.length) return new Set<string>()
   // If user has any school-scope role, allow viewing all classes (null means all)
   if (roles.some(r => (r.scope === 'school' && (!r.target || r.target === 'ALL')))) return null
-
   // Otherwise, restrict to classes matching role targets (by class name)
-  const { data: classes } = await supabase.from('classes').select('id,name')
+  const classTargets = roles
+    .filter(r => (r.scope === 'class' || r.scope === 'school') && r.target && r.target !== 'ALL')
+    .map(r => String(r.target))
+
   const allowed = new Set<string>()
-  for (const r of roles) {
-    if (r.scope === 'class' && r.target) {
-      const match = classes?.find(c => c.name === r.target)
-      if (match?.id) allowed.add(match.id)
-    }
-    if (r.scope === 'school' && r.target && r.target !== 'ALL') {
-      const match = classes?.find(c => c.name === r.target)
-      if (match?.id) allowed.add(match.id)
-    }
+  if (!classTargets.length) return allowed
+
+  // Fetch only matching classes instead of the entire table
+  const { data: classes } = await supabase.from('classes').select('id,name').in('name', classTargets)
+  for (const c of classes || []) {
+    if (c?.id) allowed.add(c.id)
   }
   return allowed
 }
@@ -63,18 +62,17 @@ export async function getAllowedClassIdsForWrite(supabase: SupabaseClient, userI
   const roles = await getUserRolesWithScope(supabase, userId)
   const allowed = new Set<string>()
   if (!roles.length) return allowed
-
-  const { data: classes } = await supabase.from('classes').select('id,name')
-  for (const r of roles) {
-    if (r.target === 'ALL') {
-      // All classes writable within scope=school
-      if (r.scope === 'school') {
-        for (const c of classes || []) allowed.add(c.id)
-      }
-    } else if (r.target) {
-      const match = classes?.find(c => c.name === r.target)
-      if (match?.id) allowed.add(match.id)
-    }
+  // If user has full school-level write access, return all classes
+  if (roles.some(r => r.target === 'ALL' && r.scope === 'school')) {
+    const { data: classes } = await supabase.from('classes').select('id')
+    for (const c of classes || []) allowed.add(c.id)
+    return allowed
   }
+
+  // Otherwise, fetch only classes matching role targets
+  const targets = roles.filter(r => r.target && r.target !== 'ALL').map(r => String(r.target))
+  if (!targets.length) return allowed
+  const { data: classes } = await supabase.from('classes').select('id,name').in('name', targets)
+  for (const c of classes || []) allowed.add(c.id)
   return allowed
 }

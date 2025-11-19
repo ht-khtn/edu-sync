@@ -6,7 +6,7 @@ import {
   type Criteria,
   type Student,
 } from "@/lib/violations";
-import getSupabaseServer from "@/lib/supabase-server";
+import { getServerAuthContext } from "@/lib/server-auth";
 import { getAllowedClassIdsForWrite } from "@/lib/rbac";
 import {
   Card,
@@ -34,7 +34,7 @@ export default async function ViolationEntryPageContent({
 }: {
   searchParams?: { ok?: string; error?: string };
 }) {
-  const supabaseServer = await getSupabaseServer();
+  const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
   let students: Student[] = [];
 
@@ -42,114 +42,102 @@ export default async function ViolationEntryPageContent({
   let allowedClasses: { id: string; name: string }[] = [];
   let currentClass: { id: string; name: string } | null = null;
   try {
-    if (supabaseServer) {
-      const { data: userRes } = await supabaseServer.auth.getUser();
-      const authUid = userRes?.user?.id;
-      if (authUid) {
-        const { data: appUser } = await supabaseServer
-          .from("users")
-          .select("id")
-          .eq("auth_uid", authUid)
-          .maybeSingle();
-        const appUserId = appUser?.id;
-        if (appUserId) {
-          const [{ data: roles }, { data: classes }] = await Promise.all([
-            supabaseServer
-              .from("user_roles")
-              .select("role_id,target")
-              .eq("user_id", appUserId),
-            supabaseServer.from("classes").select("id,name"),
-          ]);
+    if (supabaseServer && appUserId) {
+      const [{ data: roles }, { data: classes }] = await Promise.all([
+        supabaseServer
+          .from("user_roles")
+          .select("role_id,target")
+          .eq("user_id", appUserId),
+        supabaseServer.from("classes").select("id,name"),
+      ]);
 
-          const classMap = new Map<string, string>();
-          for (const c of classes || []) classMap.set(c.id, c.name);
+      const classMap = new Map<string, string>();
+      for (const c of classes || []) classMap.set(c.id, c.name);
 
-          const classTargets = (roles || [])
-            .filter((r: any) => r.role_id === "CC" && r.target)
-            .map((r: any) => String(r.target));
+      const classTargets = (roles || [])
+        .filter((r: any) => r.role_id === "CC" && r.target)
+        .map((r: any) => String(r.target));
 
-          const managedClassIds = new Set<string>();
-          for (const t of classTargets) {
-            const match = (classes || []).find((c: any) => c.name === t);
-            if (match?.id) managedClassIds.add(match.id);
+      const managedClassIds = new Set<string>();
+      for (const t of classTargets) {
+        const match = (classes || []).find((c: any) => c.name === t);
+        if (match?.id) managedClassIds.add(match.id);
+      }
+
+      if (managedClassIds.size === 0 && classTargets.length > 0) {
+        try {
+          const { data: usersByName } = await supabaseServer
+            .from("users")
+            .select("id,class_id,user_name")
+            .in("user_name", classTargets);
+          for (const u of usersByName || []) {
+            if (u.class_id) managedClassIds.add(u.class_id);
           }
+        } catch {}
+      }
 
-          if (managedClassIds.size === 0 && classTargets.length > 0) {
-            try {
-              const { data: usersByName } = await supabaseServer
-                .from("users")
-                .select("id,class_id,user_name")
-                .in("user_name", classTargets);
-              for (const u of usersByName || []) {
-                if (u.class_id) managedClassIds.add(u.class_id);
-              }
-            } catch {}
-          }
+      if (managedClassIds.size === 1) {
+        const onlyId = Array.from(managedClassIds)[0];
+        const match = (classes || []).find((c: any) => c.id === onlyId);
+        if (match?.id) currentClass = { id: match.id, name: match.name };
+      }
 
-          if (managedClassIds.size === 1) {
-            const onlyId = Array.from(managedClassIds)[0];
-            const match = (classes || []).find((c: any) => c.id === onlyId);
-            if (match?.id) currentClass = { id: match.id, name: match.name };
-          }
+      const allowedSet = await getAllowedClassIdsForWrite(
+        supabaseServer,
+        appUserId
+      );
 
-          const allowedSet = await getAllowedClassIdsForWrite(
-            supabaseServer,
-            appUserId
+      if (allowedSet === null) {
+        for (const c of classes || [])
+          allowedClasses.push({ id: c.id, name: c.name });
+      } else {
+        for (const id of Array.from(allowedSet || [])) {
+          const name = classMap.get(id) ?? id;
+          allowedClasses.push({ id, name });
+        }
+      }
+
+      try {
+        const classFilterSet = currentClass?.id
+          ? new Set<string>([currentClass.id])
+          : managedClassIds.size > 0
+          ? managedClassIds
+          : allowedSet && allowedSet.size > 0
+          ? allowedSet
+          : null;
+        const fetched = await fetchStudentsFromDB(
+          supabaseServer,
+          undefined,
+          classFilterSet === null ? null : classFilterSet || undefined
+        );
+        if (Array.isArray(fetched) && fetched.length) {
+          effectiveStudents = fetched.map((s) => ({
+            ...s,
+            class_name: classMap.get(s.class_id) ?? "",
+          }));
+        }
+      } catch {}
+
+      if (!effectiveStudents?.length) {
+        const fetchedAll = await fetchStudentsFromDB(supabaseServer);
+        const studentsWithClass = fetchedAll.map((s) => ({
+          ...s,
+          class_name: classMap.get(s.class_id) ?? "",
+        }));
+        if (currentClass) {
+          effectiveStudents = studentsWithClass.filter(
+            (s) => s.class_id === currentClass?.id
           );
-
-          if (allowedSet === null) {
-            for (const c of classes || [])
-              allowedClasses.push({ id: c.id, name: c.name });
-          } else {
-            for (const id of Array.from(allowedSet || [])) {
-              const name = classMap.get(id) ?? id;
-              allowedClasses.push({ id, name });
-            }
-          }
-
-          try {
-            const classFilterSet = currentClass?.id
-              ? new Set<string>([currentClass.id])
-              : managedClassIds.size > 0
-              ? managedClassIds
-              : allowedSet && allowedSet.size > 0
-              ? allowedSet
-              : null;
-            const fetched = await fetchStudentsFromDB(
-              supabaseServer,
-              undefined,
-              classFilterSet === null ? null : classFilterSet || undefined
-            );
-            if (Array.isArray(fetched) && fetched.length) {
-              effectiveStudents = fetched.map((s) => ({
-                ...s,
-                class_name: classMap.get(s.class_id) ?? "",
-              }));
-            }
-          } catch {}
-
-          if (!effectiveStudents?.length) {
-            const fetchedAll = await fetchStudentsFromDB(supabaseServer);
-            const studentsWithClass = fetchedAll.map((s) => ({
-              ...s,
-              class_name: classMap.get(s.class_id) ?? "",
-            }));
-            if (currentClass) {
-              effectiveStudents = studentsWithClass.filter(
-                (s) => s.class_id === currentClass?.id
-              );
-              allowedClasses = [
-                { id: currentClass.id, name: currentClass.name },
-              ];
-            } else if (allowedSet === null) {
-              effectiveStudents = studentsWithClass;
-            } else {
-              const allowedIds = new Set(Array.from(allowedSet || []));
-              effectiveStudents = studentsWithClass.filter((s) =>
-                allowedIds.has(s.class_id)
-              );
-            }
-          }
+          allowedClasses = [
+            { id: currentClass.id, name: currentClass.name },
+          ];
+        } else if (allowedSet === null) {
+          effectiveStudents = studentsWithClass;
+        } else {
+          const allowedIds = new Set(Array.from(allowedSet || []));
+          effectiveStudents = studentsWithClass.filter((s) =>
+            allowedIds.has(s.class_id)
+          );
         }
       }
     }

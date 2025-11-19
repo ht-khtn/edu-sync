@@ -1,4 +1,4 @@
-import getSupabaseServer from "@/lib/supabase-server";
+import { getServerAuthContext } from "@/lib/server-auth";
 import { getUserRolesWithScope, getAllowedClassIdsForView } from "@/lib/rbac";
 import {
   Card,
@@ -29,7 +29,8 @@ export const dynamic = "force-dynamic";
 export default async function LeaderboardPageContent() {
   let supabase: any = null;
   try {
-    supabase = await getSupabaseServer();
+    const ctx = await getServerAuthContext();
+    supabase = ctx.supabase;
   } catch {}
   if (!supabase) {
     return (
@@ -41,17 +42,7 @@ export default async function LeaderboardPageContent() {
     );
   }
 
-  const { data: userRes } = await supabase.auth.getUser();
-  const authUid = userRes?.user?.id;
-  let appUserId: string | null = null;
-  if (authUid) {
-    const { data: appUser } = await supabase
-      .from("users")
-      .select("id")
-      .eq("auth_uid", authUid)
-      .maybeSingle();
-    appUserId = appUser?.id ?? null;
-  }
+  const { appUserId } = await getServerAuthContext();
 
   let roles = [] as any[];
   if (appUserId) {

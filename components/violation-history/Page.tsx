@@ -1,4 +1,4 @@
-import getSupabaseServer from "@/lib/supabase-server";
+import { getServerAuthContext, getServerRoles } from "@/lib/server-auth";
 import { redirect } from "next/navigation";
 import { fetchCriteriaFromDB, fetchStudentsFromDB } from "@/lib/violations";
 import { getAllowedClassIdsForView } from "@/lib/rbac";
@@ -31,34 +31,10 @@ export default async function ViolationHistoryPageContent({
   searchParams?: Search;
 }) {
   // Auth + role guard (reuse CC access rule for now)
-  let supabase: any;
-  try {
-    supabase = await getSupabaseServer();
-  } catch {
-    supabase = null;
-  }
-  if (!supabase)
-    return (
-      <p className="text-sm text-red-600">
-        Không khởi tạo được Supabase server.
-      </p>
-    );
-  const { data: userRes } = await supabase.auth.getUser();
-  const authUid = userRes?.user?.id;
-  if (!authUid) redirect("/login");
-  const { data: appUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("auth_uid", authUid)
-    .maybeSingle();
-  const appUserId = appUser?.id as string | undefined;
+  const { supabase, appUserId } = await getServerAuthContext();
   if (!appUserId) redirect("/login");
   // Fetch roles with scope info so we allow both CC (class-committee) and school-scoped roles
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role_id, permissions(scope)")
-    .eq("user_id", appUserId);
-  const roleList = Array.isArray(roles) ? roles : [];
+  const roleList = await getServerRoles();
   const hasCC = roleList.some((r: any) => r.role_id === "CC");
   const hasSchoolScope = roleList.some(
     (r: any) => r?.permissions?.scope === "school"

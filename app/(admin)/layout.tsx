@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-// import { redirect } from "next/navigation"
+import { redirect } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminMainContent } from "@/components/admin/AdminMainContent";
-// import getSupabaseServer from "@/lib/supabase-server"
+import getSupabaseServer from "@/lib/supabase-server"
 
 export const metadata: Metadata = {
   title: "Admin Panel - EduSync",
@@ -18,47 +18,39 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user: { id: string } | null = { id: "temp-user" };
-  // let hasAdminAccess = false
+  // Server-side: ensure the user is authenticated and has admin/CC access
+  let user: { id: string } | null = null
+  try {
+    const supabase = await getSupabaseServer()
+    const { data: userRes } = await supabase.auth.getUser()
+    const authUid = userRes?.user?.id
+    if (!authUid) return redirect('/login')
 
-  // try {
-  //   const supabase = await getSupabaseServer()
-  //   const { data: userRes } = await supabase.auth.getUser()
-  //   const authUid = userRes?.user?.id
+    const { data: appUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_uid', authUid)
+      .maybeSingle()
 
-  //   if (!authUid) {
-  //     redirect('/login')
-  //   }
+    const appUserId = appUser?.id as string | undefined
+    if (!appUserId) return redirect('/login')
 
-  //   const { data: appUser } = await supabase
-  //     .from('users')
-  //     .select('id')
-  //     .eq('auth_uid', authUid)
-  //     .maybeSingle()
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role_id')
+      .eq('user_id', appUserId)
 
-  //   const appUserId = appUser?.id as string | undefined
+    const hasAdminAccess = Array.isArray(roles) && roles.some((r: any) =>
+      r.role_id === 'CC' || r.role_id === 'Admin'
+    )
 
-  //   if (!appUserId) {
-  //     redirect('/login')
-  //   }
+    if (!hasAdminAccess) return redirect('/client')
 
-  //   const { data: roles } = await supabase
-  //     .from('user_roles')
-  //     .select('role_id')
-  //     .eq('user_id', appUserId)
-
-  //   hasAdminAccess = Array.isArray(roles) && roles.some(r =>
-  //     r.role_id === 'CC' || r.role_id === 'Admin'
-  //   )
-
-  //   if (!hasAdminAccess) {
-  //     redirect('/client')
-  //   }
-
-  //   user = { id: appUserId }
-  // } catch (error) {
-  //   redirect('/login')
-  // }
+    user = { id: appUserId }
+  } catch (error) {
+    // If anything goes wrong, require re-authentication
+    return redirect('/login')
+  }
 
   return (
     <SidebarProvider defaultOpen={true} suppressHydrationWarning>

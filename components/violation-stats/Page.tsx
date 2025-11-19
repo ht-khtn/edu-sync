@@ -1,4 +1,4 @@
-import getSupabaseServer from "@/lib/supabase-server";
+import { getServerAuthContext, getServerRoles } from "@/lib/server-auth";
 import {
   Table,
   TableHeader,
@@ -23,27 +23,12 @@ type RecordRow = {
 };
 // file touched to ensure editors/TS server reload recognize the latest content
 export default async function ViolationStatsPageContent() {
-  const supabase = await getSupabaseServer();
-  const { data: userRes } = await supabase.auth.getUser();
-  const authUid = userRes?.user?.id;
-  if (!authUid) redirect("/login");
-  const { data: appUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("auth_uid", authUid)
-    .maybeSingle();
-  const appUserId = appUser?.id as string | undefined;
+  const { supabase, appUserId } = await getServerAuthContext();
   if (!appUserId) redirect("/login");
 
   // Require at least one role with permissions.scope = 'school'
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role_id, permissions(scope)")
-    .eq("user_id", appUserId);
-
-  const hasSchoolScope =
-    Array.isArray(roles) &&
-    roles.some((r: any) => r?.permissions?.scope === "school");
+  const roles = await getServerRoles();
+  const hasSchoolScope = roles.some((r: any) => r?.permissions?.scope === "school");
   if (!hasSchoolScope) redirect("/");
 
   // Fetch minimal record fields for aggregation; exclude soft-deleted

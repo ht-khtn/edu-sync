@@ -40,11 +40,10 @@ export default async function AdminLayout({
       .select('role_id')
       .eq('user_id', appUserId)
 
-    const hasAdminAccess = Array.isArray(roles) && roles.some((r: any) =>
-      r.role_id === 'CC' || r.role_id === 'Admin'
-    )
+    const roleIds: string[] = Array.isArray(roles) ? roles.map((r: any) => r.role_id) : []
+    const isStudentOnly = roleIds.length === 0 || roleIds.every(r => r === 'S' || r === 'YUM')
 
-    if (!hasAdminAccess) return redirect('/client')
+    if (isStudentOnly) return redirect('/client')
 
     user = { id: appUserId }
   } catch (error) {

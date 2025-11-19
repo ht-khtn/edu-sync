@@ -4,7 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminMainContent } from "@/components/admin/AdminMainContent";
-import getSupabaseServer from "@/lib/supabase-server"
+import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth"
 
 export const metadata: Metadata = {
   title: "Admin Panel - EduSync",
@@ -19,37 +19,14 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   // Server-side: ensure the user is authenticated and has admin/CC access
-  let user: { id: string } | null = null
-  try {
-    const supabase = await getSupabaseServer()
-    const { data: userRes } = await supabase.auth.getUser()
-    const authUid = userRes?.user?.id
-    if (!authUid) return redirect('/login')
+  const { appUserId } = await getServerAuthContext()
+  if (!appUserId) return redirect('/login')
 
-    const { data: appUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_uid', authUid)
-      .maybeSingle()
+  const roles = await getServerRoles()
+  const { isStudentOnly } = summarizeRoles(roles)
+  if (isStudentOnly) return redirect('/client')
 
-    const appUserId = appUser?.id as string | undefined
-    if (!appUserId) return redirect('/login')
-
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('role_id')
-      .eq('user_id', appUserId)
-
-    const roleIds: string[] = Array.isArray(roles) ? roles.map((r: any) => r.role_id) : []
-    const isStudentOnly = roleIds.length === 0 || roleIds.every(r => r === 'S' || r === 'YUM')
-
-    if (isStudentOnly) return redirect('/client')
-
-    user = { id: appUserId }
-  } catch (error) {
-    // If anything goes wrong, require re-authentication
-    return redirect('/login')
-  }
+  const user = { id: appUserId }
 
   return (
     <SidebarProvider defaultOpen={true} suppressHydrationWarning>

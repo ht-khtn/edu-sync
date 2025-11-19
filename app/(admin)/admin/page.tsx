@@ -40,9 +40,9 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6" suppressHydrationWarning>
       <div suppressHydrationWarning>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Bảng điều khiển</h1>
         <p className="text-muted-foreground mt-1">
-          Welcome to the EduSync admin panel
+          Chào mừng đến với bảng điều khiển quản trị viên.
         </p>
       </div>
 

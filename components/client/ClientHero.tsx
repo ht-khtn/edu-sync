@@ -7,7 +7,7 @@ interface ClientHeroProps {
 }
 
 export function ClientHero({
-  imageSrc = "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1920&q=80",
+  imageSrc = "/MIN09166.JPG",
   imageAlt = "EduSync Banner",
   height = 400,
 }: ClientHeroProps) {

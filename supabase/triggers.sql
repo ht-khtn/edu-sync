@@ -24,6 +24,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_payload jsonb;
+  v_record_id text;
 BEGIN
   -- Try to get the current authenticated user id via auth.uid(); if not available, leave NULL
   BEGIN
@@ -34,13 +35,25 @@ BEGIN
 
   IF TG_OP = 'DELETE' THEN
     v_payload := to_jsonb(OLD);
+    -- Derive a best-effort record id from common id-like fields to support tables
+    -- that don't use a generic `id` column (for example `user_profiles.user_id`).
+    v_record_id := COALESCE(
+      to_jsonb(OLD)->>'id',
+      to_jsonb(OLD)->>'user_id',
+      to_jsonb(OLD)->>'record_id'
+    );
     INSERT INTO public.audit_logs(table_name, record_id, action, actor_id, diff, created_at)
-    VALUES (TG_TABLE_NAME, OLD.id::text, TG_OP, v_actor, v_payload, now());
+    VALUES (TG_TABLE_NAME, v_record_id, TG_OP, v_actor, v_payload, now());
     RETURN OLD;
   ELSE
     v_payload := to_jsonb(NEW);
+    v_record_id := COALESCE(
+      to_jsonb(NEW)->>'id',
+      to_jsonb(NEW)->>'user_id',
+      to_jsonb(NEW)->>'record_id'
+    );
     INSERT INTO public.audit_logs(table_name, record_id, action, actor_id, diff, created_at)
-    VALUES (TG_TABLE_NAME, NEW.id::text, TG_OP, v_actor, v_payload, now());
+    VALUES (TG_TABLE_NAME, v_record_id, TG_OP, v_actor, v_payload, now());
     RETURN NEW;
   END IF;
 END;
@@ -48,34 +61,9 @@ $$;
 
 -- Attach triggers to core tables: records, complaints, user_profiles, users, classes
 DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_records_audit'
-  ) THEN
-    CREATE TRIGGER trg_records_audit
-      AFTER INSERT OR UPDATE OR DELETE ON public.records
-      FOR EACH ROW EXECUTE PROCEDURE public.fn_audit_log();
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_complaints_audit'
-  ) THEN
-    CREATE TRIGGER trg_complaints_audit
-      AFTER INSERT OR UPDATE OR DELETE ON public.complaints
-      FOR EACH ROW EXECUTE PROCEDURE public.fn_audit_log();
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_user_profiles_audit'
-  ) THEN
-    CREATE TRIGGER trg_user_profiles_audit
-      AFTER INSERT OR UPDATE OR DELETE ON public.user_profiles
-      FOR EACH ROW EXECUTE PROCEDURE public.fn_audit_log();
-  END IF;
-
-  IF NOT EXISTS (
+ 
     SELECT 1 FROM pg_trigger WHERE tgname = 'trg_users_audit'
-  ) THEN
+   THEN
     CREATE TRIGGER trg_users_audit
       AFTER INSERT OR UPDATE OR DELETE ON public.users
       FOR EACH ROW EXECUTE PROCEDURE public.fn_audit_log();
@@ -89,6 +77,41 @@ BEGIN
       FOR EACH ROW EXECUTE PROCEDURE public.fn_audit_log();
   END IF;
 END$$;
+
+-- -----------------------------------------------------------------------------
+-- Sync: create user_profiles when a public.users row is inserted
+-- (kept in the auth.users sync section)
+-- -----------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.create_user_profile_on_user_insert() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.user_profiles (user_id, full_name, created_at, updated_at)
+  VALUES (NEW.id, '', now(), now())
+  ON CONFLICT (user_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_create_user_profile_after_insert') THEN
+    CREATE TRIGGER trg_create_user_profile_after_insert
+      AFTER INSERT ON public.users
+      FOR EACH ROW EXECUTE PROCEDURE public.create_user_profile_on_user_insert();
+  END IF;
+END$$;
+
+-- -----------------------------------------------------------------------------
+-- Sync: create user_profiles when a public.users row is inserted
+-- -----------------------------------------------------------------------------
+
+-- Function: create a minimal user_profiles row for every new public.users row
+-- (moved to the auth.users sync section below)
+ 
+ 
 
 -- -----------------------------------------------------------------------------
 -- Notifications: create table + policies + trigger on records insert

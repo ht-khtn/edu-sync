@@ -99,7 +99,6 @@ CREATE TABLE public.records (
 CREATE TABLE public.user_profiles (
   user_id uuid NOT NULL,
   full_name text NOT NULL,
-  email text NOT NULL UNIQUE,
   avatar_url text,
   phone_number text,
   address text,
@@ -107,13 +106,12 @@ CREATE TABLE public.user_profiles (
   gender text,
   created_at timestamp without time zone DEFAULT now(),
   updated_at timestamp without time zone DEFAULT now(),
-  user_name text UNIQUE,
   CONSTRAINT user_profiles_pkey PRIMARY KEY (user_id),
   CONSTRAINT fk_user_profiles_user FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.user_roles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
+  user_id uuid NOT NULL UNIQUE,
   role_id text NOT NULL,
   target text,
   created_at timestamp without time zone DEFAULT now(),
@@ -133,3 +131,4 @@ CREATE TABLE public.users (
   CONSTRAINT fk_users_class FOREIGN KEY (class_id) REFERENCES public.classes(id),
   CONSTRAINT users_auth_uid_fkey FOREIGN KEY (auth_uid) REFERENCES auth.users(id)
 );
+ 

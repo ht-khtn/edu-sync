@@ -48,8 +48,10 @@ next-env.d.ts
 
 # else
 /.vscode/
-/..specific/
+/.specific/
+/.stfolder/
 /.idea/
+/.AI/
 *.pid
 *.pid.lock
 *.orig

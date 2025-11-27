@@ -53,39 +53,72 @@ export default function LoginForm() {
       });
       console.log("Data:", data, "Error:", error);
       if (error) {
-        setError(error.message);
-        toast.error("Đăng nhập thất bại");
+        const msg = error.message || "Đăng nhập thất bại";
+        if (msg.toLowerCase().includes("invalid login credentials")) {
+          setError("Sai email hoặc mật khẩu. Vui lòng kiểm tra lại.");
+          toast.error("Sai email hoặc mật khẩu");
+        } else if (msg.toLowerCase().includes("user not found")) {
+          setError("Tài khoản không tồn tại. Vui lòng kiểm tra lại hoặc liên hệ quản trị viên.");
+          toast.error("Tài khoản không tồn tại");
+        } else {
+          setError(msg);
+          toast.error("Đăng nhập thất bại");
+        }
       } else {
-        // Persist session to server-side cookies so server components can read auth state
-        const access_token = (data as any)?.session?.access_token;
-        const refresh_token = (data as any)?.session?.refresh_token;
-        const expires_in = (data as any)?.session?.expires_in;
-        // persist session preference if needed
-        if (values.remember) {
-          // custom logic can be added here
+        const access_token = data.session?.access_token;
+        const refresh_token = data.session?.refresh_token;
+        const expires_in = data.session?.expires_in;
+
+        if (!access_token || !refresh_token) {
+          await supabase.auth.signOut();
+          setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
+          toast.error("Thiết lập phiên thất bại");
+          return;
         }
-        // Tighten login: wait for /api/auth/set-session to succeed before navigation/refresh
-        if (access_token && refresh_token) {
-          const res = await fetch("/api/auth/set-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ access_token, refresh_token, expires_in }),
-          });
-          if (!res.ok) {
-            setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
-            toast.error("Thiết lập phiên thất bại");
-            return;
-          }
+
+        const res = await fetch("/api/auth/set-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ access_token, refresh_token, expires_in }),
+        });
+
+        if (!res.ok) {
+          await supabase.auth.signOut();
+          setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
+          toast.error("Thiết lập phiên thất bại");
+          return;
         }
-        // Now that cookies are set on the server, refresh and navigate
+
+        const profileRes = await fetch("/api/session/summary", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        if (!profileRes.ok) {
+          await supabase.auth.signOut();
+          setError("Không thể xác thực tài khoản trong hệ thống. Vui lòng thử lại sau.");
+          toast.error("Không thể kiểm tra tài khoản hệ thống");
+          return;
+        }
+
+        const profileJson = await profileRes.json();
+        if (!profileJson?.user || !profileJson.user.id) {
+          await supabase.auth.signOut();
+          setError("Tài khoản không tồn tại hoặc chưa được kích hoạt trong hệ thống. Vui lòng liên hệ quản trị viên.");
+          toast.error("Tài khoản không tồn tại hoặc chưa được kích hoạt");
+          return;
+        }
+
         router.refresh();
         router.push("/");
         toast.success("Đăng nhập thành công");
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Lỗi không xác định");
-      toast.error("Đăng nhập lỗi: " + (err?.message || "Không xác định"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Lỗi không xác định";
+      setError(message);
+      toast.error("Đăng nhập lỗi: " + message);
     } finally {
       setLoading(false);
     }

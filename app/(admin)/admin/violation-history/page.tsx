@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export default function ViolationHistoryPage({ 
   searchParams 
 }: { 
-  searchParams?: any 
+  searchParams?: Record<string, string | string[] | undefined> 
 }) {
   return (
     <>

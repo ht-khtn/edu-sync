@@ -51,7 +51,7 @@ export default async function ViolationHistoryPageContent({
     .select("id,name")
     .order("name");
   if (allowedViewClassIds) {
-    classes = (classes || []).filter((c: any) => allowedViewClassIds.has(c.id));
+    classes = (classes || []).filter((c) => allowedViewClassIds.has(c.id));
   }
 
   // Fetch students (filtered to allowed classes)
@@ -114,7 +114,7 @@ export default async function ViolationHistoryPageContent({
             start: searchParams?.start || "",
             end: searchParams?.end || "",
           }}
-          classes={(classes || []).map((c: any) => ({
+          classes={(classes || []).map((c) => ({
             id: c.id,
             name: c.name || c.id,
           }))}
@@ -162,13 +162,46 @@ export default async function ViolationHistoryPageContent({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((r: any) => {
+                  {(rows as Array<{
+                    id: string;
+                    created_at: string;
+                    class_id: string | null;
+                    score: number | null;
+                    note: string | null;
+                    classes:
+                      | { id: string; name: string | null }
+                      | { id: string; name: string | null }[]
+                      | null;
+                    criteria:
+                      | { id: string | number; name: string | null }
+                      | { id: string | number; name: string | null }[]
+                      | null;
+                    users:
+                      | {
+                          user_profiles:
+                            | { full_name: string | null }[]
+                            | { full_name: string | null }
+                            | null;
+                          user_name: string | null;
+                        }
+                      | {
+                          user_profiles:
+                            | { full_name: string | null }[]
+                            | { full_name: string | null }
+                            | null;
+                          user_name: string | null;
+                        }[]
+                      | null;
+                  }> || []).map((r) => {
+                    const classEntry = Array.isArray(r.classes) ? r.classes[0] : r.classes;
+                    const criteriaEntry = Array.isArray(r.criteria) ? r.criteria[0] : r.criteria;
+                    const userEntry = Array.isArray(r.users) ? r.users[0] : r.users;
+                    const profileEntry = Array.isArray(userEntry?.user_profiles)
+                      ? userEntry?.user_profiles[0]
+                      : userEntry?.user_profiles;
                     const fullName =
-                      (r.users?.user_profiles &&
-                      Array.isArray(r.users.user_profiles)
-                        ? r.users.user_profiles[0]?.full_name
-                        : r.users?.user_profiles?.full_name) ||
-                      r.users?.user_name ||
+                      profileEntry?.full_name ||
+                      userEntry?.user_name ||
                       "—";
                     return (
                       <TableRow key={r.id} className="hover:bg-muted/30">
@@ -178,13 +211,13 @@ export default async function ViolationHistoryPageContent({
                           })}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {r.classes?.name || r.class_id}
+                          {classEntry?.name || r.class_id}
                         </TableCell>
                         <TableCell>{fullName}</TableCell>
                         <TableCell className="text-sm">
-                          {r.criteria?.name ||
-                            (r.criteria?.id
-                              ? `#${String(r.criteria.id).slice(0, 8)}`
+                          {criteriaEntry?.name ||
+                            (criteriaEntry?.id
+                              ? `#${String(criteriaEntry.id).slice(0, 8)}`
                               : "—")}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-destructive">
@@ -192,7 +225,7 @@ export default async function ViolationHistoryPageContent({
                         </TableCell>
                         <TableCell
                           className="text-muted-foreground max-w-xs truncate text-sm"
-                          title={r.note}
+                          title={r.note || undefined}
                         >
                           {r.note || "—"}
                         </TableCell>

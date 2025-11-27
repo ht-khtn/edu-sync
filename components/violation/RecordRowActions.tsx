@@ -33,15 +33,18 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
   const [note, setNote] = useState<string>(initialNote ?? '')
   const [studentId, setStudentId] = useState<string | ''>(initialStudentId ?? '')
   const [criteriaId, setCriteriaId] = useState<string | ''>(initialCriteriaId ?? '')
-  const [students, setStudents] = useState<Array<any>>([])
-  const [criteriaList, setCriteriaList] = useState<Array<any>>([])
+  type StudentOption = { id: string; name: string }
+  type CriteriaOption = { id: string; name: string }
+
+  const [students, setStudents] = useState<StudentOption[]>([])
+  const [criteriaList, setCriteriaList] = useState<CriteriaOption[]>([])
   const [loading, setLoading] = useState(false)
 
   async function onSave() {
     setLoading(true)
     try {
-      const supabase = await getSupabase()
-  const payload: any = { note: note ?? null }
+        const supabase = await getSupabase()
+        const payload: { note: string | null; student_id?: string; criteria_id?: string } = { note: note ?? null }
       if (studentId) payload.student_id = studentId
       if (criteriaId) payload.criteria_id = criteriaId
 
@@ -68,8 +71,9 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
       toast.success('Đã cập nhật ghi nhận')
       setOpenEdit(false)
       router.refresh()
-    } catch (e: any) {
-      toast.error(`Lỗi cập nhật: ${e?.message || e}`)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      toast.error(`Lỗi cập nhật: ${message}`)
     } finally {
       setLoading(false)
     }
@@ -100,8 +104,9 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
       toast.success('Đã xoá ghi nhận')
       setOpenDelete(false)
       router.refresh()
-    } catch (e: any) {
-      toast.error(`Lỗi xoá: ${e?.message || e}`)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      toast.error(`Lỗi xoá: ${message}`)
     } finally {
       setLoading(false)
     }
@@ -114,11 +119,22 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
       try {
         const supabase = await getSupabase()
         const critQ = await supabase.from('criteria').select('id,name')
-        let usersQ: any
-        if (classId) usersQ = await supabase.from('users').select('id,user_profiles(full_name),user_name').eq('class_id', classId)
-        else usersQ = await supabase.from('users').select('id,user_profiles(full_name),user_name')
-        setCriteriaList(critQ.data || [])
-        setStudents((usersQ.data || []).map((u: any) => ({ id: u.id, name: (u.user_profiles && u.user_profiles[0]?.full_name) || u.user_name || u.id })))
+        const usersQ = classId
+          ? await supabase.from('users').select('id,user_profiles(full_name),user_name').eq('class_id', classId)
+          : await supabase.from('users').select('id,user_profiles(full_name),user_name')
+
+        setCriteriaList((critQ.data || []).map((c) => ({ id: String(c.id), name: c.name as string })))
+        setStudents(
+          (usersQ.data || []).map((u) => ({
+            id: String(u.id),
+            name:
+              (Array.isArray(u.user_profiles) && u.user_profiles[0]?.full_name) ||
+              // @ts-expect-error user_profiles may also be a single object depending on Supabase
+              u.user_profiles?.full_name ||
+              u.user_name ||
+              String(u.id),
+          })),
+        )
       } catch {}
     })()
   }, [openEdit, classId])
@@ -152,7 +168,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
                   <SelectValue placeholder="-- Chọn tiêu chí --" />
                 </SelectTrigger>
                 <SelectContent>
-                  {criteriaList.map((c: any) => (
+                  {criteriaList.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -166,7 +182,7 @@ export default function RecordRowActions({ id, initialScore, initialNote, initia
                   <SelectValue placeholder="-- (không) --" />
                 </SelectTrigger>
                 <SelectContent>
-                  {students.map((s: any) => (
+                  {students.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>

@@ -14,7 +14,9 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in Edge Function environment')
 }
 
-async function insertRecord(record: any, actor_id: string) {
+type RecordPayload = Record<string, unknown>
+
+async function insertRecord(record: RecordPayload, actor_id: string) {
   // Insert into records
   const res = await fetch(`${SUPABASE_URL}/rest/v1/records`, {
     method: 'POST',
@@ -49,7 +51,7 @@ async function insertRecord(record: any, actor_id: string) {
   return data
 }
 
-async function approveRecord(id: string, actor_id: string, update: any) {
+async function approveRecord(id: string, actor_id: string, update: RecordPayload) {
   // update record (e.g., set status = 'approved', approved_by = actor_id)
   const res = await fetch(`${SUPABASE_URL}/rest/v1/records?id=eq.${id}`, {
     method: 'PATCH',
@@ -111,8 +113,9 @@ serve(async (req: Request) => {
     }
 
     return new Response('Unknown action', { status: 400 })
-  } catch (err: any) {
+  } catch (err) {
     console.error(err)
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    const message = err instanceof Error ? err.message : 'Unexpected error'
+    return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
   }
 })

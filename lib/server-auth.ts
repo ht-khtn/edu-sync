@@ -1,8 +1,9 @@
 import { cache } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import getSupabaseServer from '@/lib/supabase-server'
 
 export type ServerAuthContext = {
-  supabase: any
+  supabase: SupabaseClient
   authUid: string | null
   appUserId: string | null
 }

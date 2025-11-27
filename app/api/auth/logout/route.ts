@@ -12,13 +12,14 @@ export async function POST() {
       const supabase = await getSupabaseServer()
       // best-effort sign out on server
       await supabase.auth.signOut()
-    } catch (e) {
+    } catch {
       // ignore
     }
 
     return resp
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'Internal error' }, { status: 500 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 

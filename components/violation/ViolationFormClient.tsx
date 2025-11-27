@@ -60,8 +60,16 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
         if (closeBtn) closeBtn.click()
 
         const fd = new FormData(formEl)
-        const payload: Record<string, any> = {}
-        fd.forEach((v, k) => { payload[k] = v })
+        const payload: Record<string, string | number | null> = {}
+        fd.forEach((value, key) => {
+          if (value instanceof File) return
+          if (key === 'points') {
+            const num = Number(value)
+            payload[key] = Number.isNaN(num) ? null : num
+          } else {
+            payload[key] = value
+          }
+        })
 
         setPending(true)
         try {

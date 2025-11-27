@@ -2,9 +2,44 @@ import getSupabaseServer from '@/lib/supabase-server'
 import { getAllowedClassIdsForWrite } from '@/lib/rbac'
 import RecordRowActions from './RecordRowActions'
 
+type RecentRecordRow = {
+  id: string
+  created_at: string
+  student_id: string | null
+  class_id: string | null
+  score: number | null
+  note: string | null
+  classes:
+    | { id: string; name: string | null }
+    | { id: string; name: string | null }[]
+    | null
+  criteria:
+    | { id: string | number; name: string | null }
+    | { id: string | number; name: string | null }[]
+    | null
+  users:
+    | {
+        user_profiles:
+          | { full_name: string | null }[]
+          | { full_name: string | null }
+          | null
+        user_name: string | null
+      }
+    | {
+        user_profiles:
+          | { full_name: string | null }[]
+          | { full_name: string | null }
+          | null
+        user_name: string | null
+      }[]
+    | null
+}
+
 export default async function RecentRecordsList() {
-  let supabase: any = null
-  try { supabase = await getSupabaseServer() } catch {}
+  let supabase: Awaited<ReturnType<typeof getSupabaseServer>> | null = null
+  try {
+    supabase = await getSupabaseServer()
+  } catch {}
   if (!supabase) return null
 
   const { data: userRes } = await supabase.auth.getUser()
@@ -32,11 +67,24 @@ export default async function RecentRecordsList() {
 
   if (!rows?.length) return null
 
+  const typedRows = (rows || []) as RecentRecordRow[]
+
   return (
     <section className="flex flex-col">
-      {rows.map((r: any) => {
-        const fullName = (r.users?.user_profiles && Array.isArray(r.users.user_profiles) ? r.users.user_profiles[0]?.full_name : r.users?.user_profiles?.full_name) || r.users?.user_name || '—'
-        const criteriaLabel = r.criteria?.name || (r.criteria?.id ? `#${String(r.criteria.id).slice(0,8)}` : '—')
+      {typedRows.map((r) => {
+        const classEntry = Array.isArray(r.classes) ? r.classes[0] : r.classes
+        const criteriaEntry = Array.isArray(r.criteria) ? r.criteria[0] : r.criteria
+        const userEntry = Array.isArray(r.users) ? r.users[0] : r.users
+        const profileEntry = Array.isArray(userEntry?.user_profiles)
+          ? userEntry?.user_profiles[0]
+          : userEntry?.user_profiles
+        const fullName =
+          profileEntry?.full_name ||
+          userEntry?.user_name ||
+          '—'
+        const criteriaLabel =
+          criteriaEntry?.name ||
+          (criteriaEntry?.id ? `#${String(criteriaEntry.id).slice(0, 8)}` : '—')
         // format time in Asia/Ho_Chi_Minh (UTC+7)
         const created = new Date(r.created_at)
         const timeStr = created.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })
@@ -53,7 +101,13 @@ export default async function RecentRecordsList() {
                 <div className="w-40 text-xs text-muted-foreground text-right tabular-nums">{dateStr} {timeStr}</div>
               </div>
               <div className="flex-none ml-2">
-                <RecordRowActions id={r.id} initialNote={r.note} initialStudentId={r.student_id} initialCriteriaId={r.criteria?.id} classId={r.class_id} />
+                <RecordRowActions
+                  id={r.id}
+                  initialNote={r.note ?? undefined}
+                  initialStudentId={r.student_id ?? undefined}
+                  initialCriteriaId={criteriaEntry?.id ? String(criteriaEntry.id) : undefined}
+                  classId={r.class_id ?? undefined}
+                />
               </div>
             </div>
           </div>

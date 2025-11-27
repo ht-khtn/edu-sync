@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Trophy, Medal, Award } from "lucide-react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ClassScore = {
   class_id: string;
@@ -27,7 +28,7 @@ type ClassScore = {
 export const dynamic = "force-dynamic";
 
 export default async function LeaderboardPageContent() {
-  let supabase: any = null;
+  let supabase: SupabaseClient | null = null;
   try {
     const ctx = await getServerAuthContext();
     supabase = ctx.supabase;
@@ -44,11 +45,6 @@ export default async function LeaderboardPageContent() {
 
   const { appUserId } = await getServerAuthContext();
 
-  let roles = [] as any[];
-  if (appUserId) {
-    roles = await getUserRolesWithScope(supabase, appUserId);
-  }
-
   const allowedClassIds = appUserId
     ? await getAllowedClassIdsForView(supabase, appUserId)
     : new Set<string>();
@@ -64,9 +60,10 @@ export default async function LeaderboardPageContent() {
     if (!cid) continue;
     if (allowedClassIds && allowedClassIds.size && !allowedClassIds.has(cid))
       continue;
+    const classEntry = Array.isArray(row.classes) ? row.classes[0] : row.classes;
     const existing = map.get(cid) || {
       class_id: cid,
-      class_name: row.classes?.name || "—",
+      class_name: classEntry?.name || "—",
       total_score: 0,
     };
     existing.total_score += row.score || 0;

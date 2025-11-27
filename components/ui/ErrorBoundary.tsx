@@ -3,20 +3,19 @@
 import React from 'react'
 
 type Props = { children: React.ReactNode }
+type ErrorState = { hasError: boolean; error?: Error | null }
 
-export default class ErrorBoundary extends React.Component<Props, { hasError: boolean; error?: any }> {
+export default class ErrorBoundary extends React.Component<Props, ErrorState> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false }
+    this.state = { hasError: false, error: null }
   }
 
-  static getDerivedStateFromError(error: any) {
+  static getDerivedStateFromError(error: Error): ErrorState {
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: any, info: any) {
-    // Log to console — client devs can inspect stack
-    // In production you might post to an error tracking endpoint
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     // eslint-disable-next-line no-console
     console.error('Client ErrorBoundary caught error', error, info)
   }

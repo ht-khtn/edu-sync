@@ -8,8 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { Bell } from 'lucide-react'
 import { toast } from 'sonner'
 
+type NotificationRow = { id: string; title: string | null; body: string | null; created_at: string; read_at: string | null }
+
 export default function NotificationsBell() {
-  const [items, setItems] = useState<Array<{ id: string; title: string | null; body: string | null; created_at: string; read_at: string | null }>>([])
+  const [items, setItems] = useState<NotificationRow[]>([])
   const [unread, setUnread] = useState<number>(0)
   const mounted = useRef(false)
   const subscribed = useRef(false)
@@ -31,16 +33,16 @@ export default function NotificationsBell() {
           .order('created_at', { ascending: false })
           .limit(20)
         if (!active) return
-        const rows = data || []
-        setItems(rows as any)
-        setUnread((rows as any).filter((r: any) => !r.read_at).length)
+        const rows = (data || []) as NotificationRow[]
+        setItems(rows)
+        setUnread(rows.filter((r) => !r.read_at).length)
 
         if (subscribed.current) return
         subscribed.current = true
         const channel = supabase
           .channel('notif-inserts')
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload: any) => {
-            const row = payload.new
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+            const row = payload.new as NotificationRow
             // RLS ensures only my rows are emitted; still defensive check
             if (!active) return
             setItems((prev) => [row, ...prev].slice(0, 20))

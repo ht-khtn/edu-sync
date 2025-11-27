@@ -65,8 +65,9 @@ export async function POST(req: Request) {
     const contentType = resp.headers.get('content-type') || ''
     const isJson = contentType.includes('application/json')
     return new NextResponse(isJson ? payload : payload, { status: resp.status, headers: { 'Content-Type': resp.headers.get('content-type') || 'text/plain' } })
-  } catch (err: any) {
-    console.error('record-ops API error', err)
-    return NextResponse.json({ error: err?.message ?? 'Internal error' }, { status: 500 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal error'
+    console.error('record-ops API error', message)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

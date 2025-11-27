@@ -48,7 +48,7 @@ export default async function ViolationStatsPageContent() {
     );
   }
 
-  const rows: RecordRow[] = (recs || []) as any;
+  const rows = (recs || []) as unknown as RecordRow[];
 
   // Aggregate by criteria
   const byCriteria = new Map<

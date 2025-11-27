@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 
+type SessionBody = {
+  access_token?: string
+  refresh_token?: string
+  expires_in?: number
+}
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const body: SessionBody = await req.json()
     const { access_token, refresh_token, expires_in } = body
     if (!access_token || !refresh_token) {
       return NextResponse.json({ error: 'Missing tokens' }, { status: 400 })
@@ -27,8 +33,9 @@ export async function POST(req: Request) {
     })
 
     return resp
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? 'Internal error' }, { status: 500 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 

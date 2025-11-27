@@ -12,7 +12,11 @@ export async function getUserRolesWithScope(supabase: SupabaseClient, userId: st
     .select('role_id,target,permissions(scope)')
     .eq('user_id', userId)
   if (error) return []
-  return (data || []).map((r: any) => ({ role_id: r.role_id, target: r.target, scope: r.permissions?.scope ?? null }))
+  return (data || []).map((r) => ({
+    role_id: r.role_id,
+    target: r.target,
+    scope: (r as { permissions?: { scope?: string | null } }).permissions?.scope ?? null,
+  }))
 }
 
 export async function getClassInfo(supabase: SupabaseClient, classId: string): Promise<{ name: string | null } | null> {

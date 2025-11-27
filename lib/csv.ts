@@ -15,7 +15,6 @@ export function parseCSV(text: string): ParsedRow[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n").filter((l) => l.trim().length > 0);
   if (lines.length === 0) return [];
   const header = splitCSVLine(lines[0]).map((h) => h.trim().toLowerCase());
-  const required = ["points"];
   // ensure at least points + (student_code or student_id)
   const hasStudentField = header.includes("student_code") || header.includes("student_id");
   if (!hasStudentField) throw new Error("CSV phải có trường student_code hoặc student_id");
@@ -24,7 +23,7 @@ export function parseCSV(text: string): ParsedRow[] {
   const rows: ParsedRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = splitCSVLine(lines[i]);
-    const obj: any = {};
+    const obj: Record<string, string> = {};
     for (let j = 0; j < header.length; j++) {
       const key = header[j];
       const val = cols[j] ?? "";

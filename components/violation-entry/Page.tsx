@@ -55,12 +55,12 @@ export default async function ViolationEntryPageContent({
       for (const c of classes || []) classMap.set(c.id, c.name);
 
       const classTargets = (roles || [])
-        .filter((r: any) => r.role_id === "CC" && r.target)
-        .map((r: any) => String(r.target));
+        .filter((r) => r.role_id === "CC" && r.target)
+        .map((r) => String(r.target));
 
       const managedClassIds = new Set<string>();
       for (const t of classTargets) {
-        const match = (classes || []).find((c: any) => c.name === t);
+        const match = (classes || []).find((c) => c.name === t);
         if (match?.id) managedClassIds.add(match.id);
       }
 
@@ -78,7 +78,7 @@ export default async function ViolationEntryPageContent({
 
       if (managedClassIds.size === 1) {
         const onlyId = Array.from(managedClassIds)[0];
-        const match = (classes || []).find((c: any) => c.id === onlyId);
+        const match = (classes || []).find((c) => c.id === onlyId);
         if (match?.id) currentClass = { id: match.id, name: match.name };
       }
 

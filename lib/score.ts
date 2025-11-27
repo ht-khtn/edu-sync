@@ -6,8 +6,24 @@ type SubmitPayload = {
   entries: ParsedRow[];
 };
 
+export type UploadResult = {
+  batch_id: string;
+  summary: {
+    total: number;
+    created: number;
+    failed: number;
+  };
+  results: Array<{
+    row_index: number;
+    status: "created" | "failed";
+    score_id: string | null;
+    error: string | null;
+  }>;
+  error?: string;
+};
+
 // Mock submit - simulates network request and returns per-row results
-export async function submitBatchMock(payload: SubmitPayload) {
+export async function submitBatchMock(payload: SubmitPayload): Promise<UploadResult> {
   // simulate network / server processing delay
   await new Promise((r) => setTimeout(r, 800));
 

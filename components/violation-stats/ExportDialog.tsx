@@ -69,8 +69,9 @@ export default function ExportReportDialog() {
         if (error) throw new Error(error.message);
         setGrades(data || []);
         if (!gradeId && data && data.length) setGradeId(data[0].id);
-      } catch (e: any) {
-        toast.error("Không tải được danh sách khối: " + (e?.message || ""));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "";
+        toast.error("Không tải được danh sách khối: " + message);
       }
     })();
   }, [open]);
@@ -86,7 +87,7 @@ export default function ExportReportDialog() {
         .eq("grade_id", gradeId)
         .order("name");
       if (cErr) throw new Error(cErr.message);
-      const classIds = (classes || []).map((c: any) => c.id);
+      const classIds = (classes || []).map((c) => c.id);
       if (classIds.length === 0)
         throw new Error("Không có lớp thuộc khối đã chọn");
 
@@ -165,9 +166,9 @@ export default function ExportReportDialog() {
         const sg = r.criteria?.subgroup || r.criteria?.name || "Mục";
         const score = Number(r.score || 0);
         const fullName = (() => {
-          const up = (r as any).users?.user_profiles;
+          const up = r.users?.user_profiles;
           const prof = Array.isArray(up) ? up[0] : up;
-          return prof?.full_name || (r as any).users?.user_name || "";
+          return prof?.full_name || r.users?.user_name || "";
         })();
         const dateStr = new Date(r.created_at).toLocaleDateString("vi-VN", {
           timeZone: "Asia/Ho_Chi_Minh",
@@ -350,9 +351,10 @@ export default function ExportReportDialog() {
       URL.revokeObjectURL(url);
       toast.success("Đã tạo file Excel");
       setOpen(false);
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "";
       console.error(e);
-      toast.error("Xuất báo cáo thất bại: " + (e?.message || ""));
+      toast.error("Xuất báo cáo thất bại: " + message);
     } finally {
       setLoading(false);
     }

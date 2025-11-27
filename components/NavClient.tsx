@@ -33,7 +33,7 @@ export default function NavClient() {
       try {
         const supabase = await getSupabase()
         const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', info.user!.id)
-        const hasSelf = Array.isArray(roles) && roles.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
+        const hasSelf = Array.isArray(roles) && roles.some((r) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
         setSelfRoles({ hasSelf })
       } catch { setSelfRoles({ hasSelf: false }) }
     })()
@@ -57,7 +57,7 @@ export default function NavClient() {
         return
       }
       setInfo(json)
-    } catch (e) {
+    } catch {
       // don't force null during transient failures if client is signed in
       if (!isSignedInRef.current) setInfo(null)
     }
@@ -80,11 +80,14 @@ export default function NavClient() {
         .select('role_id,target,permissions(scope)')
         .eq('user_id', appUserId)
       const roleList = Array.isArray(roles) ? roles : []
-      const hasSchoolScope = roleList.some((r: any) => r?.permissions?.scope === 'school')
-      const hasCC = roleList.some((r: any) => r.role_id === 'CC')
+      const hasSchoolScope = roleList.some((r) => {
+        const scopes = Array.isArray(r.permissions) ? r.permissions : []
+        return scopes.some((p) => p.scope === 'school')
+      })
+      const hasCC = roleList.some((r) => r.role_id === 'CC')
       let ccClassId: string | null = null
       if (hasCC && !hasSchoolScope) {
-        const ccRole = roleList.find((r: any) => r.role_id === 'CC' && r.target)
+        const ccRole = roleList.find((r) => r.role_id === 'CC' && r.target)
         if (ccRole?.target) {
           const { data: cls } = await supabase.from('classes').select('id').eq('name', ccRole.target).maybeSingle()
           ccClassId = cls?.id ?? null
@@ -111,7 +114,7 @@ export default function NavClient() {
           await deriveRolesClientFallback()
         }
 
-        const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data } = supabase.auth.onAuthStateChange((event) => {
           if (event === 'SIGNED_IN') {
             isSignedInRef.current = true
             // Reset derived role flags; will be recomputed for the new user
@@ -136,15 +139,14 @@ export default function NavClient() {
             }
           }
         })
-        // @ts-ignore
-        unsub = data?.subscription?.unsubscribe || (() => {})
+        unsub = data?.subscription?.unsubscribe ?? (() => {})
       } catch {}
     })()
 
     return () => {
       try { if (unsub) unsub() } catch {}
     }
-  }, [])
+  }, [deriveRolesClientFallback, fetchInfo, info])
 
   if (loading) return <li className="text-sm text-zinc-500">Đang tải…</li>
   if (!info || !info.user) return <Link href="/login">Đăng nhập</Link>
@@ -205,7 +207,7 @@ export default function NavClient() {
               setSelfRoles(null)
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
               toast.success('Đăng xuất thành công')
-            } catch (e: any) {
+            } catch {
               toast.error('Đăng xuất thất bại')
             } finally {
               setLoading(false)

@@ -52,14 +52,14 @@ export default function ScorePreviewTable({ rows, setRows }: Props) {
                     <Input
                       type="number"
                       value={String(r.points ?? "")}
-                      onChange={(e: any) => updateRow(i, { points: Number(e.target.value) })}
+                      onChange={(e) => updateRow(i, { points: Number((e.target as HTMLInputElement).value) })}
                       className="w-20"
                     />
                   </td>
                   <td className="border px-2 py-1">
                     <Input
                       value={r.reason ?? ""}
-                      onChange={(e: any) => updateRow(i, { reason: e.target.value })}
+                      onChange={(e) => updateRow(i, { reason: (e.target as HTMLInputElement).value })}
                       className="w-64"
                     />
                   </td>

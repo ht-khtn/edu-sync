@@ -5,7 +5,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 export const dynamic = 'force-dynamic'
 
 export default async function MyViolationsPageContent() {
-  let supabase: any
+  let supabase: Awaited<ReturnType<typeof getSupabaseServer>> | null
   try { supabase = await getSupabaseServer() } catch { supabase = null }
   if (!supabase) return <p className="text-sm text-red-600">Không khởi tạo được Supabase server.</p>
 
@@ -20,7 +20,7 @@ export default async function MyViolationsPageContent() {
   // // Role gate: allow only S, CC, or YUM
   // const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
   // const roleList = Array.isArray(roles) ? roles : []
-  // const allowed = roleList.some((r: any) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
+  // const allowed = roleList.some((r) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
   // if (!allowed) redirect('/')
 
   const appUserId = 'mock-user-id' // Mock for development
@@ -62,15 +62,18 @@ export default async function MyViolationsPageContent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r: any) => (
+              {rows.map((r) => {
+                const classEntry = Array.isArray(r.classes) ? r.classes[0] : r.classes
+                const criteriaEntry = Array.isArray(r.criteria) ? r.criteria[0] : r.criteria
+                return (
                 <TableRow key={r.id}>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</TableCell>
-                  <TableCell className="text-sm">{r.classes?.name || '—'}</TableCell>
-                  <TableCell className="text-sm">{r.criteria?.name || '—'}</TableCell>
+                  <TableCell className="text-sm">{classEntry?.name || '—'}</TableCell>
+                  <TableCell className="text-sm">{criteriaEntry?.name || '—'}</TableCell>
                   <TableCell className="text-sm font-medium">{r.score}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-60 truncate" title={r.note}>{r.note || '—'}</TableCell>
                 </TableRow>
-              ))}
+              )})}
             </TableBody>
           </Table>
         </div>

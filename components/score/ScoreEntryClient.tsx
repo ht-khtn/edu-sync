@@ -20,13 +20,13 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { ParsedRow } from "@/lib/csv";
-import { submitBatchMock } from "@/lib/score";
+import { submitBatchMock, UploadResult } from "@/lib/score";
 
 export default function ScoreEntryClient() {
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [activityId, setActivityId] = useState<string>("activity-demo-1");
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<UploadResult | null>(null);
 
   const handleSubmit = useCallback(async () => {
     if (!rows.length) return;
@@ -34,13 +34,24 @@ export default function ScoreEntryClient() {
     setResult(null);
     try {
       const resp = await submitBatchMock({
-        batch_id: (crypto as any).randomUUID?.() ?? `batch-${Date.now()}`,
+        batch_id: (globalThis.crypto as Crypto | undefined)?.randomUUID?.() ?? `batch-${Date.now()}`,
         activity_id: activityId,
         entries: rows,
       });
       setResult(resp);
     } catch (err) {
-      setResult({ error: String(err) });
+      const message = String(err);
+      setResult({
+        batch_id: 'error',
+        summary: { total: rows.length, created: 0, failed: rows.length },
+        results: rows.map((_, idx) => ({
+          row_index: idx,
+          status: 'failed',
+          score_id: null,
+          error: message,
+        })),
+        error: message,
+      });
     } finally {
       setSubmitting(false);
     }

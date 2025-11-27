@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 export type Criteria = {
   id: string
   code: string
@@ -30,22 +32,7 @@ export type ViolationRecord = ViolationDraft & {
   created_at: string
 }
 
-type SupabaseQueryResult<Row> = { data: Row[] | null; error: { message: string } | null }
-
-type SupabaseQueryBuilder<Row> = {
-  eq: (column: string, value: string) => SupabaseQueryBuilder<Row>
-  in: (column: string, values: string[]) => SupabaseQueryBuilder<Row>
-  then: <TResult1 = SupabaseQueryResult<Row>, TResult2 = never>(
-    onfulfilled?: ((value: SupabaseQueryResult<Row>) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
-  ) => Promise<TResult1 | TResult2>
-}
-
-type SupabaseClient = {
-  from: (table: string) => {
-    select: (columns: string) => SupabaseQueryBuilder<CriteriaRow | StudentRow>
-  }
-}
+type GenericSupabaseClient = SupabaseClient<any, 'public', any, any, any>
 
 type CriteriaRow = {
   id: string
@@ -65,16 +52,15 @@ type StudentRow = {
 
 // Fetch criteria from Supabase `criteria` table and map to internal Criteria type
 // We convert positive score to negative points for violation entry context.
-export async function fetchCriteriaFromDB(supabase: SupabaseClient): Promise<Criteria[]> {
+export async function fetchCriteriaFromDB(supabase: GenericSupabaseClient): Promise<Criteria[]> {
   try {
-    const { data, error } = (await supabase
-      .from('criteria')
-      .select('id,name,description,type,score,category')) as SupabaseQueryResult<CriteriaRow>
+    const { data, error } = await supabase.from('criteria').select('id,name,description,type,score,category')
     if (error) {
       console.warn('fetchCriteriaFromDB error:', error.message)
       return []
     }
-    return (data || []).map((row) => ({
+    const rows = (data || []) as CriteriaRow[]
+    return rows.map((row) => ({
       id: row.id,
       code: row.category ? `${row.category}` : row.id.slice(0, 8),
       name: row.name,
@@ -93,7 +79,7 @@ export async function fetchCriteriaFromDB(supabase: SupabaseClient): Promise<Cri
 // Fetch students from users + user_profiles. Optionally filter by classId.
 // Optimized: single query join users -> user_profiles; optional filter by classId or a set of classIds
 export async function fetchStudentsFromDB(
-  supabase: SupabaseClient,
+  supabase: GenericSupabaseClient,
   classId?: string,
   classIdsSet?: Set<string> | null
 ): Promise<Student[]> {
@@ -105,13 +91,14 @@ export async function fetchStudentsFromDB(
       q = q.in('class_id', Array.from(classIdsSet))
     }
 
-    const { data: users, error } = (await q) as SupabaseQueryResult<StudentRow>
+    const { data, error } = await q
     if (error) {
       console.warn('fetchStudentsFromDB error:', error.message)
       return []
     }
 
-    return (users || []).map((u) => {
+    const users = (data || []) as StudentRow[]
+    return users.map((u) => {
       const prof = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
       const fullname = prof?.full_name ?? 'Chưa cập nhật'
       const code = prof?.email ?? String(u.id).slice(0, 8)

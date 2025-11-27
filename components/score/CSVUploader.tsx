@@ -1,12 +1,14 @@
 "use client"
 import React from "react";
-import { parseCSV } from "@/lib/csv";
+import { parseCSV, ParsedRow } from "@/lib/csv";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
+export type ParsedCsvRow = ParsedRow;
+
 type Props = {
-  onParsed: (rows: any[]) => void;
+  onParsed: (rows: ParsedCsvRow[]) => void;
 };
 
 export default function CSVUploader({ onParsed }: Props) {

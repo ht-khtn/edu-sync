@@ -59,8 +59,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           const classTargets = (roles || [])
             .filter((r) => r.role_id === 'CC' && r.target)
             .map((r) => String(r.target))
-          const homeroomOf = (classes || []).map((c: any) => String(c.id))
-            const canComplaint = homeroomOf.length > 0
+          const homeroomOf = (classes || []).map((c) => String(c.id))
+          const canComplaint = homeroomOf.length > 0
           if (mounted)
             setState({
               loading: false,
@@ -92,17 +92,24 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
                   const classTargets = (roles || [])
                     .filter((r) => r.role_id === 'CC' && r.target)
                     .map((r) => String(r.target))
-                  const homeroomOf = (classes || []).map((c: any) => String(c.id))
+                  const homeroomOf = (classes || []).map((c) => String(c.id))
                   const canComplaint = homeroomOf.length > 0
                   if (mounted) setState({ loading: false, userId: newUid, roles: (roles as Role[]) || [], classTargets, homeroomOf, canComplaint })
                 } catch {}
               })()
             }
           })
-          cleanup = () => { try { (subscription as any)?.subscription?.unsubscribe?.() } catch {} }
+          cleanup = () => {
+            try {
+              subscription?.subscription?.unsubscribe?.()
+            } catch {
+              // ignore
+            }
+          }
         } catch {}
-      } catch (e: any) {
-        console.warn('AuthProvider init error', e?.message)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        console.warn('AuthProvider init error', message)
         if (mounted) setState((s) => ({ ...s, loading: false }))
       }
     })()

@@ -1,6 +1,6 @@
-import { ClientMainContent } from "@/components/client/ClientMainContent";
+import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
 import { SectionContainer } from "@/components/ui-extended/SectionContainer";
-import { EventCard } from "@/components/client/content/EventCard";
+import { EventCard } from "@/components/domain/client/content/EventCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const dynamic = "force-dynamic";

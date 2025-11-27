@@ -1,6 +1,6 @@
-import { MyViolationsPageContent } from "@/components/my-violations/MyViolationsComponents";
-import RecordsRealtimeListener from "@/components/violation/RecordsRealtimeListener";
-import { ClientMainContent } from "@/components/client/ClientMainContent";
+import { MyViolationsPageContent } from "@/components/domain/my-violations/MyViolationsComponents";
+import RecordsRealtimeListener from "@/components/domain/violation/RecordsRealtimeListener";
+import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
 import getSupabaseServer from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 

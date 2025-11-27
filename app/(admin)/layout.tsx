@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { AdminSidebar } from "@/components/admin/AdminSidebar";
-import { AdminHeader } from "@/components/admin/AdminHeader";
-import { AdminMainContent } from "@/components/admin/AdminMainContent";
+import { AdminSidebar } from "@/components/layout/admin/AdminSidebar";
+import { AdminHeader } from "@/components/layout/admin/AdminHeader";
+import { AdminMainContent } from "@/components/layout/admin/AdminMainContent";
 import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth"
 
 export const metadata: Metadata = {

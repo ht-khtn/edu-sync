@@ -1,7 +1,7 @@
 "use client"
 
 import type { Criteria, Student } from '@/lib/violations'
-import SelectFields from '@/components/violation/SelectFields'
+import SelectFields from '@/components/domain/violation/SelectFields'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'

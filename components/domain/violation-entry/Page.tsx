@@ -1,5 +1,5 @@
-import { ViolationForm } from "@/components/violation/ViolationForm";
-import RecentRecordsList from "@/components/violation/RecentRecordsList";
+import { ViolationForm } from "@/components/domain/violation/ViolationForm";
+import RecentRecordsList from "@/components/domain/violation/RecentRecordsList";
 import {
   fetchCriteriaFromDB,
   fetchStudentsFromDB,
@@ -36,7 +36,7 @@ export default async function ViolationEntryPageContent({
 }) {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
-  let students: Student[] = [];
+  const students: Student[] = [];
 
   let effectiveStudents = students;
   let allowedClasses: { id: string; name: string }[] = [];

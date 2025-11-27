@@ -1,5 +1,5 @@
-import ViolationStatsPageContent from '@/components/violation-stats/Page'
-import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListener'
+import ViolationStatsPageContent from '@/components/domain/violation-stats/Page'
+import RecordsRealtimeListener from '@/components/domain/violation/RecordsRealtimeListener'
 
 export const dynamic = 'force-dynamic'
 

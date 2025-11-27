@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ClientHero } from "@/components/client/ClientHero";
-import { ClientMainContent } from "@/components/client/ClientMainContent";
+import { ClientHero } from "@/components/layout/client/ClientHero";
+import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
 import { SectionContainer } from "@/components/ui-extended/SectionContainer";
-import { AnnouncementCard } from "@/components/client/content/AnnouncementCard";
-import { EventCard } from "@/components/client/content/EventCard";
+import { AnnouncementCard } from "@/components/domain/client/content/AnnouncementCard";
+import { EventCard } from "@/components/domain/client/content/EventCard";
 import { ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";

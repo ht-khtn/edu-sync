@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ClientHeader } from "@/components/client/ClientHeader";
+import { ClientHeader } from "@/components/layout/client/ClientHeader";
 import { redirect } from "next/navigation";
 import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 

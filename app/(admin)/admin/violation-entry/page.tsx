@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
-import { ViolationEntryPageContent } from '@/components/violation-entry/ViolationEntryComponents'
+import { ViolationEntryPageContent } from '@/components/domain/violation-entry/ViolationEntryComponents'
 import QueryToasts from '@/components/common/QueryToasts'
-import RecordsRealtimeListener from '@/components/violation/RecordsRealtimeListener'
+import RecordsRealtimeListener from '@/components/domain/violation/RecordsRealtimeListener'
 import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
 
 export const dynamic = 'force-dynamic'

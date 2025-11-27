@@ -1,4 +1,4 @@
-import { LeaderboardPageContent } from '@/components/leaderboard/LeaderboardComponents'
+import { LeaderboardPageContent } from '@/components/domain/leaderboard/LeaderboardComponents'
 
 export const dynamic = 'force-dynamic'
 

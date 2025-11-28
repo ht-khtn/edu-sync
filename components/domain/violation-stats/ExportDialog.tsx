@@ -25,8 +25,8 @@ import { toast } from "sonner";
 import { getSupabase } from "@/lib/supabase";
 import { Download, Calendar, GraduationCap } from "lucide-react";
 
-// Excel export
-import ExcelJS from "exceljs";
+// Excel export (browser-friendly build)
+import ExcelJS from "exceljs/dist/exceljs.min.js";
 
 type Grade = { id: string; name: string };
 

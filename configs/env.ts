@@ -3,8 +3,13 @@ type SupabasePublicEnv = {
   anonKey: string
 }
 
-function readEnv(key: string): string {
-  const value = process.env[key]
+const publicEnv = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+} as const
+
+function readEnv<K extends keyof typeof publicEnv>(key: K): string {
+  const value = publicEnv[key]
   if (!value || value.trim().length === 0) {
     throw new Error(`Missing required environment variable: ${key}`)
   }
@@ -19,6 +24,6 @@ export function getSupabasePublicEnv(): SupabasePublicEnv {
 }
 
 export function getOptionalSupabaseUrl(): string | null {
-  const value = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const value = publicEnv.NEXT_PUBLIC_SUPABASE_URL
   return value && value.trim().length > 0 ? value : null
 }

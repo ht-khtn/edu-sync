@@ -39,4 +39,6 @@ export async function POST(req: Request) {
   }
 }
 
-export const runtime = 'edge'
+// Keep this handler on the Node.js runtime to prevent edge-only warnings
+// and because it only depends on standard Next.js server features.
+export const runtime = 'nodejs'

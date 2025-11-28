@@ -23,4 +23,6 @@ export async function POST() {
   }
 }
 
-export const runtime = 'edge'
+// Default to the Node.js runtime to avoid disabling static generation elsewhere
+// and because this handler only uses standard Next.js server APIs.
+export const runtime = 'nodejs'

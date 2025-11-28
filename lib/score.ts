@@ -27,11 +27,11 @@ export async function submitBatchMock(payload: SubmitPayload): Promise<UploadRes
   // simulate network / server processing delay
   await new Promise((r) => setTimeout(r, 800));
 
-  const results = payload.entries.map((row, idx) => ({
+  const results: UploadResult["results"] = payload.entries.map((row, idx) => ({
     row_index: idx,
     status: row._invalid ? "failed" : "created",
     score_id: row._invalid ? null : `score-${Math.random().toString(36).slice(2, 9)}`,
-    error: row._invalid ? row._invalid_msg : null,
+    error: row._invalid ? row._invalid_msg ?? null : null,
   }));
 
   const summary = {

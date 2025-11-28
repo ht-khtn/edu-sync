@@ -1,5 +1,5 @@
 import { getServerAuthContext } from "@/lib/server-auth";
-import { getUserRolesWithScope, getAllowedClassIdsForView } from "@/lib/rbac";
+import { getAllowedClassIdsForView } from "@/lib/rbac";
 import {
   Card,
   CardHeader,

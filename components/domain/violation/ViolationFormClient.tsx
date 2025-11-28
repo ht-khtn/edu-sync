@@ -91,7 +91,7 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
           } else {
             toast.success('Đã gửi ghi nhận. Danh sách sẽ được làm mới khi hoàn tất.')
           }
-        } catch (err) {
+        } catch {
           toast.error('Lỗi mạng khi gửi ghi nhận')
         } finally {
           setPending(false)
@@ -100,7 +100,12 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
       }}
       className="grid gap-6 lg:grid-cols-2"
     >
-  <SelectFields students={students} criteria={criteria} allowedClasses={allowedClasses} currentClass={currentClass} />
+      <SelectFields
+        students={students}
+        criteria={criteria}
+        allowedClasses={allowedClasses}
+        currentClass={currentClass}
+      />
 
       <section className="lg:col-span-1">
         <Label className="mb-2">Lý do / ghi chú</Label>

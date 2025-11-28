@@ -91,6 +91,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, id: inserted?.id })
   } catch (e) {
+    console.error('[api/records] unexpected error', e)
     return NextResponse.json({ error: 'unexpected' }, { status: 500 })
   }
 }

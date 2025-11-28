@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import getSupabase from '@/lib/supabase'
 
@@ -38,6 +38,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     homeroomOf: [],
     canComplaint: false,
   })
+  const userIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    userIdRef.current = state.userId
+  }, [state.userId])
 
   useEffect(() => {
     let mounted = true
@@ -81,7 +86,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             if (!newUid) {
               setState((s) => ({ ...s, userId: null, loading: false, roles: [], classTargets: [], homeroomOf: [], canComplaint: false }))
             }
-            if (newUid && newUid !== state.userId) {
+            if (newUid && newUid !== userIdRef.current) {
               // refetch roles for new session
               ;(async () => {
                 try {
@@ -117,7 +122,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       mounted = false
       if (cleanup) cleanup()
     }
-  }, [])
+  }, [router])
 
   
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Dialog,
   DialogTrigger,
@@ -68,7 +68,7 @@ export default function ExportReportDialog() {
           .order("name");
         if (error) throw new Error(error.message);
         setGrades(data || []);
-        if (!gradeId && data && data.length) setGradeId(data[0].id);
+        if (data && data.length) setGradeId((prev) => prev || data[0].id);
       } catch (e) {
         const message = e instanceof Error ? e.message : "";
         toast.error("Không tải được danh sách khối: " + message);
@@ -195,7 +195,7 @@ export default function ExportReportDialog() {
       }
 
       // Compute totals
-      for (const [cls, data] of classMap) {
+      for (const [, data] of classMap) {
         const totalDeductionAcross = Array.from(data.byGroup.values()).reduce(
           (acc, g) => acc + (g.totalDeduction || 0),
           0
@@ -217,11 +217,7 @@ export default function ExportReportDialog() {
       headerRow2.push(null);
       headerRow3.push(null);
 
-      // Column index tracker starts at 1 in ExcelJS
-      let colIdx = 2;
-      const groupStartCol: Record<string, number> = {};
       for (const g of sortedGroups) {
-        groupStartCol[g] = colIdx;
         const subs = groupToSubgroups.get(g) || [];
         for (const sg of subs) {
           headerRow1.push(g);
@@ -230,13 +226,11 @@ export default function ExportReportDialog() {
           headerRow1.push(g);
           headerRow2.push(sg);
           headerRow3.push("Số lượt");
-          colIdx += 2;
         }
         // Group-level Điểm trừ column
         headerRow1.push(g);
         headerRow2.push("Điểm trừ");
         headerRow3.push(null);
-        colIdx += 1;
       }
 
       // Trailing columns
@@ -274,7 +268,6 @@ export default function ExportReportDialog() {
         cursor += width;
       }
       // Merge trailing column headers over two rows
-      const lastStart = cursor;
       ws.mergeCells(2, cursor, 3, cursor); // Tổng điểm
       ws.mergeCells(2, cursor + 1, 3, cursor + 1); // Hạng
       ws.mergeCells(2, cursor + 2, 3, cursor + 2); // Lớp
@@ -295,14 +288,14 @@ export default function ExportReportDialog() {
         a[1].name.localeCompare(b[1].name, "vi")
       );
       // First compute ranks
-      const totals = classEntries.map(([id, d]) => d.totalPoints);
+      const totals = classEntries.map(([, d]) => d.totalPoints);
       const sortedTotals = Array.from(
         new Set(totals.slice().sort((a, b) => b - a))
       );
       const rankByTotal = new Map<number, number>();
       sortedTotals.forEach((t, i) => rankByTotal.set(t, i + 1));
 
-      for (const [clsId, data] of classEntries) {
+      for (const [, data] of classEntries) {
         const row: (string | number | null)[] = [];
         row.push(data.name);
         for (const g of sortedGroups) {

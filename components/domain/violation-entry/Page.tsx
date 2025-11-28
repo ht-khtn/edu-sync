@@ -29,11 +29,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export const dynamic = "force-dynamic";
 
-export default async function ViolationEntryPageContent({
-  searchParams,
-}: {
-  searchParams?: { ok?: string; error?: string };
-}) {
+export default async function ViolationEntryPageContent() {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
   const students: Student[] = [];
@@ -141,8 +137,8 @@ export default async function ViolationEntryPageContent({
         }
       }
     }
-  } catch (e) {
-    // ignore
+  } catch (error) {
+    console.warn('violation-entry preload error', error)
   }
 
   return (

@@ -21,7 +21,7 @@ export default async function ViolationEntryPage({
 
   return (
     <>
-      <ViolationEntryPageContent searchParams={searchParams} />
+      <ViolationEntryPageContent />
       <QueryToasts ok={searchParams?.ok} error={searchParams?.error} />
       <RecordsRealtimeListener />
     </>

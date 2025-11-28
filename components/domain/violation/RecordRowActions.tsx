@@ -24,12 +24,10 @@ import {
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect } from 'react'
 
-export default function RecordRowActions({ id, initialScore, initialNote, initialStudentId, initialCriteriaId, classId }: { id: string, initialScore?: number, initialNote?: string, initialStudentId?: string, initialCriteriaId?: string, classId?: string }) {
+export default function RecordRowActions({ id, initialNote, initialStudentId, initialCriteriaId, classId }: { id: string, initialNote?: string, initialStudentId?: string, initialCriteriaId?: string, classId?: string }) {
   const router = useRouter()
   const [openEdit, setOpenEdit] = useState(false)
   const [openDelete, setOpenDelete] = useState(false)
-  // Score is not editable per request; keep initial for display only if needed
-  const [score] = useState<number | ''>(typeof initialScore === 'number' ? initialScore : '')
   const [note, setNote] = useState<string>(initialNote ?? '')
   const [studentId, setStudentId] = useState<string | ''>(initialStudentId ?? '')
   const [criteriaId, setCriteriaId] = useState<string | ''>(initialCriteriaId ?? '')

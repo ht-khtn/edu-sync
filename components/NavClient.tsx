@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -18,6 +18,7 @@ export default function NavClient() {
   const usedFallbackRef = useRef<boolean>(false)
   const manualLogoutRef = useRef<boolean>(false)
   const lastSignedOutToastAtRef = useRef<number>(0)
+  const infoRef = useRef<SessionInfo | null>(null)
 
   // Rate-limit + dedupe server session fetches to avoid bursts
   const fetchingRef = useRef<boolean>(false)
@@ -39,11 +40,15 @@ export default function NavClient() {
     })()
   }, [info, selfRoles])
 
-  async function fetchInfo(force = false) {
+  useEffect(() => {
+    infoRef.current = info
+  }, [info])
+
+  const fetchInfo = useCallback(async (force = false): Promise<SessionInfo | null | undefined> => {
     const now = Date.now()
     if (!force) {
-      if (fetchingRef.current) return
-      if (now - lastFetchAtRef.current < MIN_FETCH_INTERVAL) return
+      if (fetchingRef.current) return infoRef.current ?? null
+      if (now - lastFetchAtRef.current < MIN_FETCH_INTERVAL) return infoRef.current ?? null
     }
     fetchingRef.current = true
     lastFetchAtRef.current = now
@@ -54,18 +59,24 @@ export default function NavClient() {
       // do not overwrite to null to avoid flicker.
       if (!json?.user && isSignedInRef.current) {
         // keep existing info until server catches up
-        return
+        return infoRef.current ?? null
       }
       setInfo(json)
+      return json
     } catch {
       // don't force null during transient failures if client is signed in
-      if (!isSignedInRef.current) setInfo(null)
+      if (!isSignedInRef.current) {
+        setInfo(null)
+        return null
+      }
+      return infoRef.current ?? null
+    } finally {
+      setLoading(false)
+      fetchingRef.current = false
     }
-    setLoading(false)
-    fetchingRef.current = false
-  }
+  }, [])
 
-  async function deriveRolesClientFallback() {
+  const deriveRolesClientFallback = useCallback(async () => {
     // If server session not yet visible but we have a client Supabase session, derive role flags directly.
     try {
       const supabase = await getSupabase()
@@ -94,10 +105,14 @@ export default function NavClient() {
         }
       }
       usedFallbackRef.current = true
-      setInfo({ user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId })
-      setLoading(false)
+      const fallbackInfo: SessionInfo = { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId }
+      setInfo(fallbackInfo)
+      return fallbackInfo
     } catch {}
-  }
+    finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     let unsub: (() => void) | null = null
@@ -108,8 +123,8 @@ export default function NavClient() {
         const { data: initial } = await supabase.auth.getUser()
         isSignedInRef.current = !!initial?.user
 
-  await fetchInfo(true)
-        if (!info?.user && isSignedInRef.current) {
+        const initialInfo = await fetchInfo(true)
+        if (!initialInfo?.user && isSignedInRef.current) {
           // If server not ready but client is signed in, use fallback once
           await deriveRolesClientFallback()
         }
@@ -120,8 +135,8 @@ export default function NavClient() {
             // Reset derived role flags; will be recomputed for the new user
             setSelfRoles(null)
             // Prefer server; fallback only if still null
-            fetchInfo(true).then(async () => {
-              if (!info?.user) await deriveRolesClientFallback()
+            fetchInfo(true).then(async (latest) => {
+              if (!latest?.user) await deriveRolesClientFallback()
             })
           } else if (event === 'SIGNED_OUT') {
             isSignedInRef.current = false
@@ -146,7 +161,7 @@ export default function NavClient() {
     return () => {
       try { if (unsub) unsub() } catch {}
     }
-  }, [deriveRolesClientFallback, fetchInfo, info])
+  }, [deriveRolesClientFallback, fetchInfo])
 
   if (loading) return <li className="text-sm text-zinc-500">Đang tải…</li>
   if (!info || !info.user) return <Link href="/login">Đăng nhập</Link>

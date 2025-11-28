@@ -23,7 +23,7 @@ export default function RecordsRealtimeListener() {
 				.on(
 					'postgres_changes',
 					{ event: 'INSERT', schema: 'public', table: 'records' },
-					(payload) => {
+					() => {
 						if (!active) return
 						pendingCountRef.current += 1
 						if (timerRef.current) return

@@ -72,7 +72,6 @@ export default async function RecentRecordsList() {
   return (
     <section className="flex flex-col">
       {typedRows.map((r) => {
-        const classEntry = Array.isArray(r.classes) ? r.classes[0] : r.classes
         const criteriaEntry = Array.isArray(r.criteria) ? r.criteria[0] : r.criteria
         const userEntry = Array.isArray(r.users) ? r.users[0] : r.users
         const profileEntry = Array.isArray(userEntry?.user_profiles)

@@ -32,7 +32,7 @@ export type ViolationRecord = ViolationDraft & {
   created_at: string
 }
 
-type GenericSupabaseClient = SupabaseClient<any, 'public', any, any, any>
+type GenericSupabaseClient = SupabaseClient<Record<string, unknown>>
 
 type CriteriaRow = {
   id: string

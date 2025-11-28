@@ -90,7 +90,7 @@ export default function LoginForm() {
           return;
         }
 
-        const profileRes = await fetch("/api/session/summary", {
+        const profileRes = await fetch("/api/session", {
           method: "GET",
           credentials: "include",
           cache: "no-store",
@@ -168,35 +168,36 @@ export default function LoginForm() {
               control={control}
               name="password"
               render={({ field }) => (
-                <FormItem className="space-y-2 relative">
+                <FormItem className="space-y-2">
                   <FormLabel htmlFor="password" className="text-sm font-medium">
                     Mật khẩu
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      autoComplete="current-password"
-                      placeholder="••••••••"
-                      disabled={loading}
-                      className="pr-10"
-                      {...field}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        placeholder="••••••••"
+                        disabled={loading}
+                        className="pr-12"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setShowPassword((s) => !s)}
+                        aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                        className="absolute inset-y-0 right-0 h-full px-3 text-neutral-500 hover:text-neutral-700"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </FormControl>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setShowPassword((s) => !s)}
-                    aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                    className="absolute inset-y-0 right-0 h-auto px-3 text-neutral-500 hover:text-neutral-700"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
                   <FormMessage />
                 </FormItem>
               )}

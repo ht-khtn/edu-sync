@@ -12,8 +12,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
+import QueryToasts from '@/components/common/QueryToasts'
+import { CreateClassDialog } from './CreateClassDialog'
+import { UpdateHomeroomDialog } from './UpdateHomeroomDialog'
 
-export default async function AdminClassesPage() {
+type AdminClassesPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>
+}
+
+export default async function AdminClassesPage({ searchParams }: AdminClassesPageProps) {
   const { supabase, appUserId } = await getServerAuthContext()
   if (!appUserId) redirect('/login')
 
@@ -58,11 +65,35 @@ export default async function AdminClassesPage() {
     if (grade?.name) gradeSet.add(grade.name)
   })
 
+  const { data: gradeList } = await supabase.from('grades').select('id,name').order('name')
+
+  const { data: teacherOptions } = await supabase
+    .from('users')
+    .select('id, user_name, email')
+    .order('user_name', { ascending: true })
+    .limit(500)
+
+  const okParam = getParam(searchParams, 'ok')
+  const errParam = getParam(searchParams, 'error')
+
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quản lý lớp học</h1>
-        <p className="text-muted-foreground mt-1">Tổng quan danh sách lớp, khối và giáo viên chủ nhiệm.</p>
+      <QueryToasts ok={okParam} error={errParam} />
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Quản lý lớp học</h1>
+          <p className="text-muted-foreground mt-1">Tổng quan danh sách lớp, khối và giáo viên chủ nhiệm.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <CreateClassDialog
+            grades={(gradeList || []).map((g) => ({ id: g.id, name: g.name || g.id }))}
+            teachers={(teacherOptions || []).map((t) => ({ id: t.id, label: t.user_name || t.email || t.id }))}
+          />
+          <UpdateHomeroomDialog
+            classes={classRows.map((cls) => ({ id: cls.id, name: cls.name || cls.id }))}
+            teachers={(teacherOptions || []).map((t) => ({ id: t.id, label: t.user_name || t.email || t.id }))}
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -153,4 +184,13 @@ export default async function AdminClassesPage() {
       )}
     </section>
   )
+}
+
+function getParam(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+) {
+  const raw = searchParams?.[key]
+  if (Array.isArray(raw)) return raw[0]
+  return raw
 }

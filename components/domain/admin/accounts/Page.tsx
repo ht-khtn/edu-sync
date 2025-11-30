@@ -13,18 +13,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
+import QueryToasts from '@/components/common/QueryToasts'
+import { CreateAccountDialog } from './CreateAccountDialog'
 
-export default async function AdminAccountsPage() {
+type AdminAccountsPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>
+}
+
+export default async function AdminAccountsPage({ searchParams }: AdminAccountsPageProps) {
   const { supabase, appUserId } = await getServerAuthContext()
   if (!appUserId) redirect('/login')
 
   const summary = summarizeRoles(await getServerRoles())
   if (!hasAdminManagementAccess(summary)) redirect('/admin')
 
+  const { data: classList } = await supabase.from('classes').select('id,name').order('name')
+  const classOptions = (classList || []).map((c) => ({ id: c.id, name: c.name || c.id }))
+  const classMap = new Map(classOptions.map((c) => [c.id, c.name]))
+
   const { data: users, error } = await supabase
     .from('users')
     .select(
-      'id, user_name, email, class_id, created_at, classes(name), user_profiles(full_name,phone_number), user_roles(role_id,target,permissions(name,scope))'
+      'id, user_name, email, class_id, created_at, user_profiles(full_name,phone_number), user_roles(role_id,target,permissions(name,scope))'
     )
     .order('created_at', { ascending: false })
     .limit(300)
@@ -33,15 +43,23 @@ export default async function AdminAccountsPage() {
   const totalAccounts = rows.length
   const uniqueClasses = new Set<string>()
   rows.forEach((row) => {
-    const classEntry = Array.isArray(row.classes) ? row.classes[0] : row.classes
-    if (classEntry?.name) uniqueClasses.add(classEntry.name)
+    if (row.class_id) {
+      uniqueClasses.add(classMap.get(row.class_id) || row.class_id)
+    }
   })
+
+  const okParam = getParam(searchParams, 'ok')
+  const errParam = getParam(searchParams, 'error')
 
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quản lý tài khoản</h1>
-        <p className="text-muted-foreground mt-1">Danh sách tài khoản người dùng nội bộ, chỉ hiển thị cho AD và MOD.</p>
+      <QueryToasts ok={okParam} error={errParam} />
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Quản lý tài khoản</h1>
+          <p className="text-muted-foreground mt-1">Danh sách tài khoản người dùng nội bộ, chỉ hiển thị cho AD và MOD.</p>
+        </div>
+        <CreateAccountDialog classes={classOptions} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -121,7 +139,7 @@ export default async function AdminAccountsPage() {
                     : row.user_profiles
                   const fullName = profile?.full_name || row.user_name || '—'
                   const phone = profile?.phone_number
-                  const classEntry = Array.isArray(row.classes) ? row.classes[0] : row.classes
+                  const className = row.class_id ? classMap.get(row.class_id) || row.class_id : '—'
                   const roleEntries = Array.isArray(row.user_roles)
                     ? row.user_roles
                     : row.user_roles
@@ -134,7 +152,7 @@ export default async function AdminAccountsPage() {
                         <div>{row.email || '—'}</div>
                         {phone && <div className="text-xs">{phone}</div>}
                       </TableCell>
-                      <TableCell>{classEntry?.name || row.class_id || '—'}</TableCell>
+                      <TableCell>{className}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {roleEntries.length === 0 && (
@@ -162,4 +180,13 @@ export default async function AdminAccountsPage() {
       )}
     </section>
   )
+}
+
+function getParam(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+) {
+  const raw = searchParams?.[key]
+  if (Array.isArray(raw)) return raw[0]
+  return raw
 }

@@ -1,4 +1,4 @@
-// docs/scripts/seed-admins/config.ts
+ // docs/scripts/seed-admins/config.ts
 // Cấu hình tài khoản admin cần seed. Chỉnh sửa thông tin trước khi chạy script.
 
 export type AdminSeedConfig = {
@@ -11,10 +11,10 @@ export type AdminSeedConfig = {
 }
 
 export const adminAccount: AdminSeedConfig = {
-  email: 'bch@edusync.edu.vn',
-  username: 'bch',
+  email: 'mod@edusync.edu.vn',
+  username: 'mod',
   password: '123',
-  roleId: 'SEC',
-  roleTarget: null,
+  roleId: 'MOD',
+  roleTarget: 'school',
   classId: null,
 }

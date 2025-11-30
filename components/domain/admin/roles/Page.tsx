@@ -13,8 +13,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
+import QueryToasts from '@/components/common/QueryToasts'
+import { AssignRoleDialog } from './AssignRoleDialog'
 
-export default async function AdminRolesPage() {
+type AdminRolesPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>
+}
+
+export default async function AdminRolesPage({ searchParams }: AdminRolesPageProps) {
   const { supabase, appUserId } = await getServerAuthContext()
   if (!appUserId) redirect('/login')
 
@@ -37,11 +43,35 @@ export default async function AdminRolesPage() {
     return acc
   }, {})
 
+  const { data: userOptions } = await supabase
+    .from('users')
+    .select('id, user_name, email')
+    .order('user_name', { ascending: true })
+    .limit(500)
+
+  const { data: permissionList } = await supabase
+    .from('permissions')
+    .select('id, name')
+    .order('id', { ascending: true })
+
+  const okParam = getParam(searchParams, 'ok')
+  const errParam = getParam(searchParams, 'error')
+
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quản lý vai trò</h1>
-        <p className="text-muted-foreground mt-1">Theo dõi gán quyền, scope và target cho từng tài khoản.</p>
+      <QueryToasts ok={okParam} error={errParam} />
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Quản lý vai trò</h1>
+          <p className="text-muted-foreground mt-1">Theo dõi gán quyền, scope và target cho từng tài khoản.</p>
+        </div>
+        <AssignRoleDialog
+          users={(userOptions || []).map((u) => ({
+            id: u.id,
+            label: u.user_name || u.email || u.id,
+          }))}
+          roles={(permissionList || []).map((p) => ({ id: p.id, name: p.name || p.id }))}
+        />
       </div>
 
       <Card>
@@ -127,4 +157,13 @@ export default async function AdminRolesPage() {
       )}
     </section>
   )
+}
+
+function getParam(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+) {
+  const raw = searchParams?.[key]
+  if (Array.isArray(raw)) return raw[0]
+  return raw
 }

@@ -4,7 +4,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { BarChart3, FileText, Trophy, Users } from "lucide-react";
+import { BarChart3, Building2, FileText, ShieldCheck, Trophy, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { getServerRoles, summarizeRoles } from "@/lib/server-auth";
@@ -16,7 +16,7 @@ type DashboardCard = {
   description: string
   icon: LucideIcon
   href: string
-  requires?: "violation-entry" | "violation-stats"
+  requires?: "violation-entry" | "violation-stats" | "management"
 }
 
 const baseDashboardCards: ReadonlyArray<DashboardCard> = [
@@ -46,6 +46,27 @@ const baseDashboardCards: ReadonlyArray<DashboardCard> = [
     href: "/admin/violation-stats",
     requires: "violation-stats",
   },
+  {
+    title: "Quản lý tài khoản",
+    description: "Danh sách và trạng thái người dùng",
+    icon: Users,
+    href: "/admin/accounts",
+    requires: "management",
+  },
+  {
+    title: "Quản lý vai trò",
+    description: "Gán quyền và target",
+    icon: ShieldCheck,
+    href: "/admin/roles",
+    requires: "management",
+  },
+  {
+    title: "Danh bạ lớp",
+    description: "Thông tin lớp và GVCN",
+    icon: Building2,
+    href: "/admin/classes",
+    requires: "management",
+  },
 ] as const;
 
 export default async function AdminDashboardPage() {
@@ -54,6 +75,7 @@ export default async function AdminDashboardPage() {
   const dashboardCards = baseDashboardCards.filter((card) => {
     if (card.requires === "violation-entry") return summary.canEnterViolations;
     if (card.requires === "violation-stats") return summary.canViewViolationStats;
+    if (card.requires === "management") return summary.canManageSystem;
     return true;
   });
 

@@ -33,6 +33,7 @@ export default async function AdminLayout({
       <AdminSidebar
         canEnterViolations={summary.canEnterViolations}
         canViewViolationStats={summary.canViewViolationStats}
+        canManageSystem={summary.canManageSystem}
       />
       <SidebarInset suppressHydrationWarning>
         <AdminHeader user={user} />

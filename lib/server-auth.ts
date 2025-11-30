@@ -65,6 +65,7 @@ export type RoleSummary = {
   hasCC: boolean
   canEnterViolations: boolean
   canViewViolationStats: boolean
+  canManageSystem: boolean
 }
 
 export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
@@ -88,6 +89,7 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
 
   const canEnterViolations = hasCC && !hasSchoolScope
   const canViewViolationStats = hasSchoolScope
+  const canManageSystem = roleIds.includes('AD') || roleIds.includes('MOD')
 
   return {
     roleIds,
@@ -98,6 +100,7 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
     hasCC,
     canEnterViolations,
     canViewViolationStats,
+    canManageSystem,
   }
 }
 

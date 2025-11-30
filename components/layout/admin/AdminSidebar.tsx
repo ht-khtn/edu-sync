@@ -9,6 +9,9 @@ import {
   FileText,
   BarChart3,
   History,
+  Users,
+  ShieldCheck,
+  Building2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -28,6 +31,7 @@ import type { LucideIcon } from "lucide-react";
 type AdminSidebarProps = {
   canEnterViolations: boolean
   canViewViolationStats: boolean
+  canManageSystem: boolean
 }
 
 type NavItem = {
@@ -37,7 +41,7 @@ type NavItem = {
   requires?: "violation-entry" | "violation-stats"
 }
 
-const baseAdminNavItems: ReadonlyArray<NavItem> = [
+const operationsNavItems: ReadonlyArray<NavItem> = [
   {
     title: "Bảng điều khiển",
     href: "/admin",
@@ -67,15 +71,55 @@ const baseAdminNavItems: ReadonlyArray<NavItem> = [
   },
 ] as const;
 
-function AdminSidebarComponent({ canEnterViolations, canViewViolationStats }: AdminSidebarProps) {
+const managementNavItems = [
+  {
+    title: "Tài khoản",
+    href: "/admin/accounts",
+    icon: Users,
+  },
+  {
+    title: "Vai trò",
+    href: "/admin/roles",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Lớp học",
+    href: "/admin/classes",
+    icon: Building2,
+  },
+] as const satisfies ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>;
+
+function AdminSidebarComponent({ canEnterViolations, canViewViolationStats, canManageSystem }: AdminSidebarProps) {
   const pathname = usePathname();
-  const adminNavItems = React.useMemo(() => {
-    return baseAdminNavItems.filter((item) => {
+  const filteredOperations = React.useMemo(() => {
+    return operationsNavItems.filter((item) => {
       if (item.requires === "violation-entry") return canEnterViolations;
       if (item.requires === "violation-stats") return canViewViolationStats;
       return true;
     });
   }, [canEnterViolations, canViewViolationStats]);
+
+  const renderNavItems = (items: ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>) => (
+    <SidebarMenu>
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <SidebarMenuItem key={item.href}>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === item.href}
+              className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+            >
+              <Link href={item.href}>
+                <Icon className="h-4 w-4" />
+                <span>{item.title}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
 
   return (
     <Sidebar
@@ -104,27 +148,19 @@ function AdminSidebarComponent({ canEnterViolations, canViewViolationStats }: Ad
             Quản lý
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {adminNavItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href}
-                      className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-                    >
-                      <Link href={item.href}>
-                        <Icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            {renderNavItems(filteredOperations)}
           </SidebarGroupContent>
         </SidebarGroup>
+        {canManageSystem && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Hệ thống
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              {renderNavItems(managementNavItems)}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border bg-sidebar">
         <div className="p-4 text-xs text-muted-foreground">EduSync v1.0</div>

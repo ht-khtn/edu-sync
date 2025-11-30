@@ -1,5 +1,5 @@
 import getSupabaseServer from '@/lib/supabase-server'
-// import { redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 
 export const dynamic = 'force-dynamic'
@@ -9,21 +9,19 @@ export default async function MyViolationsPageContent() {
   try { supabase = await getSupabaseServer() } catch { supabase = null }
   if (!supabase) return <p className="text-sm text-red-600">Không khởi tạo được Supabase server.</p>
 
-  // Auth
-  // const { data: userRes } = await supabase.auth.getUser()
-  // const authUid = userRes?.user?.id
-  // if (!authUid) redirect('/login')
-  // const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
-  // const appUserId = appUser?.id as string | undefined
-  // if (!appUserId) redirect('/login')
+  // Auth flow: map Supabase auth user -> app user id
+  const { data: userRes } = await supabase.auth.getUser()
+  const authUid = userRes?.user?.id
+  if (!authUid) redirect('/login')
+  const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
+  const appUserId = appUser?.id as string | undefined
+  if (!appUserId) redirect('/login')
 
-  // // Role gate: allow only S, CC, or YUM
-  // const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
-  // const roleList = Array.isArray(roles) ? roles : []
-  // const allowed = roleList.some((r) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
-  // if (!allowed) redirect('/')
-
-  const appUserId = 'mock-user-id' // Mock for development
+  // Role gate: allow only S, CC, or YUM (student or permitted roles)
+  const { data: roles } = await supabase.from('user_roles').select('role_id').eq('user_id', appUserId)
+  const roleList = Array.isArray(roles) ? roles : []
+  const allowed = roleList.some((r) => r.role_id === 'S' || r.role_id === 'YUM' || r.role_id === 'CC')
+  if (!allowed) redirect('/')
 
   // Fetch own violations
   const { data: rows, error: rowsErr } = await supabase

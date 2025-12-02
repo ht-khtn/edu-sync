@@ -150,3 +150,32 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 - Tối ưu hoá latency khi host điều khiển; có cần Edge Runtime cho API host? (chưa quyết).
 - Cơ chế phân quyền giữa `olympia.admins` (host vs editor) – cần bảng role riêng hay dùng enum.
 - Lưu trữ media (ảnh/video) của câu hỏi: bucket riêng hay tái sử dụng bucket hiện tại.
+
+## 9. Tiến độ hiện tại (12/2025)
+- ✅ Hoàn tất middleware host-based routing và tạo route group `(olympia)` với layout riêng cho admin & client.
+- ✅ Đưa toàn bộ DDL `olympia` vào migration `supabase/migrations/20241202090000_olympia_schema.sql` và tạo script seed `scripts/seed-olympia.ts` (giải đấu + trận scheduled/live + câu hỏi mẫu + live session demo).
+- ✅ Xây trang admin chính, trang quản lý giải/trận (`/admin/matches`) và ngân hàng câu hỏi (`/admin/question-bank`); cả hai đã đọc dữ liệu thật từ Supabase và có dialog tạo mới thông qua server actions.
+- ✅ Bổ sung server actions trong `app/(olympia)/olympia/actions.ts` (create match, create question, validate join code) cùng các client dialog/form tương ứng.
+- ✅ Trang client `/client` liệt kê trận scheduled/live, hiển thị mã join đối với trận live và cho phép nhập mã tham gia; hiện tại dùng polling 45 giây để refresh.
+- ⏳ Chưa có RLS riêng cho schema `olympia` (đợi sau khi hoàn thiện use-case) và chưa có realtime listener; toàn bộ UI đang rely vào SSR + polling.
+
+## 10. Lộ trình tiếp theo & Supabase Realtime
+1. **Realtime hạ tầng**
+   - Tạo helper Supabase client phía browser (`lib/supabase-browser.ts`) cùng hook `useOlympiaRealtime`.
+   - Đăng ký channel lắng nghe `olympia.matches` (status change) và `olympia.live_sessions` (join code, question_state) để đẩy dữ liệu vào state client.
+   - Kết hợp với `LiveScheduleAutoRefresh` (polling) như fallback; tránh double fetch bằng cách cập nhật local state trước khi gọi `router.refresh`.
+2. **Client schedule & admin dashboard realtime**
+   - Bao bọc trang `/client` bằng client component tiêu thụ hook realtime, cho phép cập nhật lập tức khi trận chuyển `scheduled → live` hoặc session đổi code/timer.
+   - Với `/admin` và `/admin/matches`, thêm widget realtime (ví dụ banner “Trận vừa chuyển sang live”) và đồng bộ với `revalidatePath` từ server actions.
+3. **API điều khiển live**
+   - Viết server actions cho host: tạo/đóng `live_sessions`, chuyển round, reveal question, cập nhật `question_state`.
+   - Phát sự kiện realtime tương ứng (tối thiểu broadcast row change; có thể bổ sung channel tùy chỉnh nếu cần latency thấp).
+4. **RLS (sau realtime MVP)**
+   - Xác định rule: admin (`role = 'AD'`) được full access; thí sinh chỉ đọc `matches` + `live_sessions` ở trạng thái public hoặc thuộc trận gán.
+   - Thêm policies cho `questions`, `round_questions`, `match_players` trước khi expose endpoints.
+5. **Mở rộng UI**
+   - Trang chi tiết trận: tabs cho Vòng, Người chơi, Bộ câu hỏi; cho phép attach/detach record.
+   - Cổng học sinh khi đã join: hiển thị timer, log câu hỏi realtime, buzzer input (giai đoạn 2).
+6. **QA & Monitoring**
+   - Viết script seed bổ sung (players, rounds) để test realtime.
+   - Thiết lập logging khi server actions thất bại; cân nhắc thêm `olympia.audit_logs`.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useFormState } from 'react-dom'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -19,13 +19,17 @@ type Props = {
 
 export function CreateMatchDialog({ tournaments }: Props) {
   const [open, setOpen] = useState(false)
-  const [state, formAction] = useFormState(createMatchAction, initialState)
-
-  useEffect(() => {
-    if (state.success) {
-      setOpen(false)
-    }
-  }, [state.success])
+  const handleAction = useCallback(
+    async (prevState: ActionState, formData: FormData) => {
+      const result = await createMatchAction(prevState, formData)
+      if (result.success) {
+        setOpen(false)
+      }
+      return result
+    },
+    [setOpen]
+  )
+  const [state, formAction] = useFormState(handleAction, initialState)
 
   const hasMessage = state.error || state.success
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useFormState } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,14 +10,18 @@ import { cn } from '@/utils/cn'
 const initialState: ActionState = { error: null, success: null }
 
 export function JoinSessionForm() {
-  const [state, formAction] = useFormState(lookupJoinCodeAction, initialState)
   const [code, setCode] = useState('')
-
-  useEffect(() => {
-    if (state.success) {
-      setCode('')
-    }
-  }, [state.success])
+  const handleAction = useCallback(
+    async (prevState: ActionState, formData: FormData) => {
+      const result = await lookupJoinCodeAction(prevState, formData)
+      if (result.success) {
+        setCode('')
+      }
+      return result
+    },
+    [setCode]
+  )
+  const [state, formAction] = useFormState(handleAction, initialState)
 
   const hasMessage = state.error || state.success
 

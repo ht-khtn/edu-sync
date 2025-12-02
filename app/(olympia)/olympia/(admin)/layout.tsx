@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { redirect } from 'next/navigation'
+import { ensureOlympiaAdminAccess } from '@/lib/olympia-access'
 
 const navItems = [
   { href: '/admin', label: 'Bảng điều khiển' },
@@ -7,7 +9,13 @@ const navItems = [
   { href: '/admin/question-bank', label: 'Bộ đề' },
 ]
 
-export default function OlympiaAdminLayout({ children }: { children: ReactNode }) {
+export default async function OlympiaAdminLayout({ children }: { children: ReactNode }) {
+  try {
+    await ensureOlympiaAdminAccess()
+  } catch {
+    redirect('/client')
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b bg-slate-900 text-white">

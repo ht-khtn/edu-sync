@@ -25,13 +25,33 @@
 > Lưu ý: chưa tạo bảng nào; toàn bộ DDL cần đưa vào file migration mới trong `supabase/`.
 
 ### 3.1. Bảng core (liên kết người dùng)
-- `olympia.users` (PK = uuid, FK → `public.users.id`, metadata: display_name, avatar).
-- `olympia.admins` (PK = uuid, FK → `public.users.id`, role: `host|editor|viewer`).
+- `olympia.participants` (hoặc tên tương đương):
+   - `user_id uuid primary key references public.users(id)`
+   - `contestant_code text unique` – mã thí sinh dùng trong trận/bảng điểm.
+   - `role text` – `null` nếu là thí sinh, `'AD'` nếu là tài khoản quản trị Olympia (được upload bộ đề + host trận).
 
-### 3.2. Ngân hàng câu hỏi
-- `olympia.questions`: `id`, `round_type`, `subject`, `difficulty`, `content`, `answer`, `assets`, `time_limit_seconds`, `created_by` (FK → `olympia.admins`).
-- `olympia.question_tags`: `question_id`, `tag`.
-- `olympia.question_revisions`: lưu lịch sử chỉnh sửa (optional giai đoạn 2).
+> Guest (không đăng nhập) không cần bản ghi participants; chỉ cần quyền đọc public state của trận.
+
+### 3.2. Ngân hàng câu hỏi (question bank)
+
+Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám sát file Excel mẫu.
+
+- `olympia.questions` (tên cột tiếng Anh):
+   - `id uuid primary key default gen_random_uuid()`
+   - `code text unique` – **CODE**
+   - `category text` – **LĨNH VỰC** (domain/subject)
+   - `question_text text` – **CÂU HỎI**
+   - `answer_text text` – **ĐÁP ÁN**
+   - `note text` – **GHI CHÚ**
+   - `submitted_by text` – **NGƯỜI GỬI** (display name / mã)
+   - `source text` – **NGUỒN** (VD: "Tự soạn", "Sách X"...)
+   - `image_url text` – **LINK ẢNH**
+   - `audio_url text` – **LINK ÂM THANH**
+   - `created_by uuid references public.users(id)` – người tạo trong hệ thống (thường là AD)
+   - `created_at timestamptz default now()`
+   - `updated_at timestamptz default now()`
+
+> Tính năng upload Excel + chỉnh sửa trực tiếp sẽ map cột Excel vào các field trên. UI xử lý validate/merge; schema không cần thêm bảng phụ.
 
 ### 3.3. Giải đấu & trận
 - `olympia.tournaments`: mô tả giải (tuần/tháng/năm).
@@ -41,12 +61,35 @@
 - `olympia.round_questions`: ánh xạ câu hỏi cụ thể cho từng vòng/trận, optional `target_player_id`.
 
 ### 3.4. Ghi nhận thi đấu
-- `olympia.answers`: lưu câu trả lời, đúng/sai, điểm, `response_time_ms`.
-- `olympia.match_scores`: snapshot điểm theo vòng.
+### 3.4. Câu trả lời & điểm – `olympia.answers`, `olympia.match_scores`
+#### 3.4.1. `olympia.answers`
+#### 3.4.2. `olympia.match_scores`
 - `olympia.buzzer_events`: ai bấm chuông, timestamp, kết quả.
-- `olympia.star_uses`, `olympia.obstacle_tiles`, `olympia.obstacle_guesses` theo mô tả trong `docs/domain/olympia-rule.md`.
+### 5.5. Khuyến nghị sớm
 
-### 3.5. Chính sách
+8. `olympia_tournaments` – nếu muốn group nhiều trận theo giải/kỳ.
+9. `olympia_obstacles`
+10. `olympia_obstacle_tiles`
+
+### 5.6. Live sessions (khuyến nghị nên tách riêng)
+
+Để quản lý trạng thái realtime (timer, bước hiện tại) mà không ghi đè cấu hình `matches`, nên thêm:
+
+- `olympia.live_sessions`:
+   - `id uuid primary key`
+   - `match_id uuid references olympia.matches(id)`
+   - `join_code text unique` – mã để thí sinh/khách join
+   - `status text` – `pending|running|ended`
+   - `current_round_id uuid references olympia.match_rounds(id)`
+   - `current_round_type text` – cache kiểu vòng hiện tại (`khoi_dong|vcnv|tang_toc|ve_dich`)
+   - `current_round_question_id uuid references olympia.round_questions(id)`
+   - `question_state text` – `hidden|showing|answer_revealed|completed`
+   - `timer_deadline timestamptz` – thời điểm hết giờ để client tự đếm ngược
+   - `created_by uuid references public.users(id)` – host khởi tạo
+   - `created_at timestamptz default now()`
+   - `ended_at timestamptz`
+
+> Guest xem trận chỉ cần subscribe/live query vào `live_sessions` + các bảng log (`answers`, `match_scores`, `buzzer_events`), không cần đăng nhập.
 - Áp dụng RLS: chỉ Olympia admin thấy toàn bộ; thí sinh chỉ thấy dữ liệu trận mình tham gia.
 - Viết view hỗ trợ dashboard (vd. `olympia.v_match_summary`).
 

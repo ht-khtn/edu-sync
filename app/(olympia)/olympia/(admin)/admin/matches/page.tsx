@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { CreateMatchDialog } from '@/components/domain/olympia/CreateMatchDialog'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 type TournamentRow = {
@@ -99,7 +100,7 @@ export default async function OlympiaMatchesAdminPage() {
           <Button variant="outline" size="sm">
             Xuất CSV
           </Button>
-          <Button size="sm">Tạo trận mới</Button>
+          <CreateMatchDialog tournaments={tournaments} />
         </div>
       </div>
 

@@ -1,16 +1,7 @@
+import { CreateQuestionDialog } from '@/components/domain/olympia/CreateQuestionDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getServerAuthContext } from '@/lib/server-auth'
 
@@ -41,27 +32,6 @@ async function fetchQuestionBank() {
     total: count ?? data?.length ?? 0,
     questions: data ?? [],
   }
-}
-
-function QuestionActions() {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button>Tạo câu hỏi</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Chức năng đang phát triển</DialogTitle>
-          <DialogDescription>
-            Form nhập câu hỏi sẽ được gắn khi hoàn tất Supabase function kiểm tra trùng mã câu hỏi.
-          </DialogDescription>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Hiện tại bạn có thể nhập dữ liệu bằng file CSV và chạy script seed để điền vào bảng olympia.questions.
-        </p>
-      </DialogContent>
-    </Dialog>
-  )
 }
 
 function CategoryBadges({ questions }: { questions: QuestionRow[] }) {
@@ -96,8 +66,7 @@ export default async function OlympiaQuestionBankPage() {
           <p className="text-sm text-muted-foreground">Hiển thị tối đa 50 câu mới nhất cho mục đích kiểm tra nhanh.</p>
         </div>
         <div className="flex gap-2">
-          <Input placeholder="Tìm theo mã..." className="w-48" disabled />
-          <QuestionActions />
+          <CreateQuestionDialog />
         </div>
       </div>
 

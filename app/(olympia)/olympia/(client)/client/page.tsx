@@ -1,8 +1,9 @@
+import { JoinSessionForm } from '@/components/domain/olympia/JoinSessionForm'
+import { LiveScheduleAutoRefresh } from '@/components/domain/olympia/LiveScheduleAutoRefresh'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { getServerSupabase } from '@/lib/server-auth'
 
 export const dynamic = 'force-dynamic'
@@ -65,12 +66,8 @@ export default async function OlympiaClientHomePage() {
         <p className="text-sm text-muted-foreground">
           Nhập mã tham gia do ban tổ chức cung cấp hoặc chọn trận đang mở để tham gia khán phòng trực tuyến.
         </p>
-        <div className="flex flex-col gap-2 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center">
-          <Input placeholder="Nhập mã tham gia" className="sm:w-60" disabled />
-          <Button disabled>Vào phòng</Button>
-          <p className="text-xs text-muted-foreground">
-            Form join sẽ được kích hoạt khi live session tạo mã tự động.
-          </p>
+        <div className="flex flex-col gap-2 rounded-lg border bg-white p-4 shadow-sm">
+          <JoinSessionForm />
         </div>
       </div>
 
@@ -121,6 +118,8 @@ export default async function OlympiaClientHomePage() {
           })}
         </div>
       )}
+
+      <LiveScheduleAutoRefresh intervalMs={45000} />
     </section>
   )
 }

@@ -45,9 +45,19 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
 
   const { data: userOptions } = await supabase
     .from('users')
-    .select('id, user_name, email, class_id, classes(name), user_profiles(full_name)')
+    .select('id, user_name, email, class_id, user_profiles(full_name)')
     .order('user_name', { ascending: true })
     .limit(500)
+
+  const { data: classList } = await supabase
+    .from('classes')
+    .select('id, name')
+    .order('name', { ascending: true })
+
+  const classMap = new Map<string, string>()
+  for (const cls of classList || []) {
+    if (cls?.id) classMap.set(cls.id, cls.name || cls.id)
+  }
 
   const { data: permissionList } = await supabase
     .from('permissions')
@@ -68,8 +78,7 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
         <AssignRoleDialog
           users={(userOptions || []).map((u) => {
             const profile = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
-            const classRef = Array.isArray(u.classes) ? u.classes[0] : u.classes
-            const className = classRef?.name || u.class_id || 'Chưa gán'
+            const className = (u.class_id && classMap.get(u.class_id)) || u.class_id || 'Chưa gán'
             const displayName = profile?.full_name?.trim() || u.user_name || u.email || u.id
             return {
               id: u.id,

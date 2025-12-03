@@ -21,23 +21,30 @@ type AdminAccountsPageProps = {
 }
 
 export default async function AdminAccountsPage({ searchParams }: AdminAccountsPageProps) {
-  const { supabase, appUserId } = await getServerAuthContext()
+  const [{ supabase, appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ])
+  
   if (!appUserId) redirect('/login')
 
-  const summary = summarizeRoles(await getServerRoles())
+  const summary = summarizeRoles(roles)
   if (!hasAdminManagementAccess(summary)) redirect('/admin')
 
-  const { data: classList } = await supabase.from('classes').select('id,name').order('name')
+  // Parallel fetch classes and users
+  const [{ data: classList }, { data: users, error }] = await Promise.all([
+    supabase.from('classes').select('id,name').order('name'),
+    supabase
+      .from('users')
+      .select(
+        'id, user_name, email, class_id, created_at, user_profiles(full_name,phone_number), user_roles(role_id,target,permissions(name,scope))'
+      )
+      .order('created_at', { ascending: false })
+      .limit(300)
+  ])
+  
   const classOptions = (classList || []).map((c) => ({ id: c.id, name: c.name || c.id }))
   const classMap = new Map(classOptions.map((c) => [c.id, c.name]))
-
-  const { data: users, error } = await supabase
-    .from('users')
-    .select(
-      'id, user_name, email, class_id, created_at, user_profiles(full_name,phone_number), user_roles(role_id,target,permissions(name,scope))'
-    )
-    .order('created_at', { ascending: false })
-    .limit(300)
 
   const rows = Array.isArray(users) ? users : []
   const totalAccounts = rows.length

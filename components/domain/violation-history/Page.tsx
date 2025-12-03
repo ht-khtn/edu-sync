@@ -31,10 +31,14 @@ export default async function ViolationHistoryPageContent({
   searchParams?: Search;
 }) {
   // Auth + role guard (reuse CC access rule for now)
-  const { supabase, appUserId } = await getServerAuthContext();
+  const [{ supabase, appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ]);
+  
   if (!appUserId) redirect("/login");
   // Fetch roles with scope info so we allow both CC (class-committee) and school-scoped roles
-  const summary = summarizeRoles(await getServerRoles());
+  const summary = summarizeRoles(roles);
   if (!summary.hasCC && !summary.hasSchoolScope) {
     return redirect("/");
   }
@@ -45,25 +49,21 @@ export default async function ViolationHistoryPageContent({
     appUserId
   );
 
-  // Fetch classes list (respect allowed set if not null)
-  let { data: classes } = await supabase
-    .from("classes")
-    .select("id,name")
-    .order("name");
-  if (allowedViewClassIds) {
-    classes = (classes || []).filter((c) => allowedViewClassIds.has(c.id));
-  }
-
-  // Fetch students (filtered to allowed classes)
-  // Fetch students directly filtered by allowed class ids (single query) for performance
-  const students = await fetchStudentsFromDB(
-    supabase,
-    undefined,
-    allowedViewClassIds === null ? null : allowedViewClassIds
-  );
-
-  // Fetch criteria list
-  const criteriaList = await fetchCriteriaFromDB(supabase, { includeInactive: true });
+  // Parallel fetch: classes, students, criteria
+  const [{ data: classes }, students, criteriaList] = await Promise.all([
+    supabase.from("classes").select("id,name").order("name"),
+    fetchStudentsFromDB(
+      supabase,
+      undefined,
+      allowedViewClassIds === null ? null : allowedViewClassIds
+    ),
+    fetchCriteriaFromDB(supabase, { includeInactive: true })
+  ]);
+  
+  // Filter classes by allowed set if needed
+  const filteredClasses = allowedViewClassIds 
+    ? (classes || []).filter((c) => allowedViewClassIds.has(c.id))
+    : (classes || []);
 
   // Build records query with filters
   let query = supabase
@@ -114,7 +114,7 @@ export default async function ViolationHistoryPageContent({
             start: searchParams?.start || "",
             end: searchParams?.end || "",
           }}
-          classes={(classes || []).map((c) => ({
+          classes={filteredClasses.map((c) => ({
             id: c.id,
             name: c.name || c.id,
           }))}

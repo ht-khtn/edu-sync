@@ -23,11 +23,14 @@ type RecordRow = {
 };
 // file touched to ensure editors/TS server reload recognize the latest content
 export default async function ViolationStatsPageContent() {
-  const { supabase, appUserId } = await getServerAuthContext();
+  const [{ supabase, appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ]);
+  
   if (!appUserId) redirect("/login");
 
   // Require at least one role with permissions.scope = 'school'
-  const roles = await getServerRoles();
   const summary = summarizeRoles(roles);
   if (!summary.canViewViolationStats) {
     return redirect(summary.canEnterViolations ? "/admin/violation-entry" : "/admin");

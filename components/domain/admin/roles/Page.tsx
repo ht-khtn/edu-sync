@@ -22,10 +22,14 @@ type AdminRolesPageProps = {
 }
 
 export default async function AdminRolesPage({ searchParams }: AdminRolesPageProps) {
-  const { supabase, appUserId } = await getServerAuthContext()
+  const [{ supabase, appUserId }, userRoles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ]);
+  
   if (!appUserId) redirect('/login')
 
-  const summary = summarizeRoles(await getServerRoles())
+  const summary = summarizeRoles(userRoles)
   if (!hasAdminManagementAccess(summary)) redirect('/admin')
 
   const { data: roles, error } = await supabase

@@ -29,10 +29,14 @@ export const dynamic = "force-dynamic";
 
 export default async function LeaderboardPageContent() {
   let supabase: SupabaseClient | null = null;
+  let appUserId: string | null = null;
+  
   try {
     const ctx = await getServerAuthContext();
     supabase = ctx.supabase;
+    appUserId = ctx.appUserId;
   } catch {}
+  
   if (!supabase) {
     return (
       <main className="max-w-4xl mx-auto p-6">
@@ -42,8 +46,6 @@ export default async function LeaderboardPageContent() {
       </main>
     );
   }
-
-  const { appUserId } = await getServerAuthContext();
 
   const allowedClassIds = appUserId
     ? await getAllowedClassIdsForView(supabase, appUserId)

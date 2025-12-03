@@ -11,8 +11,8 @@ type Props = {
 
 const typeColor: Record<string, string> = {
   normal: 'bg-muted text-foreground',
-  serious: 'bg-yellow-100 text-yellow-900',
-  critical: 'bg-red-100 text-red-900',
+  serious: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/50 dark:text-yellow-200',
+  critical: 'bg-red-100 text-red-900 dark:bg-red-900/50 dark:text-red-200',
 }
 
 export function CriteriaTable({ rows }: Props) {

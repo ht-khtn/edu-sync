@@ -42,7 +42,7 @@ export default async function AdminCriteriaPage({ searchParams }: { searchParams
         <CreateCriteriaDialog />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Tổng tiêu chí" value={stats.total} />
         <SummaryCard title="Đang sử dụng" value={stats.active} />
         <SummaryCard title="Theo phạm vi" value={formatSummary(stats.byCategory)} />
@@ -94,11 +94,13 @@ function applyFilters(criteria: Criteria[], filters: CriteriaFilterState) {
 function SummaryCard({ title, value }: { title: string; value: number | string }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-2xl font-semibold">{value}</p>
+        <div className="text-2xl font-bold break-words">{value}</div>
       </CardContent>
     </Card>
   )

@@ -8,11 +8,23 @@ import {
   getDashboardForUser,
 } from '@/lib/proxy-auth'
 
+const envHost = process.env.OLYMPIA_HOST?.toLowerCase().trim()
+const DEFAULT_PREFIX = 'olympia.'
+
+function isOlympiaHost(host: string | null): boolean {
+  if (!host) return false
+  const normalized = host.toLowerCase()
+  if (envHost) return normalized === envHost
+  return normalized.startsWith(DEFAULT_PREFIX)
+}
+
 /**
- * Centralized proxy for auth/authorization
+ * Centralized proxy for auth/authorization and Olympia subdomain routing
  * Handles redirects based on authentication status and roles
  */
 export async function proxy(request: NextRequest) {
+  const host = request.headers.get('host')
+  const url = request.nextUrl.clone()
   const { pathname } = request.nextUrl
 
   // Skip static assets and API routes
@@ -26,6 +38,21 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Handle Olympia subdomain routing (from old middleware.ts)
+  const onOlympiaHost = isOlympiaHost(host)
+  const isOlympiaPath = pathname.startsWith('/olympia')
+
+  if (onOlympiaHost && !isOlympiaPath) {
+    url.pathname = pathname === '/' ? '/olympia' : `/olympia${pathname}`
+    return NextResponse.rewrite(url)
+  }
+
+  if (!onOlympiaHost && isOlympiaPath) {
+    url.pathname = pathname.replace(/^\/olympia/, '') || '/'
+    return NextResponse.redirect(url)
+  }
+
+  // Auth/authorization checks
   const session = await getProxySession(request)
 
   // Rule 1: Protect admin routes

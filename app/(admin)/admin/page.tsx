@@ -7,19 +7,19 @@ import {
 import { BarChart3, Building2, FileText, ShieldCheck, Trophy, Users, AlertTriangle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { getServerRoles, summarizeRoles } from "@/lib/server-auth";
 
-export const dynamic = "force-dynamic";
+// Remove force-dynamic since this page has no dynamic data fetching
+// export const dynamic = "force-dynamic";
 
 type DashboardCard = {
   title: string
   description: string
   icon: LucideIcon
   href: string
-  requires?: "violation-entry" | "violation-stats" | "management"
 }
 
-const baseDashboardCards: ReadonlyArray<DashboardCard> = [
+// Show all cards - client-side role check will handle visibility in sidebar
+const dashboardCards: ReadonlyArray<DashboardCard> = [
   {
     title: "Bảng xếp hạng",
     description: "Xem bảng xếp hạng của các lớp trong khối",
@@ -31,7 +31,6 @@ const baseDashboardCards: ReadonlyArray<DashboardCard> = [
     description: "Ghi nhận các vi phạm mới",
     icon: FileText,
     href: "/admin/violation-entry",
-    requires: "violation-entry",
   },
   {
     title: "Lịch sử vi phạm",
@@ -44,48 +43,34 @@ const baseDashboardCards: ReadonlyArray<DashboardCard> = [
     description: "Phân tích xu hướng vi phạm",
     icon: BarChart3,
     href: "/admin/violation-stats",
-    requires: "violation-stats",
   },
   {
     title: "Tiêu chí vi phạm",
     description: "Thêm/sửa tiêu chí trừ điểm",
     icon: AlertTriangle,
     href: "/admin/criteria",
-    requires: "management",
   },
   {
     title: "Quản lý tài khoản",
     description: "Danh sách và trạng thái người dùng",
     icon: Users,
     href: "/admin/accounts",
-    requires: "management",
   },
   {
     title: "Quản lý vai trò",
     description: "Gán quyền và target",
     icon: ShieldCheck,
     href: "/admin/roles",
-    requires: "management",
   },
   {
     title: "Danh bạ lớp",
     description: "Thông tin lớp và GVCN",
     icon: Building2,
     href: "/admin/classes",
-    requires: "management",
   },
 ] as const;
 
-export default async function AdminDashboardPage() {
-  const roles = await getServerRoles();
-  const summary = summarizeRoles(roles);
-  const dashboardCards = baseDashboardCards.filter((card) => {
-    if (card.requires === "violation-entry") return summary.canEnterViolations;
-    if (card.requires === "violation-stats") return summary.canViewViolationStats;
-    if (card.requires === "management") return summary.canManageSystem;
-    return true;
-  });
-
+export default function AdminDashboardPage() {
   return (
     <div className="space-y-6" suppressHydrationWarning>
       <div suppressHydrationWarning>

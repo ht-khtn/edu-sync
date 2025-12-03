@@ -26,14 +26,9 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useUser } from "@/hooks/useUser";
 
 import type { LucideIcon } from "lucide-react";
-
-type AdminSidebarProps = {
-  canEnterViolations: boolean
-  canViewViolationStats: boolean
-  canManageSystem: boolean
-}
 
 type NavItem = {
   title: string
@@ -95,8 +90,15 @@ const managementNavItems = [
   },
 ] as const satisfies ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>;
 
-function AdminSidebarComponent({ canEnterViolations, canViewViolationStats, canManageSystem }: AdminSidebarProps) {
+function AdminSidebarComponent() {
   const pathname = usePathname();
+  const { user, isLoading } = useUser();
+  
+  // Derive permissions from user roles
+  const canEnterViolations = user?.hasCC && !user?.hasSchoolScope;
+  const canViewViolationStats = user?.hasSchoolScope || false;
+  const canManageSystem = user?.roles?.some(r => r === 'AD' || r === 'MOD') || false;
+  
   const filteredOperations = React.useMemo(() => {
     return operationsNavItems.filter((item) => {
       if (item.requires === "violation-entry") return canEnterViolations;

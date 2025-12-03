@@ -4,7 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/layout/admin/AdminSidebar";
 import { AdminHeader } from "@/components/layout/admin/AdminHeader";
 import { AdminMainContent } from "@/components/layout/admin/AdminMainContent";
-import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth"
+import { getServerAuthContext } from "@/lib/server-auth"
 
 export const metadata: Metadata = {
   title: "Admin Panel - EduSync",
@@ -18,23 +18,16 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Server-side: ensure the user is authenticated and has admin/CC access
+  // Server-side: ensure the user is authenticated
+  // Role check is done in proxy.ts, so we only verify session exists
   const { appUserId } = await getServerAuthContext()
   if (!appUserId) return redirect('/login')
-
-  const roles = await getServerRoles()
-  const summary = summarizeRoles(roles)
-  if (summary.isStudentOnly) return redirect('/client')
 
   const user = { id: appUserId }
 
   return (
     <SidebarProvider defaultOpen={true} suppressHydrationWarning>
-      <AdminSidebar
-        canEnterViolations={summary.canEnterViolations}
-        canViewViolationStats={summary.canViewViolationStats}
-        canManageSystem={summary.canManageSystem}
-      />
+      <AdminSidebar />
       <SidebarInset suppressHydrationWarning>
         <AdminHeader user={user} />
         <AdminMainContent>{children}</AdminMainContent>

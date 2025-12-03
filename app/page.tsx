@@ -4,10 +4,13 @@ import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/serv
 export const dynamic = "force-dynamic";
 
 export default async function RootPage() {
-  const { appUserId } = await getServerAuthContext()
+  const [{ appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ])
+  
   if (!appUserId) return redirect('/client')
 
-  const roles = await getServerRoles()
   const { isStudentOnly } = summarizeRoles(roles)
   return redirect(isStudentOnly ? '/client' : '/admin')
 }

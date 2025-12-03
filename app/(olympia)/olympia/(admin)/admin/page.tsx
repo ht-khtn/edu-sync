@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic'
-
 const mockTournaments = [
   { name: 'Tuần 5 - Kỳ 1', matches: 3, status: 'Chuẩn bị' },
   { name: 'Tháng 12 - Chung kết', matches: 1, status: 'Đang lên lịch' },

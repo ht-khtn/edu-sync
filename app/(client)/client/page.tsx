@@ -7,8 +7,6 @@ import { AnnouncementCard } from "@/components/domain/client/content/Announcemen
 import { EventCard } from "@/components/domain/client/content/EventCard";
 import { ArrowRight } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 const featuredAnnouncements = [
   {
     id: "1",

@@ -1,7 +1,5 @@
 import AdminCriteriaPage from '@/components/domain/admin/criteria/page'
 
-export const dynamic = 'force-dynamic'
-
 export default function CriteriaRoutePage({
   searchParams,
 }: {

@@ -3,8 +3,6 @@ import { SectionContainer } from "@/components/ui-extended/SectionContainer";
 import { EventCard } from "@/components/domain/client/content/EventCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export const dynamic = "force-dynamic";
-
 const mockEvents = [
   {
     id: "1",

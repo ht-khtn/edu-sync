@@ -11,10 +11,14 @@ export default async function ViolationEntryPage({
 }: { 
   searchParams?: { ok?: string, error?: string } 
 }) {
-  const { appUserId } = await getServerAuthContext()
+  const [{ appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ])
+  
   if (!appUserId) return redirect('/login')
 
-  const summary = summarizeRoles(await getServerRoles())
+  const summary = summarizeRoles(roles)
   if (!summary.canEnterViolations) {
     return redirect(summary.canViewViolationStats ? '/admin/violation-stats' : '/admin')
   }

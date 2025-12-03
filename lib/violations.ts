@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type Criteria = {
@@ -62,10 +63,10 @@ type FetchCriteriaOptions = {
   includeInactive?: boolean
 }
 
-export async function fetchCriteriaFromDB(
+export const fetchCriteriaFromDB = cache(async (
   supabase: GenericSupabaseClient,
   options?: FetchCriteriaOptions,
-): Promise<Criteria[]> {
+): Promise<Criteria[]> => {
   try {
     const includeInactive = options?.includeInactive ?? false
     let query = supabase
@@ -100,7 +101,7 @@ export async function fetchCriteriaFromDB(
     console.warn('fetchCriteriaFromDB exception:', message)
     return []
   }
-}
+})
 
 // Fetch students from users + user_profiles. Optionally filter by classId.
 // Optimized: single query join users -> user_profiles; optional filter by classId or a set of classIds

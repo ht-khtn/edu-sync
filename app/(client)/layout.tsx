@@ -12,7 +12,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
-  const { appUserId } = await getServerAuthContext()
+  const [{ appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ])
+  
   if (!appUserId) {
     return (
       <>
@@ -22,7 +26,6 @@ export default async function ClientLayout({ children }: { children: React.React
     )
   }
 
-  const roles = await getServerRoles()
   const { isStudentOnly } = summarizeRoles(roles)
 
   if (!isStudentOnly) {

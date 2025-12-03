@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getServerSupabase } from '@/lib/server-auth'
+import { cache } from 'react'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,7 @@ const matchStatusLabel: Record<string, string> = {
   finished: 'Đã kết thúc',
 }
 
-async function fetchUpcomingMatches() {
+const fetchUpcomingMatches = cache(async () => {
   const supabase = await getServerSupabase()
   const { data: matches, error } = await supabase
     .from('olympia.matches')
@@ -53,7 +54,7 @@ async function fetchUpcomingMatches() {
     )
 
   return { matches: rows, sessions: sessions ?? [] }
-}
+})
 
 export default async function OlympiaClientHomePage() {
   const { matches, sessions } = await fetchUpcomingMatches()

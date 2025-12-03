@@ -13,10 +13,14 @@ import { fetchCriteriaFromDB, type Criteria } from '@/lib/violations'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminCriteriaPage({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }) {
-  const { supabase, appUserId } = await getServerAuthContext()
+  const [{ supabase, appUserId }, roles] = await Promise.all([
+    getServerAuthContext(),
+    getServerRoles()
+  ])
+  
   if (!appUserId) redirect('/login')
 
-  const summary = summarizeRoles(await getServerRoles())
+  const summary = summarizeRoles(roles)
   if (!hasAdminManagementAccess(summary)) redirect('/admin')
 
   const filters = normalizeFilter(searchParams)

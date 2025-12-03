@@ -5,8 +5,6 @@ import { CategoryTabs } from "@/components/domain/client/content/CategoryTabs";
 import { Button } from "@/components/ui/button";
 import { Filter } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 const mockAnnouncements = [
   {
     id: "1",

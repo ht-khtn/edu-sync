@@ -19,8 +19,6 @@ export const metadata: Metadata = {
     "Hệ thống hỗ trợ quản lý phong trào và thi đua dành cho học sinh THPT",
 };
 
-export const dynamic = "force-dynamic";
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {

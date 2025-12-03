@@ -2,8 +2,6 @@ import { MyViolationsPageContent } from "@/components/domain/my-violations/MyVio
 import RecordsRealtimeListener from "@/components/domain/violation/RecordsRealtimeListener";
 import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
 
-export const dynamic = "force-dynamic";
-
 export default async function MyViolationsPage() {
   // try {
   //   const supabase = await getSupabaseServer()

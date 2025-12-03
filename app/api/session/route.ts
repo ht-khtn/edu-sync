@@ -11,16 +11,20 @@ export async function GET() {
     const authUid = userRes?.user?.id
     if (!authUid) return NextResponse.json({ user: null })
 
-    const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
-    const appUserId = appUser?.id as string | undefined
-    if (!appUserId) return NextResponse.json({ user: null })
-
+    // Single optimized query with JOINs to get user + roles in one go
     const { data: roles } = await supabase
       .from('user_roles')
-      .select('role_id,target,permissions(scope)')
-      .eq('user_id', appUserId)
+      .select('role_id, target, permissions(scope), users!inner(id, auth_uid)')
+      .eq('users.auth_uid', authUid)
 
     const roleList = Array.isArray(roles) ? roles : []
+    if (roleList.length === 0) return NextResponse.json({ user: null })
+    
+    // Get appUserId from first role (all roles have same user)
+    const firstRole = roleList[0] as any
+    const appUserId = firstRole?.users?.id
+    if (!appUserId) return NextResponse.json({ user: null })
+
     const hasSchoolScope = roleList.some((r) => {
       const scopes = Array.isArray(r.permissions) ? r.permissions : []
       return scopes.some((p) => p.scope === 'school')
@@ -30,11 +34,16 @@ export async function GET() {
     // Extract role IDs for client
     const roleIds = roleList.map((r) => r.role_id).filter(Boolean) as string[]
 
+    // For CC role, get class ID if target is set (requires separate query due to no FK)
     let ccClassId: string | null = null
     if (hasCC && !hasSchoolScope) {
       const ccRole = roleList.find((r) => r.role_id === 'CC' && r.target)
       if (ccRole?.target) {
-        const { data: cls } = await supabase.from('classes').select('id').eq('name', ccRole.target).maybeSingle()
+        const { data: cls } = await supabase
+          .from('classes')
+          .select('id')
+          .eq('name', ccRole.target)
+          .maybeSingle()
         ccClassId = cls?.id ?? null
       }
     }

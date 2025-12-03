@@ -48,22 +48,14 @@ export async function getProxySession(request: NextRequest): Promise<ProxySessio
     if (user?.id) {
       userId = user.id
 
-      // Quick role check - only fetch role_ids, not full permission details
-      const { data: appUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', user.id)
-        .maybeSingle()
+      // Single optimized query with JOIN to get roles directly
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('role_id, users!inner(auth_uid)')
+        .eq('users.auth_uid', user.id)
 
-      if (appUser?.id) {
-        const { data: userRoles } = await supabase
-          .from('user_roles')
-          .select('role_id')
-          .eq('user_id', appUser.id)
-
-        if (Array.isArray(userRoles)) {
-          roles = userRoles.map((r) => r.role_id?.toUpperCase() || '').filter(Boolean)
-        }
+      if (Array.isArray(userRoles)) {
+        roles = userRoles.map((r) => r.role_id?.toUpperCase() || '').filter(Boolean)
       }
     }
   } catch (error) {

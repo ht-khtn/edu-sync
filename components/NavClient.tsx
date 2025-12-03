@@ -1,32 +1,22 @@
 "use client"
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { getSupabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import NotificationsBell from '@/components/common/NotificationsBell'
-
-type SessionInfo = { user: { id: string } | null; hasCC?: boolean; hasSchoolScope?: boolean; ccClassId?: string | null }
+import { useSession } from '@/hooks/useSession'
 
 export default function NavClient() {
-  const [info, setInfo] = useState<SessionInfo | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: info, isLoading: loading, refetch } = useSession()
   const router = useRouter()
-  const isSignedInRef = useRef<boolean>(false)
-  const usedFallbackRef = useRef<boolean>(false)
   const manualLogoutRef = useRef<boolean>(false)
   const lastSignedOutToastAtRef = useRef<number>(0)
-  const infoRef = useRef<SessionInfo | null>(null)
 
-  // Rate-limit + dedupe server session fetches to avoid bursts
-  const fetchingRef = useRef<boolean>(false)
-  const lastFetchAtRef = useRef<number>(0)
-  const MIN_FETCH_INTERVAL = 3000 // ms
-
-  // Must declare hooks unconditionally before any early returns
   const [selfRoles, setSelfRoles] = useState<{ hasSelf: boolean } | null>(null)
+
   useEffect(() => {
     if (selfRoles !== null) return
     if (!info || !info.user) return
@@ -41,110 +31,16 @@ export default function NavClient() {
   }, [info, selfRoles])
 
   useEffect(() => {
-    infoRef.current = info
-  }, [info])
-
-  const fetchInfo = useCallback(async (force = false): Promise<SessionInfo | null | undefined> => {
-    const now = Date.now()
-    if (!force) {
-      if (fetchingRef.current) return infoRef.current ?? null
-      if (now - lastFetchAtRef.current < MIN_FETCH_INTERVAL) return infoRef.current ?? null
-    }
-    fetchingRef.current = true
-    lastFetchAtRef.current = now
-    try {
-      const res = await fetch('/api/session', { cache: 'no-store' })
-      const json = await res.json()
-      // If client believes we're signed in but server still returns null (cookie race),
-      // do not overwrite to null to avoid flicker.
-      if (!json?.user && isSignedInRef.current) {
-        // keep existing info until server catches up
-        return infoRef.current ?? null
-      }
-      setInfo(json)
-      return json
-    } catch {
-      // don't force null during transient failures if client is signed in
-      if (!isSignedInRef.current) {
-        setInfo(null)
-        return null
-      }
-      return infoRef.current ?? null
-    } finally {
-      setLoading(false)
-      fetchingRef.current = false
-    }
-  }, [])
-
-  const deriveRolesClientFallback = useCallback(async () => {
-    // If server session not yet visible but we have a client Supabase session, derive role flags directly.
-    try {
-      const supabase = await getSupabase()
-      const { data: userRes } = await supabase.auth.getUser()
-      const authUid = userRes?.user?.id
-      if (!authUid) return
-      const { data: appUser } = await supabase.from('users').select('id').eq('auth_uid', authUid).maybeSingle()
-      const appUserId = appUser?.id as string | undefined
-      if (!appUserId) return
-      const { data: roles } = await supabase
-        .from('user_roles')
-        .select('role_id,target,permissions(scope)')
-        .eq('user_id', appUserId)
-      const roleList = Array.isArray(roles) ? roles : []
-      const hasSchoolScope = roleList.some((r) => {
-        const scopes = Array.isArray(r.permissions) ? r.permissions : []
-        return scopes.some((p) => p.scope === 'school')
-      })
-      const hasCC = roleList.some((r) => r.role_id === 'CC')
-      let ccClassId: string | null = null
-      if (hasCC && !hasSchoolScope) {
-        const ccRole = roleList.find((r) => r.role_id === 'CC' && r.target)
-        if (ccRole?.target) {
-          const { data: cls } = await supabase.from('classes').select('id').eq('name', ccRole.target).maybeSingle()
-          ccClassId = cls?.id ?? null
-        }
-      }
-      usedFallbackRef.current = true
-      const fallbackInfo: SessionInfo = { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId }
-      setInfo(fallbackInfo)
-      return fallbackInfo
-    } catch {}
-    finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
     let unsub: (() => void) | null = null
     ;(async () => {
       try {
         const supabase = await getSupabase()
-        // Set initial auth state
-        const { data: initial } = await supabase.auth.getUser()
-        isSignedInRef.current = !!initial?.user
-
-        const initialInfo = await fetchInfo(true)
-        if (!initialInfo?.user && isSignedInRef.current) {
-          // If server not ready but client is signed in, use fallback once
-          await deriveRolesClientFallback()
-        }
-
         const { data } = supabase.auth.onAuthStateChange((event) => {
           if (event === 'SIGNED_IN') {
-            isSignedInRef.current = true
-            // Reset derived role flags; will be recomputed for the new user
             setSelfRoles(null)
-            // Prefer server; fallback only if still null
-            fetchInfo(true).then(async (latest) => {
-              if (!latest?.user) await deriveRolesClientFallback()
-            })
+            refetch()
           } else if (event === 'SIGNED_OUT') {
-            isSignedInRef.current = false
-            usedFallbackRef.current = false
-            setInfo(null)
             setSelfRoles(null)
-            // If logout was initiated by our UI, the button handler will show success toast.
-            // Otherwise, debounce a success toast in case multiple events fire.
             if (!manualLogoutRef.current) {
               const now = Date.now()
               if (now - lastSignedOutToastAtRef.current > 2000) {
@@ -161,7 +57,7 @@ export default function NavClient() {
     return () => {
       try { if (unsub) unsub() } catch {}
     }
-  }, [deriveRolesClientFallback, fetchInfo])
+  }, [refetch])
 
   if (loading) return <li className="text-sm text-zinc-500">Đang tải…</li>
   if (!info || !info.user) return <Link href="/login">Đăng nhập</Link>
@@ -169,9 +65,6 @@ export default function NavClient() {
   const hasCC = !!info.hasCC
   const hasSchoolScope = !!info.hasSchoolScope
   const ccClassId = info.ccClassId
-
-  // We'll derive student/self roles (S, YUM) client-side for nav visibility by querying roles once when menu renders.
-  // Lightweight: only fetch if we don't already have management roles.
 
   return (
     <>
@@ -211,27 +104,22 @@ export default function NavClient() {
         <button
           onClick={async () => {
             if (loading) return
-            setLoading(true)
             manualLogoutRef.current = true
             try {
               const supabase = await getSupabase()
               try { await supabase.auth.signOut() } catch {}
-              isSignedInRef.current = false
-              usedFallbackRef.current = false
-              setInfo(null)
               setSelfRoles(null)
               await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
               toast.success('Đăng xuất thành công')
             } catch {
               toast.error('Đăng xuất thất bại')
             } finally {
-              setLoading(false)
               router.replace('/login')
               setTimeout(() => { manualLogoutRef.current = false }, 1000)
             }
           }}
           disabled={loading}
-          className="text-zinc-700 hover:text-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="text-zinc-700 hover:text-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           {loading ? 'Đang xử lý...' : 'Đăng xuất'}
         </button>

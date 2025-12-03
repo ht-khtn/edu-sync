@@ -47,6 +47,13 @@ const baseDashboardCards: ReadonlyArray<DashboardCard> = [
     requires: "violation-stats",
   },
   {
+    title: "Tiêu chí vi phạm",
+    description: "Thêm/sửa tiêu chí trừ điểm",
+    icon: AlertTriangle,
+    href: "/admin/criteria",
+    requires: "management",
+  },
+  {
     title: "Quản lý tài khoản",
     description: "Danh sách và trạng thái người dùng",
     icon: Users,
@@ -65,13 +72,6 @@ const baseDashboardCards: ReadonlyArray<DashboardCard> = [
     description: "Thông tin lớp và GVCN",
     icon: Building2,
     href: "/admin/classes",
-    requires: "management",
-  },
-  {
-    title: "Tiêu chí vi phạm",
-    description: "Thêm/sửa tiêu chí trừ điểm",
-    icon: AlertTriangle,
-    href: "/admin/criteria",
     requires: "management",
   },
 ] as const;

@@ -12,6 +12,7 @@ import {
   Users,
   ShieldCheck,
   Building2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -76,6 +77,11 @@ const managementNavItems = [
     title: "Tài khoản",
     href: "/admin/accounts",
     icon: Users,
+  },
+  {
+    title: "Tiêu chí vi phạm",
+    href: "/admin/criteria",
+    icon: AlertTriangle,
   },
   {
     title: "Vai trò",

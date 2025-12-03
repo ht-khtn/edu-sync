@@ -21,6 +21,7 @@ export function CriteriaFilters({ initial }: { initial: CriteriaFilterState }) {
   const [category, setCategory] = useState(initial.category ?? '')
   const [type, setType] = useState(initial.type ?? '')
   const [status, setStatus] = useState(initial.status ?? '')
+  const ALL_VALUE = '__all__'
 
   const applyFilters = (event?: React.FormEvent) => {
     event?.preventDefault()
@@ -53,12 +54,12 @@ export function CriteriaFilters({ initial }: { initial: CriteriaFilterState }) {
         onChange={(event) => setQ(event.target.value)}
         disabled={isPending}
       />
-      <Select value={category || undefined} onValueChange={(value) => setCategory(value || '')}>
+      <Select value={category || ALL_VALUE} onValueChange={(value) => setCategory(value === ALL_VALUE ? '' : value)}>
         <SelectTrigger>
           <SelectValue placeholder="Phạm vi áp dụng" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">Tất cả</SelectItem>
+          <SelectItem value={ALL_VALUE}>Tất cả</SelectItem>
           {CRITERIA_CATEGORY_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
@@ -66,12 +67,12 @@ export function CriteriaFilters({ initial }: { initial: CriteriaFilterState }) {
           ))}
         </SelectContent>
       </Select>
-      <Select value={type || undefined} onValueChange={(value) => setType(value || '')}>
+      <Select value={type || ALL_VALUE} onValueChange={(value) => setType(value === ALL_VALUE ? '' : value)}>
         <SelectTrigger>
           <SelectValue placeholder="Mức độ" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">Tất cả</SelectItem>
+          <SelectItem value={ALL_VALUE}>Tất cả</SelectItem>
           {CRITERIA_TYPE_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
@@ -79,12 +80,12 @@ export function CriteriaFilters({ initial }: { initial: CriteriaFilterState }) {
           ))}
         </SelectContent>
       </Select>
-      <Select value={status || undefined} onValueChange={(value) => setStatus(value || '')}>
+      <Select value={status || ALL_VALUE} onValueChange={(value) => setStatus(value === ALL_VALUE ? '' : value)}>
         <SelectTrigger>
           <SelectValue placeholder="Trạng thái" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">Tất cả</SelectItem>
+          <SelectItem value={ALL_VALUE}>Tất cả</SelectItem>
           {CRITERIA_STATUS_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}

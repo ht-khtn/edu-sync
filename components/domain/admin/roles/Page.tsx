@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
 import QueryToasts from '@/components/common/QueryToasts'
 import { AssignRoleDialog } from './AssignRoleDialog'
+import { RemoveRoleButton } from './RemoveRoleButton'
 
 type AdminRolesPageProps = {
   searchParams?: Record<string, string | string[] | undefined>
@@ -76,16 +77,27 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
           <p className="text-muted-foreground mt-1">Theo dõi gán quyền, scope và target cho từng tài khoản.</p>
         </div>
         <AssignRoleDialog
-          users={(userOptions || []).map((u) => {
-            const profile = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
-            const className = (u.class_id && classMap.get(u.class_id)) || u.class_id || 'Chưa gán'
-            const displayName = profile?.full_name?.trim() || u.user_name || u.email || u.id
-            return {
-              id: u.id,
-              label: `${className} - ${displayName}`,
-              description: u.email || u.user_name || undefined,
-            }
-          })}
+          users={(userOptions || [])
+            .map((u) => {
+              const profile = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
+              const className = (u.class_id && classMap.get(u.class_id)) || ''
+              const displayName = profile?.full_name?.trim() || u.user_name || u.email || u.id
+              return {
+                id: u.id,
+                label: className ? `${className} - ${displayName}` : displayName,
+                description: u.email || u.user_name || undefined,
+                className: className || '',
+                hasClass: !!u.class_id,
+              }
+            })
+            .sort((a, b) => {
+              // Users without class first
+              if (a.hasClass !== b.hasClass) {
+                return a.hasClass ? 1 : -1
+              }
+              // Then sort by class name alphabetically
+              return a.className.localeCompare(b.className, 'vi')
+            })}
           roles={(permissionList || []).map((p) => ({ id: p.id, name: p.name || p.id }))}
         />
       </div>
@@ -134,6 +146,7 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
                   <TableHead>Scope</TableHead>
                   <TableHead>Target</TableHead>
                   <TableHead>Thời gian</TableHead>
+                  <TableHead className="w-[80px]">Thao tác</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -162,6 +175,13 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
                               timeZone: 'Asia/Ho_Chi_Minh',
                             })
                           : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <RemoveRoleButton
+                          roleRecordId={row.id}
+                          userDisplay={fullName}
+                          roleId={row.role_id}
+                        />
                       </TableCell>
                     </TableRow>
                   )

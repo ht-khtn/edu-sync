@@ -144,6 +144,41 @@ export async function assignRoleAction(formData: FormData) {
   return redirect('/admin/roles?ok=1')
 }
 
+export async function removeRoleAction(formData: FormData) {
+  const { supabase, appUserId } = await requireSystemAccess()
+  const roleRecordId = normalizeString(formData.get('roleRecordId'))
+
+  if (!roleRecordId) return redirect('/admin/roles?error=missing')
+
+  // Get role info before deletion for audit
+  const { data: roleData } = await supabase
+    .from('user_roles')
+    .select('user_id, role_id, target')
+    .eq('id', roleRecordId)
+    .maybeSingle()
+
+  const { error } = await supabase
+    .from('user_roles')
+    .delete()
+    .eq('id', roleRecordId)
+
+  if (error) {
+    return redirect('/admin/roles?error=delete')
+  }
+
+  await supabase.from('audit_logs').insert({
+    table_name: 'user_roles',
+    record_id: roleRecordId,
+    action: 'DELETE',
+    actor_id: appUserId,
+    diff: roleData ? { user_id: roleData.user_id, role_id: roleData.role_id, target: roleData.target } : null,
+    meta: { type: 'remove-role' },
+  })
+
+  revalidatePath('/admin/roles')
+  return redirect('/admin/roles?ok=1')
+}
+
 export async function createClassAction(formData: FormData) {
   const { supabase, appUserId } = await requireSystemAccess()
   const name = normalizeString(formData.get('className'))

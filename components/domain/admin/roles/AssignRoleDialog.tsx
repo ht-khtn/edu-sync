@@ -15,6 +15,7 @@ import {
   CommandInput,
   CommandItem,
 } from '@/components/ui/command'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChevronsUpDown, Check } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -72,31 +73,33 @@ export function AssignRoleDialog({
                 <Command>
                   <CommandInput placeholder="Tìm theo lớp, tên, email..." />
                   <CommandEmpty>Không tìm thấy người dùng.</CommandEmpty>
-                  <CommandGroup>
-                    {users.map((user) => (
-                      <CommandItem
-                        key={user.id}
-                        value={`${user.label} ${user.description ?? ''}`}
-                        onSelect={() => {
-                          setSelectedUserId(user.id)
-                          setUserPickerOpen(false)
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            'mr-2 h-4 w-4',
-                            user.id === selectedUserId ? 'opacity-100' : 'opacity-0',
-                          )}
-                        />
-                        <div className="flex flex-col text-left">
-                          <span className="font-medium leading-none">{user.label}</span>
-                          {user.description && (
-                            <span className="text-xs text-muted-foreground">{user.description}</span>
-                          )}
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
+                  <ScrollArea className="h-[300px]">
+                    <CommandGroup>
+                      {users.map((user) => (
+                        <CommandItem
+                          key={user.id}
+                          value={`${user.label} ${user.description ?? ''}`}
+                          onSelect={() => {
+                            setSelectedUserId(user.id)
+                            setUserPickerOpen(false)
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              'mr-2 h-4 w-4',
+                              user.id === selectedUserId ? 'opacity-100' : 'opacity-0',
+                            )}
+                          />
+                          <div className="flex flex-col text-left">
+                            <span className="font-medium leading-none">{user.label}</span>
+                            {user.description && (
+                              <span className="text-xs text-muted-foreground">{user.description}</span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </ScrollArea>
                 </Command>
               </PopoverContent>
             </Popover>

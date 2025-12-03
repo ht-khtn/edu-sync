@@ -57,7 +57,9 @@ function ensureEnv(key: string, fallbackKeys: string[] = []): string {
 
 function normalizeNameTokens(fullName: string): string[] {
 	if (!fullName) return [];
+	// Convert to uppercase first to preserve Vietnamese character mappings (Đ -> D, not đ -> d)
 	const cleaned = fullName
+		.toUpperCase()
 		.normalize('NFD')
 		.replace(/\p{Diacritic}/gu, '')
 		.toLowerCase()

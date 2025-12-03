@@ -45,7 +45,7 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
 
   const { data: userOptions } = await supabase
     .from('users')
-    .select('id, user_name, email')
+    .select('id, user_name, email, class_id, classes(name), user_profiles(full_name)')
     .order('user_name', { ascending: true })
     .limit(500)
 
@@ -66,10 +66,17 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
           <p className="text-muted-foreground mt-1">Theo dõi gán quyền, scope và target cho từng tài khoản.</p>
         </div>
         <AssignRoleDialog
-          users={(userOptions || []).map((u) => ({
-            id: u.id,
-            label: u.user_name || u.email || u.id,
-          }))}
+          users={(userOptions || []).map((u) => {
+            const profile = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
+            const classRef = Array.isArray(u.classes) ? u.classes[0] : u.classes
+            const className = classRef?.name || u.class_id || 'Chưa gán'
+            const displayName = profile?.full_name?.trim() || u.user_name || u.email || u.id
+            return {
+              id: u.id,
+              label: `${className} - ${displayName}`,
+              description: u.email || u.user_name || undefined,
+            }
+          })}
           roles={(permissionList || []).map((p) => ({ id: p.id, name: p.name || p.id }))}
         />
       </div>

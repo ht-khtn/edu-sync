@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "seed:olympia": "ts-node scripts/seed-olympia.ts"
+    "seed:olympia": "ts-node scripts/seed-olympia.ts",
+    "fix:usernames": "ts-node docs/scripts/seed-students/fix-usernames.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

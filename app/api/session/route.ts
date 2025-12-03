@@ -26,6 +26,9 @@ export async function GET() {
       return scopes.some((p) => p.scope === 'school')
     })
     const hasCC = roleList.some((r) => r.role_id === 'CC')
+    
+    // Extract role IDs for client
+    const roleIds = roleList.map((r) => r.role_id).filter(Boolean) as string[]
 
     let ccClassId: string | null = null
     if (hasCC && !hasSchoolScope) {
@@ -37,7 +40,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId },
+      { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId, roles: roleIds },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (err) {

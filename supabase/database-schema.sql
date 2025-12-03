@@ -44,6 +44,7 @@ CREATE TABLE public.criteria (
   type text DEFAULT 'normal'::text CHECK (type = ANY (ARRAY['normal'::text, 'serious'::text, 'critical'::text])),
   score integer CHECK (score > 0),
   category text DEFAULT 'student'::text,
+  is_active boolean DEFAULT true,
   created_at timestamp without time zone DEFAULT now(),
   updated_at timestamp without time zone DEFAULT now(),
   group text,

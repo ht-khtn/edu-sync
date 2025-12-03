@@ -8,6 +8,9 @@ export type Criteria = {
   description?: string
   category?: string
   type?: string
+  group?: string
+  subgroup?: string
+  isActive: boolean
 }
 
 export type Student = {
@@ -41,6 +44,9 @@ type CriteriaRow = {
   type: string | null
   score: number | null
   category: string | null
+  group: string | null
+  subgroup: string | null
+  is_active: boolean | null
 }
 
 type StudentRow = {
@@ -52,9 +58,26 @@ type StudentRow = {
 
 // Fetch criteria from Supabase `criteria` table and map to internal Criteria type
 // We convert positive score to negative points for violation entry context.
-export async function fetchCriteriaFromDB(supabase: GenericSupabaseClient): Promise<Criteria[]> {
+type FetchCriteriaOptions = {
+  includeInactive?: boolean
+}
+
+export async function fetchCriteriaFromDB(
+  supabase: GenericSupabaseClient,
+  options?: FetchCriteriaOptions,
+): Promise<Criteria[]> {
   try {
-    const { data, error } = await supabase.from('criteria').select('id,name,description,type,score,category')
+    const includeInactive = options?.includeInactive ?? false
+    let query = supabase
+      .from('criteria')
+      .select('id,name,description,type,score,category,"group",subgroup,is_active')
+      .order('created_at', { ascending: true })
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true)
+    }
+
+    const { data, error } = await query
     if (error) {
       console.warn('fetchCriteriaFromDB error:', error.message)
       return []
@@ -67,7 +90,10 @@ export async function fetchCriteriaFromDB(supabase: GenericSupabaseClient): Prom
       description: row.description ?? undefined,
       category: row.category ?? undefined,
       type: row.type ?? undefined,
-      points: -Math.abs(row.score ?? 0) // ensure negative for violation
+      group: row.group ?? undefined,
+      subgroup: row.subgroup ?? undefined,
+      isActive: row.is_active !== false,
+      points: -Math.abs(row.score ?? 0), // ensure negative for violation
     }))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -63,7 +63,7 @@ export default async function ViolationHistoryPageContent({
   );
 
   // Fetch criteria list
-  const criteriaList = await fetchCriteriaFromDB(supabase);
+  const criteriaList = await fetchCriteriaFromDB(supabase, { includeInactive: true });
 
   // Build records query with filters
   let query = supabase

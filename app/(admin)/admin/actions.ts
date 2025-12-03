@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
 import { hasAdminManagementAccess } from '@/lib/admin-access'
 
@@ -18,6 +19,48 @@ function normalizeString(value: FormDataEntryValue | null): string | null {
   const text = String(value).trim()
   return text.length > 0 ? text : null
 }
+
+function parseBooleanInput(value: FormDataEntryValue | null, fallback = true) {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim().toLowerCase()
+  if (['true', '1', 'on', 'yes'].includes(normalized)) return true
+  if (['false', '0', 'off', 'no'].includes(normalized)) return false
+  return fallback
+}
+
+const CRITERIA_CATEGORY_VALUES = ['student', 'class'] as const
+const CRITERIA_TYPE_VALUES = ['normal', 'serious', 'critical'] as const
+
+const criteriaFormSchema = z.object({
+  name: z.string().min(3).max(160).transform((val) => val.trim()),
+  description: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return null
+      const text = val.trim()
+      return text.length > 0 ? text : null
+    }),
+  score: z.coerce.number().int().positive(),
+  category: z.enum(CRITERIA_CATEGORY_VALUES),
+  type: z.enum(CRITERIA_TYPE_VALUES),
+  group: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return null
+      const text = val.trim()
+      return text.length > 0 ? text : null
+    }),
+  subgroup: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return null
+      const text = val.trim()
+      return text.length > 0 ? text : null
+    }),
+})
 
 export async function createAccountAction(formData: FormData) {
   const { supabase, appUserId } = await requireSystemAccess()
@@ -159,4 +202,182 @@ export async function updateHomeroomAction(formData: FormData) {
 
   revalidatePath('/admin/classes')
   return redirect('/admin/classes?ok=1')
+}
+
+export async function createCriteriaAction(formData: FormData) {
+  const { supabase, appUserId } = await requireSystemAccess()
+  const parsed = criteriaFormSchema.safeParse({
+    name: formData.get('name'),
+    description: formData.get('description'),
+    score: formData.get('score'),
+    category: formData.get('category'),
+    type: formData.get('type'),
+    group: formData.get('group'),
+    subgroup: formData.get('subgroup'),
+  })
+
+  if (!parsed.success) {
+    return redirect('/admin/criteria?error=missing')
+  }
+
+  const payload = parsed.data
+  const { data, error } = await supabase
+    .from('criteria')
+    .insert({
+      name: payload.name,
+      description: payload.description,
+      score: payload.score,
+      category: payload.category,
+      type: payload.type,
+      group: payload.group,
+      subgroup: payload.subgroup,
+      is_active: true,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    return redirect('/admin/criteria?error=insert')
+  }
+
+  await supabase.from('audit_logs').insert({
+    table_name: 'criteria',
+    record_id: data?.id ?? null,
+    action: 'INSERT',
+    actor_id: appUserId,
+    diff: payload,
+    meta: { type: 'create-criteria' },
+  })
+
+  revalidatePath('/admin/criteria')
+  return redirect('/admin/criteria?ok=criteria-created')
+}
+
+export async function updateCriteriaAction(formData: FormData) {
+  const { supabase, appUserId } = await requireSystemAccess()
+  const parsed = criteriaFormSchema
+    .extend({ id: z.string().uuid() })
+    .safeParse({
+      id: formData.get('id'),
+      name: formData.get('name'),
+      description: formData.get('description'),
+      score: formData.get('score'),
+      category: formData.get('category'),
+      type: formData.get('type'),
+      group: formData.get('group'),
+      subgroup: formData.get('subgroup'),
+    })
+
+  if (!parsed.success) {
+    return redirect('/admin/criteria?error=missing')
+  }
+
+  const isActive = parseBooleanInput(formData.get('isActive'), true)
+  const payload = parsed.data
+
+  const { error } = await supabase
+    .from('criteria')
+    .update({
+      name: payload.name,
+      description: payload.description,
+      score: payload.score,
+      category: payload.category,
+      type: payload.type,
+      group: payload.group,
+      subgroup: payload.subgroup,
+      is_active: isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', payload.id)
+
+  if (error) {
+    return redirect('/admin/criteria?error=update')
+  }
+
+  await supabase.from('audit_logs').insert({
+    table_name: 'criteria',
+    record_id: payload.id,
+    action: 'UPDATE',
+    actor_id: appUserId,
+    diff: { ...payload, is_active: isActive },
+    meta: { type: 'update-criteria' },
+  })
+
+  revalidatePath('/admin/criteria')
+  return redirect('/admin/criteria?ok=criteria-updated')
+}
+
+export async function toggleCriteriaStatusAction(formData: FormData) {
+  const { supabase, appUserId } = await requireSystemAccess()
+  const id = normalizeString(formData.get('id'))
+  const status = normalizeString(formData.get('status'))
+  if (!id || !status) return redirect('/admin/criteria?error=missing')
+
+  const enable = status === 'enable'
+  const { error } = await supabase
+    .from('criteria')
+    .update({ is_active: enable, updated_at: new Date().toISOString() })
+    .eq('id', id)
+
+  if (error) return redirect('/admin/criteria?error=update')
+
+  await supabase.from('audit_logs').insert({
+    table_name: 'criteria',
+    record_id: id,
+    action: 'UPDATE',
+    actor_id: appUserId,
+    diff: { is_active: enable },
+    meta: { type: enable ? 'enable-criteria' : 'disable-criteria' },
+  })
+
+  revalidatePath('/admin/criteria')
+  return redirect(`/admin/criteria?ok=${enable ? 'criteria-restored' : 'criteria-disabled'}`)
+}
+
+export async function deleteCriteriaAction(formData: FormData) {
+  const { supabase, appUserId } = await requireSystemAccess()
+  const id = normalizeString(formData.get('id'))
+  if (!id) return redirect('/admin/criteria?error=missing')
+
+  const { count, error: countError } = await supabase
+    .from('records')
+    .select('id', { count: 'exact', head: true })
+    .eq('criteria_id', id)
+
+  if (countError) return redirect('/admin/criteria?error=delete')
+
+  if ((count ?? 0) > 0) {
+    const { error: disableError } = await supabase
+      .from('criteria')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (disableError) return redirect('/admin/criteria?error=delete')
+
+    await supabase.from('audit_logs').insert({
+      table_name: 'criteria',
+      record_id: id,
+      action: 'UPDATE',
+      actor_id: appUserId,
+      diff: { is_active: false },
+      meta: { type: 'disable-criteria', reason: 'has-records' },
+    })
+
+    revalidatePath('/admin/criteria')
+    return redirect('/admin/criteria?ok=criteria-disabled')
+  }
+
+  const { error: deleteError } = await supabase.from('criteria').delete().eq('id', id)
+  if (deleteError) return redirect('/admin/criteria?error=delete')
+
+  await supabase.from('audit_logs').insert({
+    table_name: 'criteria',
+    record_id: id,
+    action: 'DELETE',
+    actor_id: appUserId,
+    diff: { id },
+    meta: { type: 'delete-criteria' },
+  })
+
+  revalidatePath('/admin/criteria')
+  return redirect('/admin/criteria?ok=criteria-deleted')
 }

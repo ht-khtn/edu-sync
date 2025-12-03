@@ -51,10 +51,11 @@ export async function POST(req: Request) {
     // Verify criteria exists and category
     const { data: criteriaRow, error: cErr } = await supabase
       .from('criteria')
-      .select('id,score,category')
+      .select('id,score,category,is_active')
       .eq('id', criteria_id)
       .maybeSingle()
     if (cErr || !criteriaRow) return NextResponse.json({ error: 'nocriteria' }, { status: 400 })
+    if (criteriaRow.is_active === false) return NextResponse.json({ error: 'inactive_criteria' }, { status: 400 })
     if (!student_id) {
       if ((criteriaRow.category ?? '') !== 'class') return NextResponse.json({ error: 'forbidden_category' }, { status: 400 })
     }

@@ -52,7 +52,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Auth/authorization checks
+  // Check if route needs auth BEFORE doing expensive session check
+  const needsAuth = isProtectedAdminRoute(pathname) || 
+                    isProtectedClientRoute(pathname) || 
+                    isProtectedOlympiaRoute(pathname) ||
+                    isLoginRoute(pathname)
+  
+  if (!needsAuth) {
+    // Public route - skip auth check entirely for better performance
+    return NextResponse.next()
+  }
+
+  // Auth/authorization checks (only for protected routes)
   const session = await getProxySession(request)
 
   // Rule 1: Protect admin routes

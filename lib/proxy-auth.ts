@@ -24,9 +24,20 @@ export async function getProxySession(request: NextRequest): Promise<ProxySessio
     // Extract auth token from cookies
     const authCookie = request.cookies.get('sb-access-token')?.value
     
+    // Fast path: no auth cookie = not authenticated
+    if (!authCookie) {
+      return {
+        userId: null,
+        isAuthenticated: false,
+        hasAdminRole: false,
+        hasOlympiaRole: false,
+        roles: [],
+      }
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
-        headers: authCookie ? { Authorization: `Bearer ${authCookie}` } : {},
+        headers: { Authorization: `Bearer ${authCookie}` },
       },
     })
 

@@ -45,7 +45,7 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
     })
 
     if (!parsed.success) {
-      return { error: parsed.error.errors[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
     }
 
     const payload = parsed.data
@@ -80,7 +80,7 @@ export async function createQuestionAction(_: ActionState, formData: FormData): 
     })
 
     if (!parsed.success) {
-      return { error: parsed.error.errors[0]?.message ?? 'Dữ liệu câu hỏi không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu câu hỏi không hợp lệ.' }
     }
 
     const payload = parsed.data
@@ -110,7 +110,7 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
 
     const parsed = joinSchema.safeParse({ joinCode: formData.get('joinCode') })
     if (!parsed.success) {
-      return { error: parsed.error.errors[0]?.message ?? 'Mã tham gia không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? 'Mã tham gia không hợp lệ.' }
     }
 
     const supabase = await getServerSupabase()

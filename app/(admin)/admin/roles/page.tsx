@@ -1,11 +1,12 @@
-import AdminRolesPage from '@/components/admin/roles/Page'
+import AdminRolesPage from "@/components/admin/roles/Page";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>
-}
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default function RolesRoutePage({ searchParams }: PageProps) {
-  return <AdminRolesPage searchParams={searchParams} />
+export default async function RolesRoutePage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  return <AdminRolesPage searchParams={params} />;
 }

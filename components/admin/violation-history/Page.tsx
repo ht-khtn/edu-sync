@@ -14,28 +14,28 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Filters from "@/components/admin/violation-history/Filters";
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
+import {
+  fetchViolationHistoryData,
+  formatRecordDateTime,
+  getRecordClassName,
+  getRecordStudentName,
+  getRecordCriteriaName,
+  type ViolationHistorySearchParams,
+} from "@/hooks/domain/useViolationHistory";
 
 export const dynamic = "force-dynamic";
-
-type Search = {
-  classId?: string;
-  studentId?: string;
-  criteriaId?: string;
-  start?: string;
-  end?: string;
-};
 
 export default async function ViolationHistoryPageContent({
   searchParams,
 }: {
-  searchParams?: Search;
+  searchParams?: ViolationHistorySearchParams;
 }) {
   // Auth + role guard (reuse CC access rule for now)
   const [{ supabase, appUserId }, roles] = await Promise.all([
     getServerAuthContext(),
-    getServerRoles()
+    getServerRoles(),
   ]);
-  
+
   if (!appUserId) redirect("/login");
   // Fetch roles with scope info so we allow both CC (class-committee) and school-scoped roles
   const summary = summarizeRoles(roles);
@@ -44,10 +44,7 @@ export default async function ViolationHistoryPageContent({
   }
 
   // Allowed classes for viewing (null => all)
-  const allowedViewClassIds = await getAllowedClassIdsForView(
-    supabase,
-    appUserId
-  );
+  const allowedViewClassIds = await getAllowedClassIdsForView(supabase, appUserId);
 
   // Parallel fetch: classes, students, criteria
   const [{ data: classes }, students, criteriaList] = await Promise.all([
@@ -57,47 +54,24 @@ export default async function ViolationHistoryPageContent({
       undefined,
       allowedViewClassIds === null ? null : allowedViewClassIds
     ),
-    fetchCriteriaFromDB(supabase, { includeInactive: true })
+    fetchCriteriaFromDB(supabase, { includeInactive: true }),
   ]);
-  
-  // Filter classes by allowed set if needed
-  const filteredClasses = allowedViewClassIds 
-    ? (classes || []).filter((c) => allowedViewClassIds.has(c.id))
-    : (classes || []);
 
-  // Build records query with filters
-  let query = supabase
-    .from("records")
-    .select(
-      "id, created_at, student_id, class_id, score, note, classes(id,name), criteria(id,name), users:student_id(user_profiles(full_name), user_name)"
-    )
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  if (allowedViewClassIds) {
-    query = query.in("class_id", Array.from(allowedViewClassIds));
-  }
-  if (searchParams?.classId) query = query.eq("class_id", searchParams.classId);
-  if (searchParams?.studentId)
-    query = query.eq("student_id", searchParams.studentId);
-  if (searchParams?.criteriaId)
-    query = query.eq("criteria_id", searchParams.criteriaId);
-  if (searchParams?.start) {
-    const startDate = new Date(searchParams.start);
-    if (!isNaN(startDate.getTime()))
-      query = query.gte("created_at", startDate.toISOString());
-  }
-  if (searchParams?.end) {
-    const endDate = new Date(searchParams.end);
-    if (!isNaN(endDate.getTime())) {
-      // Add 1 day 23:59 buffer inclusive
-      endDate.setHours(23, 59, 59, 999);
-      query = query.lte("created_at", endDate.toISOString());
-    }
-  }
-
-  const { data: rows, error: rowsErr } = await query;
+  // Fetch violation history data using the hook
+  const {
+    filteredClasses,
+    students: studentOptions,
+    criteria: criteriaOptions,
+    records: rows,
+    recordsError: rowsErr,
+  } = await fetchViolationHistoryData(
+    supabase,
+    searchParams,
+    allowedViewClassIds,
+    classes,
+    students,
+    criteriaList
+  );
 
   return (
     <div className="space-y-6" suppressHydrationWarning>
@@ -114,15 +88,9 @@ export default async function ViolationHistoryPageContent({
             start: searchParams?.start || "",
             end: searchParams?.end || "",
           }}
-          classes={filteredClasses.map((c) => ({
-            id: c.id,
-            name: c.name || c.id,
-          }))}
-          students={students.map((s) => ({
-            id: s.id,
-            name: s.full_name || s.user_name || s.id.slice(0, 8),
-          }))}
-          criteria={criteriaList.map((c) => ({ id: c.id, name: c.name }))}
+          classes={filteredClasses}
+          students={studentOptions}
+          criteria={criteriaOptions}
         />
       </ErrorBoundary>
 
@@ -137,9 +105,7 @@ export default async function ViolationHistoryPageContent({
       {!rowsErr && (!rows || rows.length === 0) && (
         <Card>
           <CardContent className="flex items-center justify-center py-12">
-            <p className="text-muted-foreground">
-              Không có ghi nhận phù hợp với bộ lọc hiện tại.
-            </p>
+            <p className="text-muted-foreground">Không có ghi nhận phù hợp với bộ lọc hiện tại.</p>
           </CardContent>
         </Card>
       )}
@@ -155,83 +121,30 @@ export default async function ViolationHistoryPageContent({
                     <TableHead className="font-semibold">Lớp</TableHead>
                     <TableHead className="font-semibold">Học sinh</TableHead>
                     <TableHead className="font-semibold">Tiêu chí</TableHead>
-                    <TableHead className="text-right font-semibold">
-                      Điểm
-                    </TableHead>
+                    <TableHead className="text-right font-semibold">Điểm</TableHead>
                     <TableHead className="font-semibold">Ghi chú</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(rows as Array<{
-                    id: string;
-                    created_at: string;
-                    class_id: string | null;
-                    score: number | null;
-                    note: string | null;
-                    classes:
-                      | { id: string; name: string | null }
-                      | { id: string; name: string | null }[]
-                      | null;
-                    criteria:
-                      | { id: string | number; name: string | null }
-                      | { id: string | number; name: string | null }[]
-                      | null;
-                    users:
-                      | {
-                          user_profiles:
-                            | { full_name: string | null }[]
-                            | { full_name: string | null }
-                            | null;
-                          user_name: string | null;
-                        }
-                      | {
-                          user_profiles:
-                            | { full_name: string | null }[]
-                            | { full_name: string | null }
-                            | null;
-                          user_name: string | null;
-                        }[]
-                      | null;
-                  }> || []).map((r) => {
-                    const classEntry = Array.isArray(r.classes) ? r.classes[0] : r.classes;
-                    const criteriaEntry = Array.isArray(r.criteria) ? r.criteria[0] : r.criteria;
-                    const userEntry = Array.isArray(r.users) ? r.users[0] : r.users;
-                    const profileEntry = Array.isArray(userEntry?.user_profiles)
-                      ? userEntry?.user_profiles[0]
-                      : userEntry?.user_profiles;
-                    const fullName =
-                      profileEntry?.full_name ||
-                      userEntry?.user_name ||
-                      "—";
-                    return (
-                      <TableRow key={r.id} className="hover:bg-muted/30">
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {new Date(r.created_at).toLocaleString("vi-VN", {
-                            timeZone: "Asia/Ho_Chi_Minh",
-                          })}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {classEntry?.name || r.class_id}
-                        </TableCell>
-                        <TableCell>{fullName}</TableCell>
-                        <TableCell className="text-sm">
-                          {criteriaEntry?.name ||
-                            (criteriaEntry?.id
-                              ? `#${String(criteriaEntry.id).slice(0, 8)}`
-                              : "—")}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums text-destructive">
-                          {r.score}
-                        </TableCell>
-                        <TableCell
-                          className="text-muted-foreground max-w-xs truncate text-sm"
-                          title={r.note || undefined}
-                        >
-                          {r.note || "—"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {rows.map((r) => (
+                    <TableRow key={r.id} className="hover:bg-muted/30">
+                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+                        {formatRecordDateTime(r.created_at)}
+                      </TableCell>
+                      <TableCell className="font-medium">{getRecordClassName(r)}</TableCell>
+                      <TableCell>{getRecordStudentName(r)}</TableCell>
+                      <TableCell className="text-sm">{getRecordCriteriaName(r)}</TableCell>
+                      <TableCell className="text-destructive text-right font-semibold tabular-nums">
+                        {r.score}
+                      </TableCell>
+                      <TableCell
+                        className="text-muted-foreground max-w-xs truncate text-sm"
+                        title={r.note || undefined}
+                      >
+                        {r.note || "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

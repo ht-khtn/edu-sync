@@ -1,11 +1,12 @@
-import AdminAccountsPage from '@/components/admin/accounts/Page'
+import AdminAccountsPage from "@/components/admin/accounts/Page";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>
-}
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default function AccountsRoutePage({ searchParams }: PageProps) {
-  return <AdminAccountsPage searchParams={searchParams} />
+export default async function AccountsRoutePage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  return <AdminAccountsPage searchParams={params} />;
 }

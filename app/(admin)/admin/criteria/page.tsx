@@ -1,9 +1,10 @@
-import AdminCriteriaPage from '@/components/admin/criteria/page'
+import AdminCriteriaPage from "@/components/admin/criteria/page";
 
-export default function CriteriaRoutePage({
+export default async function CriteriaRoutePage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return <AdminCriteriaPage searchParams={searchParams} />
+  const params = await searchParams;
+  return <AdminCriteriaPage searchParams={params} />;
 }

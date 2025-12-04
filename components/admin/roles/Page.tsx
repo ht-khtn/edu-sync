@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
-import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
-import { hasAdminManagementAccess } from '@/lib/admin-access'
+import { redirect } from "next/navigation";
+import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
+import { hasAdminManagementAccess } from "@/lib/admin-access";
 import {
   Table,
   TableBody,
@@ -8,69 +8,58 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
-import QueryToasts from '@/components/common/QueryToasts'
-import { AssignRoleDialog } from './AssignRoleDialog'
-import { RemoveRoleButton } from './RemoveRoleButton'
+} from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import QueryToasts from "@/components/common/QueryToasts";
+import { AssignRoleDialog } from "./AssignRoleDialog";
+import { RemoveRoleButton } from "./RemoveRoleButton";
+import {
+  fetchRolesData,
+  fetchUserOptions,
+  fetchClasses,
+  fetchPermissions,
+  calculateRoleDistribution,
+  prepareUsersForDialog,
+  prepareRolesForDialog,
+  getUserFullName,
+  getUserEmail,
+  getPermission,
+  formatCreatedDate,
+  getParam,
+} from "@/hooks/domain/useRoles";
 
 type AdminRolesPageProps = {
-  searchParams?: Record<string, string | string[] | undefined>
-}
+  searchParams?: Record<string, string | string[] | undefined>;
+};
 
 export default async function AdminRolesPage({ searchParams }: AdminRolesPageProps) {
   const [{ supabase, appUserId }, userRoles] = await Promise.all([
     getServerAuthContext(),
-    getServerRoles()
+    getServerRoles(),
   ]);
-  
-  if (!appUserId) redirect('/login')
 
-  const summary = summarizeRoles(userRoles)
-  if (!hasAdminManagementAccess(summary)) redirect('/admin')
+  if (!appUserId) redirect("/login");
 
-  const { data: roles, error } = await supabase
-    .from('user_roles')
-    .select(
-      'id, role_id, target, created_at, users(id, user_name, email, user_profiles(full_name)), permissions(name, scope)'
-    )
-    .order('created_at', { ascending: false })
-    .limit(300)
+  const summary = summarizeRoles(userRoles);
+  if (!hasAdminManagementAccess(summary)) redirect("/admin");
 
-  const rows = Array.isArray(roles) ? roles : []
+  // Fetch all data using hook logic
+  const [{ rows, error }, userOptions, classMap, permissionList] = await Promise.all([
+    fetchRolesData(supabase),
+    fetchUserOptions(supabase),
+    fetchClasses(supabase),
+    fetchPermissions(supabase),
+  ]);
 
-  const roleDistribution = rows.reduce<Record<string, number>>((acc, row) => {
-    const key = row.role_id || 'UNKNOWN'
-    acc[key] = (acc[key] || 0) + 1
-    return acc
-  }, {})
+  const roleDistribution = calculateRoleDistribution(rows);
+  const usersForDialog = prepareUsersForDialog(userOptions, classMap);
+  const rolesForDialog = prepareRolesForDialog(permissionList);
 
-  const { data: userOptions } = await supabase
-    .from('users')
-    .select('id, user_name, email, class_id, user_profiles(full_name)')
-    .order('user_name', { ascending: true })
-    .limit(500)
-
-  const { data: classList } = await supabase
-    .from('classes')
-    .select('id, name')
-    .order('name', { ascending: true })
-
-  const classMap = new Map<string, string>()
-  for (const cls of classList || []) {
-    if (cls?.id) classMap.set(cls.id, cls.name || cls.id)
-  }
-
-  const { data: permissionList } = await supabase
-    .from('permissions')
-    .select('id, name')
-    .order('id', { ascending: true })
-
-  const okParam = getParam(searchParams, 'ok')
-  const errParam = getParam(searchParams, 'error')
+  const okParam = getParam(searchParams, "ok");
+  const errParam = getParam(searchParams, "error");
 
   return (
     <section className="space-y-6">
@@ -78,32 +67,11 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Quản lý vai trò</h1>
-          <p className="text-muted-foreground mt-1">Theo dõi gán quyền, scope và target cho từng tài khoản.</p>
+          <p className="text-muted-foreground mt-1">
+            Theo dõi gán quyền, scope và target cho từng tài khoản.
+          </p>
         </div>
-        <AssignRoleDialog
-          users={(userOptions || [])
-            .map((u) => {
-              const profile = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
-              const className = (u.class_id && classMap.get(u.class_id)) || ''
-              const displayName = profile?.full_name?.trim() || u.user_name || u.email || u.id
-              return {
-                id: u.id,
-                label: className ? `${className} - ${displayName}` : displayName,
-                description: u.email || u.user_name || undefined,
-                className: className || '',
-                hasClass: !!u.class_id,
-              }
-            })
-            .sort((a, b) => {
-              // Users without class first
-              if (a.hasClass !== b.hasClass) {
-                return a.hasClass ? 1 : -1
-              }
-              // Then sort by class name alphabetically
-              return a.className.localeCompare(b.className, 'vi')
-            })}
-          roles={(permissionList || []).map((p) => ({ id: p.id, name: p.name || p.id }))}
-        />
+        <AssignRoleDialog users={usersForDialog} roles={rolesForDialog} />
       </div>
 
       <Card>
@@ -117,28 +85,36 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
                 {roleId}: {count}
               </Badge>
             ))}
-            {rows.length === 0 && <p className="text-sm text-muted-foreground">Không có dữ liệu.</p>}
+            {rows.length === 0 && (
+              <p className="text-muted-foreground text-sm">Không có dữ liệu.</p>
+            )}
           </div>
         </CardContent>
       </Card>
 
       {error && (
         <Alert variant="destructive">
-          <AlertDescription>Lỗi tải dữ liệu vai trò: {String(error.message || error)}</AlertDescription>
+          <AlertDescription>
+            Lỗi tải dữ liệu vai trò: {String(error.message || error)}
+          </AlertDescription>
         </Alert>
       )}
 
       {!error && rows.length === 0 && (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">Chưa có vai trò nào được gán.</CardContent>
+          <CardContent className="text-muted-foreground py-8 text-center">
+            Chưa có vai trò nào được gán.
+          </CardContent>
         </Card>
       )}
 
       {rows.length > 0 && (
-        <div className="rounded-lg border bg-background">
+        <div className="bg-background rounded-lg border">
           <div className="px-4 py-3">
             <h2 className="text-lg font-semibold">Các gán quyền gần đây</h2>
-            <p className="text-sm text-muted-foreground">Tối đa 300 bản ghi, sắp xếp theo thời gian.</p>
+            <p className="text-muted-foreground text-sm">
+              Tối đa 300 bản ghi, sắp xếp theo thời gian.
+            </p>
           </div>
           <Separator />
           <div className="overflow-x-auto">
@@ -150,35 +126,29 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
                   <TableHead>Scope</TableHead>
                   <TableHead>Target</TableHead>
                   <TableHead>Thời gian</TableHead>
-                  <TableHead className="w-[80px]">Thao tác</TableHead>
+                  <TableHead className="w-20">Thao tác</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((row) => {
-                  const userRef = Array.isArray(row.users) ? row.users[0] : row.users
-                  const profile = Array.isArray(userRef?.user_profiles) ? userRef?.user_profiles[0] : userRef?.user_profiles
-                  const fullName = profile?.full_name || userRef?.user_name || '—'
-                  const email = userRef?.email
-                  const permission = Array.isArray(row.permissions) ? row.permissions[0] : row.permissions
+                  const fullName = getUserFullName(row);
+                  const email = getUserEmail(row);
+                  const permission = getPermission(row);
                   return (
                     <TableRow key={row.id}>
                       <TableCell>
                         <div className="font-medium">{fullName}</div>
-                        {email && <div className="text-sm text-muted-foreground">{email}</div>}
+                        {email && <div className="text-muted-foreground text-sm">{email}</div>}
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{row.role_id}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {permission?.scope || '—'}
+                      <TableCell className="text-muted-foreground text-sm">
+                        {permission?.scope || "—"}
                       </TableCell>
-                      <TableCell>{row.target || '—'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {row.created_at
-                          ? new Date(row.created_at).toLocaleString('vi-VN', {
-                              timeZone: 'Asia/Ho_Chi_Minh',
-                            })
-                          : '—'}
+                      <TableCell>{row.target || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatCreatedDate(row.created_at)}
                       </TableCell>
                       <TableCell>
                         <RemoveRoleButton
@@ -188,7 +158,7 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
                         />
                       </TableCell>
                     </TableRow>
-                  )
+                  );
                 })}
               </TableBody>
             </Table>
@@ -196,14 +166,5 @@ export default async function AdminRolesPage({ searchParams }: AdminRolesPagePro
         </div>
       )}
     </section>
-  )
-}
-
-function getParam(
-  searchParams: Record<string, string | string[] | undefined> | undefined,
-  key: string,
-) {
-  const raw = searchParams?.[key]
-  if (Array.isArray(raw)) return raw[0]
-  return raw
+  );
 }

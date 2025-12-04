@@ -1,6 +1,35 @@
+import Link from 'next/link'
+
 const mockTournaments = [
   { name: 'Tuần 5 - Kỳ 1', matches: 3, status: 'Chuẩn bị' },
   { name: 'Tháng 12 - Chung kết', matches: 1, status: 'Đang lên lịch' },
+]
+
+const adminQuickLinks = [
+  {
+    title: 'Quản lý giải & trận',
+    description: 'Danh sách tournament, tạo trận mới và xem lịch thi chi tiết.',
+    href: '/olympia/admin/matches',
+    badge: 'Giải đấu',
+  },
+  {
+    title: 'Phòng thi & live session',
+    description: 'Điều khiển phòng thi, theo dõi live session và chuẩn bị host.',
+    href: '/olympia/admin/rooms',
+    badge: 'Phòng',
+  },
+  {
+    title: 'Ngân hàng câu hỏi',
+    description: 'Quản lý bộ đề Olympia, import câu hỏi và gán cho từng vòng.',
+    href: '/olympia/admin/question-bank',
+    badge: 'Bộ đề',
+  },
+  {
+    title: 'Admin & tài khoản thi',
+    description: 'Theo dõi tài khoản Olympia, phân quyền admin và mã thí sinh.',
+    href: '/olympia/admin/accounts',
+    badge: 'Tài khoản',
+  },
 ]
 
 const mockTasks = [
@@ -17,6 +46,21 @@ export default function OlympiaAdminHomePage() {
         <p className="text-sm text-muted-foreground">
           Sau khi nối dữ liệu Supabase, mục này sẽ tự động hiển thị giải đấu, trận đã lên lịch và nhiệm vụ host.
         </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {adminQuickLinks.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="rounded-lg border border-slate-200 bg-white p-4 transition hover:border-slate-400 hover:shadow-sm"
+          >
+            <p className="text-xs font-semibold uppercase text-blue-600">{link.badge}</p>
+            <h3 className="text-lg font-semibold">{link.title}</h3>
+            <p className="text-sm text-muted-foreground">{link.description}</p>
+            <p className="pt-2 text-sm font-medium text-blue-600">Mở trang →</p>
+          </Link>
+        ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

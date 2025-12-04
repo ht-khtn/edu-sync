@@ -4,9 +4,11 @@ import { redirect } from 'next/navigation'
 import { ensureOlympiaAdminAccess } from '@/lib/olympia-access'
 
 const navItems = [
-  { href: '/admin', label: 'Bảng điều khiển' },
-  { href: '/admin/matches', label: 'Giải & trận' },
-  { href: '/admin/question-bank', label: 'Bộ đề' },
+  { href: '/olympia/admin', label: 'Bảng điều khiển' },
+  { href: '/olympia/admin/matches', label: 'Giải & trận' },
+  { href: '/olympia/admin/rooms', label: 'Phòng thi' },
+  { href: '/olympia/admin/question-bank', label: 'Bộ đề' },
+  { href: '/olympia/admin/accounts', label: 'Tài khoản' },
 ]
 
 export default async function OlympiaAdminLayout({ children }: { children: ReactNode }) {

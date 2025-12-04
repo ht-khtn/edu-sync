@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { fetchWithRetry, isNetworkError, getErrorMessage } from '@/lib/network-utils'
+import { WifiOff } from 'lucide-react'
 
 type Props = {
   students: Student[]
@@ -16,11 +19,23 @@ type Props = {
   currentClass?: { id: string; name: string } | null
 }
 
-function PendingButtons({ pending }: { pending: boolean }) {
+function PendingButtons({ pending, isOnline }: { pending: boolean; isOnline: boolean }) {
   return (
     <section className="lg:col-span-2 flex gap-3 items-center">
-      <Button type="submit" disabled={pending} className="shadow-md border-2 border-primary">{pending ? 'Đang ghi...' : 'Ghi nhận'}</Button>
+      <Button 
+        type="submit" 
+        disabled={pending || !isOnline} 
+        className="shadow-md border-2 border-primary"
+      >
+        {pending ? 'Đang ghi...' : 'Ghi nhận'}
+      </Button>
       <Button type="reset" variant="outline" disabled={pending}>Làm mới</Button>
+      {!isOnline && (
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <WifiOff className="h-4 w-4" />
+          <span>Không có kết nối</span>
+        </div>
+      )}
     </section>
   )
 }
@@ -28,6 +43,7 @@ function PendingButtons({ pending }: { pending: boolean }) {
 export default function ViolationFormClient({ students, criteria, allowedClasses, currentClass }: Props) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
+  const isOnline = useOnlineStatus()
 
   function handleBeforeSubmit(form: HTMLFormElement) {
     const studentId = (form.querySelector('input[name="student_id"]') as HTMLInputElement)?.value
@@ -70,15 +86,16 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
             payload[key] = value
           }
         })
-
         setPending(true)
         try {
-          const res = await fetch('/api/records', {
+          // Use retry mechanism for network resilience
+          const res = await fetchWithRetry('/api/records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify(payload),
-          })
+          }, 3, 1000)
+          
           const data = await res.json()
           if (!res.ok) {
             if (res.status === 401) {
@@ -91,11 +108,18 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
           } else {
             toast.success('Đã gửi ghi nhận. Danh sách sẽ được làm mới khi hoàn tất.')
           }
-        } catch {
-          toast.error('Lỗi mạng khi gửi ghi nhận')
+        } catch (error) {
+          if (isNetworkError(error)) {
+            toast.error('Không có kết nối mạng. Vui lòng kiểm tra kết nối và thử lại.', {
+              duration: 5000,
+            })
+          } else {
+            toast.error(getErrorMessage(error))
+          }
         } finally {
           setPending(false)
           router.refresh()
+        } router.refresh()
         }
       }}
       className="grid gap-6 lg:grid-cols-2"
@@ -109,10 +133,10 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
 
       <section className="lg:col-span-1">
         <Label className="mb-2">Lý do / ghi chú</Label>
-        <Input type="text" name="reason" placeholder="Tuỳ chọn" />
-      </section>
-
-      <section className="lg:col-span-2">
+      <PendingButtons pending={pending} isOnline={isOnline} />
+    </form>
+  )
+}     <section className="lg:col-span-2">
         <Label className="mb-2">Link minh chứng (tuỳ chọn)</Label>
         <Input type="url" name="evidence_url" placeholder="https://..." />
       </section>

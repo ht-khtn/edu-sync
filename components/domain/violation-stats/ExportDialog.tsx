@@ -369,9 +369,9 @@ export default function ExportReportDialog() {
           <DialogTitle className="text-2xl font-semibold">
             Xuất báo cáo Excel
           </DialogTitle>
-          <p className="text-sm text-muted-foreground mt-1">
+          <DialogDescription>
             Tạo báo cáo tổng hợp vi phạm theo khối và khoảng thời gian
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">

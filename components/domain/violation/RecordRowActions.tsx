@@ -11,7 +11,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select'
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect } from 'react'
+import { isNetworkError, getErrorMessage } from '@/lib/network-utils'
 
 export default function RecordRowActions({ id, initialNote, initialStudentId, initialCriteriaId, classId }: { id: string, initialNote?: string, initialStudentId?: string, initialCriteriaId?: string, classId?: string }) {
   const router = useRouter()
@@ -70,8 +71,11 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
       setOpenEdit(false)
       router.refresh()
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      toast.error(`Lỗi cập nhật: ${message}`)
+      if (isNetworkError(e)) {
+        toast.error('Không có kết nối mạng. Vui lòng kiểm tra và thử lại.')
+      } else {
+        toast.error(getErrorMessage(e))
+      }
     } finally {
       setLoading(false)
     }
@@ -96,16 +100,19 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
           action: 'delete',
           actor_id: actor_id ?? null,
           diff: { before },
-          meta: { source: 'record-row-actions' },
-        })
-      } catch {}
       toast.success('Đã xoá ghi nhận')
       setOpenDelete(false)
       router.refresh()
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      toast.error(`Lỗi xoá: ${message}`)
+      if (isNetworkError(e)) {
+        toast.error('Không có kết nối mạng. Vui lòng kiểm tra và thử lại.')
+      } else {
+        toast.error(getErrorMessage(e))
+      }
     } finally {
+      setLoading(false)
+    }
+  } } finally {
       setLoading(false)
     }
   }
@@ -155,6 +162,7 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Chỉnh sửa ghi nhận</DialogTitle>
+            <DialogDescription>Cập nhật thông tin vi phạm, học sinh hoặc ghi chú</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             {/* Score is not editable */}
@@ -204,9 +212,9 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Xoá ghi nhận?</DialogTitle>
+            <DialogDescription>Hành động này sẽ ẩn ghi nhận khỏi danh sách (xoá mềm). Bạn có chắc không?</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <p className="text-sm text-muted-foreground">Hành động này sẽ ẩn ghi nhận khỏi danh sách (xoá mềm). Bạn có chắc không?</p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setOpenDelete(false)} disabled={loading}>Huỷ</Button>
               <Button onClick={onDelete} disabled={loading} className="bg-red-600 hover:bg-red-700">Xoá</Button>

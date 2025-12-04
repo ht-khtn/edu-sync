@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,6 +37,7 @@ export function EditCriteriaDialog({ criteria }: { criteria: Criteria }) {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa tiêu chí</DialogTitle>
+          <DialogDescription>Cập nhật thông tin tiêu chí vi phạm</DialogDescription>
         </DialogHeader>
         <form action={updateCriteriaAction} className="space-y-4">
           <input type="hidden" name="id" value={criteria.id} />

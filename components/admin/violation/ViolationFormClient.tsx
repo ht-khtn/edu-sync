@@ -5,6 +5,7 @@ import SelectFields from '@/components/admin/violation/SelectFields'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -132,15 +133,15 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
 
       <section className="lg:col-span-1">
         <Label className="mb-2">Lý do / ghi chú</Label>
-      <PendingButtons pending={pending} isOnline={isOnline} />
-    </form>
-  )
-}     <section className="lg:col-span-2">
+        <Textarea name="note" rows={3} className="w-full" />
+      </section>
+
+      <section className="lg:col-span-2">
         <Label className="mb-2">Link minh chứng (tuỳ chọn)</Label>
         <Input type="url" name="evidence_url" placeholder="https://..." />
       </section>
 
-      <PendingButtons pending={pending} />
+      <PendingButtons pending={pending} isOnline={isOnline} />
     </form>
   )
 }

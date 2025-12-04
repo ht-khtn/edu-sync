@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 // Supabase Edge Function (Deno) — record-ops
 // This function performs record insert/update/approve using the SERVICE ROLE KEY
 // and writes explicit audit entries including the actor_id provided by the caller.
@@ -7,12 +5,27 @@
 
 import { serve } from 'https://deno.land/std@0.201.0/http/server.ts'
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || Deno.env.get('NEXT_PUBLIC_SUPABASE_URL')
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in Edge Function environment')
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined
+  }
 }
+
+const SUPABASE_URL = (() => {
+  const url = Deno.env.get('SUPABASE_URL') || Deno.env.get('NEXT_PUBLIC_SUPABASE_URL')
+  if (!url) {
+    throw new Error('Missing SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL in Edge Function environment')
+  }
+  return url
+})()
+
+const SERVICE_KEY = (() => {
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!key) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY in Edge Function environment')
+  }
+  return key
+})()
 
 type RecordPayload = Record<string, unknown>
 

@@ -34,8 +34,6 @@ type Props = {
 export function CriteriaRowActions({ criteria }: Props) {
   const [dialog, setDialog] = useState<'disable' | 'enable' | 'delete' | null>(null)
 
-  const disable = !criteria.isActive
-
   return (
     <div className="flex items-center gap-2">
       {criteria.isActive ? (

@@ -92,7 +92,7 @@ const managementNavItems = [
 
 function AdminSidebarComponent() {
   const pathname = usePathname();
-  const { user, isLoading } = useUser();
+  const { user } = useUser();
   
   // Derive permissions from user roles
   const canEnterViolations = user?.hasCC && !user?.hasSchoolScope;

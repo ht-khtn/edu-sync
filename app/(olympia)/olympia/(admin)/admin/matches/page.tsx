@@ -6,22 +6,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
 import { getServerAuthContext } from '@/lib/server-auth'
 
-type TournamentRow = {
-  id: string
-  name: string
-  status: string | null
-  starts_at: string | null
-  ends_at: string | null
-}
-
-type MatchRow = {
-  id: string
-  name: string
-  status: string
-  scheduled_at: string | null
-  tournament_id: string | null
-}
-
 const statusColorMap: Record<string, string> = {
   draft: 'bg-slate-200 text-slate-700',
   scheduled: 'bg-blue-100 text-blue-700',

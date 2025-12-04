@@ -9,22 +9,6 @@ import { cache } from 'react'
 
 export const dynamic = 'force-dynamic'
 
-type MatchRow = {
-  id: string
-  name: string
-  status: string
-  scheduled_at: string | null
-}
-
-type LiveSessionRow = {
-  id: string
-  match_id: string
-  join_code: string
-  status: string
-  question_state: string
-  current_round_type: string | null
-}
-
 const formatter = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'full', timeStyle: 'short' })
 const matchStatusLabel: Record<string, string> = {
   scheduled: 'Đã lên lịch',

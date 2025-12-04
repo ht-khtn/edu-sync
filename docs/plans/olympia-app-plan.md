@@ -19,7 +19,31 @@
    - Re-export layout riêng (header, sidebar) từ `components/layout/olympia/*`.
 4. **RBAC & session**
    - Tái sử dụng `getServerAuthContext` để lấy `appUserId` từ `public.users`.
-   - Viết helper `hasOlympiaAdminAccess` kiểm tra user có trong `olympia.admins`.
+   - Viết helper `hasOlympiaAdminAccess` kiểm tra user có trong `olympia.participants` với `role = 'AD'`.
+
+## 2.1. Cơ chế chia luồng Olympia theo role
+- Nguồn dữ liệu:
+   - Bảng `users` (mapping auth_uid → appUserId) dùng trong `getServerAuthContext`.
+   - Bảng `olympia.participants` để xác định vai trò trong hệ thống Olympia:
+      - `role = 'AD'` → Olympia admin.
+      - `role = 'MC'` (tương lai) → MC / dẫn chương trình.
+      - `role = null` nhưng có `contestant_code` → thí sinh.
+   - Các user không có bản ghi participants → guest.
+- Helper dự kiến:
+   - `getOlympiaParticipant()` (đã có) đọc từ `olympia.participants` theo `appUserId`.
+   - `summarizeOlympiaRole()` trả về enum đơn giản: `olympia-admin | olympia-player | olympia-guest | olympia-mc`.
+- Áp dụng routing:
+   - Ở route root `olympia.<domain>/`:
+      - Nếu `olympia-admin` → redirect `302` sang `/olympia/admin`.
+      - Nếu `olympia-player` hoặc `guest` → redirect sang `/olympia/client`.
+      - Nếu `olympia-mc` (sau này) → redirect sang `/olympia/mc`.
+   - Ở layout admin `app/(olympia)/olympia/(admin)/layout.tsx`:
+      - Nếu không phải `olympia-admin` → trả 403 hoặc redirect về `/olympia/client`.
+   - Ở layout client `app/(olympia)/olympia/(client)/layout.tsx`:
+      - Nếu là admin → hiển thị banner/link nhanh về `/olympia/admin`.
+      - Nếu chưa đăng nhập → coi như guest, chỉ cho phép xem lịch và join phòng public.
+
+> Lưu ý: guest và quyền riêng cho MC sẽ được triển khai giai đoạn sau (UI + bảng role chi tiết).
 
 ## 3. Schema Supabase `olympia`
 > Lưu ý: chưa tạo bảng nào; toàn bộ DDL cần đưa vào file migration mới trong `supabase/`.
@@ -94,18 +118,33 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 - Viết view hỗ trợ dashboard (vd. `olympia.v_match_summary`).
 
 ## 4. Trang quản lý giải & trận (`olympia.<domain>/admin`)
-1. **Danh sách tournament & trận**
+1. **Danh sách tournament & trận** (Quản lý cuộc thi)
    - Bảng filter theo trạng thái, thời gian, host phụ trách.
    - CTA tạo tournament mới (modal) + tạo trận từ template.
 2. **Chi tiết trận**
    - Tabs: Cấu hình vòng, Người chơi, Bộ câu hỏi, Nhật ký.
    - Hỗ trợ gán thí sinh (từ `olympia.users`), export QR join code.
-3. **Điều khiển live** (giai đoạn 2)
+3. **Điều khiển live / Quản lý phòng** (giai đoạn 2)
    - Bảng điều khiển host: start round, next question, reveal answer, pause.
    - Realtime update scoreboard (subscribe `olympia.match_scores`).
 4. **Server actions / API**
    - `/app/(olympia-admin)/admin/actions.ts`: createTournament, createMatch, assignPlayer, attachQuestion.
    - Thêm logging sang `olympia.audit_logs` (future optional).
+
+## 4.1. Trang quản lý admin & tài khoản thi
+- Mục tiêu: cho phép quản lý tập trung các tài khoản có quyền Olympia (admin, thí sinh), dựa trên bảng `users` và `olympia.participants`.
+- Route đề xuất: `olympia.<domain>/admin/accounts` → file `app/(olympia)/olympia/(admin)/admin/accounts/page.tsx`.
+- Dữ liệu hiển thị:
+   - Admin Olympia: các bản ghi `olympia.participants` có `role = 'AD'` (kèm thông tin từ `public.users`: tên, username, lớp, trường...).
+   - Thí sinh được cấp mã thi: các bản ghi `participants` còn lại (role `null` hoặc các role khác trong tương lai).
+- Tính năng giai đoạn 1:
+   - Bảng danh sách với filter theo role (Admin / Thí sinh / Khác), ô tìm kiếm theo tên hoặc mã.
+   - CTA (stub) "Thêm admin" / "Thêm thí sinh" dùng server actions để:
+      - Tạo/cập nhật `olympia.participants` cho một user đã tồn tại.
+      - Gán/thu hồi `role = 'AD'` cho tài khoản Olympia.
+   - Chưa bắt buộc phải mở full CRUD; có thể chỉ log (TODO) cho các thao tác nhạy cảm.
+
+> Giai đoạn sau có thể mở rộng thêm: import danh sách thí sinh từ CSV, gán ghế mặc định cho từng trận, và UI phân quyền chi tiết hơn (MC, observer...).
 
 ## 5. Trang quản lý bộ đề (`olympia.<domain>/admin/question-bank`)
 - Bảng câu hỏi với filter theo vòng, môn, độ khó, người tạo.

@@ -127,6 +127,15 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 4. **Khán giả** (giai đoạn 2)
    - Route `/client/watch/[matchId]` để xem scoreboard + luồng câu hỏi read-only.
 
+## 6.1. Liên kết từ portal học sinh chung sang Olympia
+- Trên trang client chung của hệ thống (`/client`, file `app/(client)/client/page.tsx`), thêm một mục giới thiệu Olympia trong khu vực sự kiện/hoạt động.
+- Gợi ý UI: dùng lại `EventCard` với nội dung, ví dụ:
+   - Tiêu đề: "Thi Olympia trực tuyến"
+   - Mô tả: "Xem lịch thi và tham gia các trận Olympia do trường tổ chức."
+   - Nút/Link: dẫn tới `/olympia/client` (hoặc `https://olympia.<ten-mien>/client` khi đã cấu hình subdomain).
+- Vị trí đề xuất: bổ sung một phần tử vào mảng `upcomingEvents` trong `ClientHomePage`, hoặc thêm một `SectionContainer` nhỏ "Hoạt động học tập" có card Olympia nổi bật.
+- Mục tiêu: từ portal học sinh hiện tại, học sinh có thể phát hiện và truy cập nhanh sang cổng Olympia mà không cần biết trước URL.
+
 ## 7. Quy trình thực thi
 1. **Tuần 1**
    - Finalize plan, tạo migration schema `olympia` (DDL + RLS stub).

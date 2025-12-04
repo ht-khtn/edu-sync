@@ -32,6 +32,14 @@ const joinSchema = z.object({
     .transform((val) => val.trim().toUpperCase()),
 })
 
+const matchIdSchema = z.object({
+  matchId: z.string().uuid('Trận không hợp lệ.'),
+})
+
+function generateJoinCode() {
+  return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+}
+
 export async function createMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess()
@@ -129,5 +137,118 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể kiểm tra mã tham gia.' }
+  }
+}
+
+export async function openLiveSessionAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase, appUserId } = await getServerAuthContext()
+    const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+    }
+
+    const matchId = parsed.data.matchId
+    const { data: match, error: matchError } = await supabase
+      .from('olympia.matches')
+      .select('id, status')
+      .eq('id', matchId)
+      .maybeSingle()
+    if (matchError) return { error: matchError.message }
+    if (!match) return { error: 'Không tìm thấy trận.' }
+
+    const { data: session, error: sessionError } = await supabase
+      .from('olympia.live_sessions')
+      .select('id, join_code, status')
+      .eq('match_id', matchId)
+      .maybeSingle()
+    if (sessionError) return { error: sessionError.message }
+
+    const joinCode = session?.join_code ?? generateJoinCode()
+
+    if (!session) {
+      const { error } = await supabase.from('olympia.live_sessions').insert({
+        match_id: matchId,
+        join_code: joinCode,
+        status: 'running',
+        created_by: appUserId,
+      })
+      if (error) return { error: error.message }
+    } else {
+      const { error } = await supabase
+        .from('olympia.live_sessions')
+        .update({
+          status: 'running',
+          join_code: joinCode,
+          question_state: 'hidden',
+          current_round_id: null,
+          current_round_question_id: null,
+          timer_deadline: null,
+          ended_at: null,
+        })
+        .eq('id', session.id)
+      if (error) return { error: error.message }
+    }
+
+    if (match.status !== 'live') {
+      const { error } = await supabase.from('olympia.matches').update({ status: 'live' }).eq('id', matchId)
+      if (error) return { error: error.message }
+    }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath('/olympia/admin')
+    revalidatePath('/olympia/client')
+
+    return { success: `Đã mở phòng. Mã tham gia: ${joinCode}.` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể mở phòng thi.' }
+  }
+}
+
+export async function endLiveSessionAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+    }
+
+    const matchId = parsed.data.matchId
+    const { data: session, error: sessionError } = await supabase
+      .from('olympia.live_sessions')
+      .select('id, status')
+      .eq('match_id', matchId)
+      .maybeSingle()
+    if (sessionError) return { error: sessionError.message }
+    if (!session) return { error: 'Trận này chưa có phòng live.' }
+    if (session.status === 'ended') {
+      return { error: 'Phòng đã kết thúc trước đó.' }
+    }
+
+    const endedAt = new Date().toISOString()
+
+    const [{ error: liveError }, { error: matchError }] = await Promise.all([
+      supabase
+        .from('olympia.live_sessions')
+        .update({ status: 'ended', ended_at: endedAt })
+        .eq('id', session.id),
+      supabase
+        .from('olympia.matches')
+        .update({ status: 'finished' })
+        .eq('id', matchId),
+    ])
+
+    if (liveError) return { error: liveError.message }
+    if (matchError) return { error: matchError.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath('/olympia/admin')
+    revalidatePath('/olympia/client')
+
+    return { success: 'Đã kết thúc phòng thi.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể kết thúc phòng thi.' }
   }
 }

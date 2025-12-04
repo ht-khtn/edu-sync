@@ -57,6 +57,18 @@ const upcomingEvents = [
     participants: 500,
     status: "upcoming" as const,
   },
+  {
+    id: "3",
+    title: "Thi Olympia trực tuyến",
+    description:
+      "Xem lịch thi và tham gia các trận Olympia do trường tổ chức.",
+    date: "2025-12-15",
+    time: "09:00 - 11:00",
+    location: "Cổng trực tuyến Olympia",
+    participants: 0,
+    status: "upcoming" as const,
+    href: "/olympia/client",
+  },
 ];
 
 export default async function ClientHomePage() {

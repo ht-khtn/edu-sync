@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
+import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 const statusColorMap: Record<string, string> = {
@@ -51,15 +52,36 @@ async function fetchMatchesData() {
   if (tournamentError) throw tournamentError
   if (matchError) throw matchError
 
+  let liveSessions: Array<{
+    match_id: string
+    status: string | null
+    join_code: string | null
+    question_state: string | null
+    current_round_type: string | null
+  }> = []
+
+  if (matches && matches.length > 0) {
+    const matchIds = matches.map((match) => match.id)
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('olympia.live_sessions')
+      .select('match_id, status, join_code, question_state, current_round_type')
+      .in('match_id', matchIds)
+
+    if (sessionsError) throw sessionsError
+    liveSessions = sessions ?? []
+  }
+
   return {
     tournaments: tournaments ?? [],
     matches: matches ?? [],
+    liveSessions,
   }
 }
 
 export default async function OlympiaMatchesAdminPage() {
-  const { tournaments, matches } = await fetchMatchesData()
+  const { tournaments, matches, liveSessions } = await fetchMatchesData()
   const tournamentLookup = new Map(tournaments.map((t) => [t.id, t]))
+  const liveSessionLookup = new Map(liveSessions.map((session) => [session.match_id, session]))
 
   const summary = {
     totalTournaments: tournaments.length,
@@ -143,12 +165,14 @@ export default async function OlympiaMatchesAdminPage() {
                   <TableHead>Giải đấu</TableHead>
                   <TableHead>Lịch</TableHead>
                   <TableHead>Trạng thái</TableHead>
+                  <TableHead>Live session</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {matches.map((match) => {
                   const tournament = match.tournament_id ? tournamentLookup.get(match.tournament_id) : null
                   const statusClass = statusColorMap[match.status] ?? 'bg-slate-100 text-slate-700'
+                  const session = liveSessionLookup.get(match.id)
                   return (
                     <TableRow key={match.id}>
                       <TableCell className="font-medium">{match.name}</TableCell>
@@ -169,6 +193,9 @@ export default async function OlympiaMatchesAdminPage() {
                       <TableCell className="text-sm text-muted-foreground">{formatDate(match.scheduled_at)}</TableCell>
                       <TableCell>
                         <Badge className={statusClass}>{match.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <LiveSessionControls matchId={match.id} liveSession={session} />
                       </TableCell>
                     </TableRow>
                   )

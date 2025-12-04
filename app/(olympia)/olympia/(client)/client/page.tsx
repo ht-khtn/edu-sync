@@ -1,5 +1,6 @@
 import { JoinSessionForm } from '@/components/olympia/JoinSessionForm'
 import { LiveScheduleAutoRefresh } from '@/components/olympia/LiveScheduleAutoRefresh'
+import { OlympiaRealtimeListener } from '@/components/olympia/OlympiaRealtimeListener'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -104,7 +105,8 @@ export default async function OlympiaClientHomePage() {
         </div>
       )}
 
-      <LiveScheduleAutoRefresh intervalMs={45000} />
+      <OlympiaRealtimeListener debounceMs={1000} />
+      <LiveScheduleAutoRefresh intervalMs={90000} />
     </section>
   )
 }

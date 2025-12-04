@@ -95,9 +95,12 @@ const EventCard = React.memo<EventCardProps>(
               variant="ghost"
               size="sm"
               className="w-full justify-between group-hover:bg-muted"
+              asChild
             >
-              Xem chi tiết
-              <ChevronRight className="h-4 w-4" />
+              <span className="flex w-full items-center justify-between">
+                Xem chi tiết
+                <ChevronRight className="h-4 w-4" />
+              </span>
             </Button>
           )}
         </CardContent>
@@ -105,7 +108,11 @@ const EventCard = React.memo<EventCardProps>(
     );
 
     if (href) {
-      return <Link href={href}>{content}</Link>;
+      return (
+        <Link href={href} className="block h-full" prefetch={false}>
+          {content}
+        </Link>
+      );
     }
 
     return content;

@@ -160,11 +160,17 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 
 > Giai đoạn sau có thể mở rộng thêm: import danh sách thí sinh từ CSV, gán ghế mặc định cho từng trận, và UI phân quyền chi tiết hơn (MC, observer...).
 
-### 4.2. Liên kết từ dashboard admin chung
-- Trang `app/(admin)/admin/page.tsx` (dashboard quản trị tổng hệ thống) cần có 2 thẻ điều hướng rõ ràng:
-   - "Olympia Admin" → `/olympia/admin/accounts?role=admin`.
-   - "Olympia Thí sinh" → `/olympia/admin/accounts?role=contestant`.
-- Các thẻ này dùng icon khác nhau, mô tả ngắn về phạm vi Olympia và được đặt cạnh các tính năng quản trị hiện hữu để admin dễ phát hiện.
+### 4.2. Liên kết & phân quyền từ dashboard admin chung
+- Trang `app/(admin)/admin/page.tsx` (dashboard quản trị tổng hệ thống) cần 2 thẻ điều hướng:
+   - "Olympia Thí sinh" → `/olympia/admin/accounts?role=contestant` (đi vào cổng Olympia để quản lý tài khoản thi).
+   - "Quản trị viên Olympia" → `/admin/olympia-accounts` (nằm trong dashboard chính, không phụ thuộc layout Olympia).
+- Lý do tách:
+   - Quản lý admin Olympia phải thực hiện trước khi user được cấp quyền truy cập cổng Olympia; vì vậy trang này phải sống trong Admin portal chung.
+   - Trang thí sinh vẫn nằm trong route Olympia vì phụ thuộc dữ liệu/UX chuyên biệt.
+- Trang `/admin/olympia-accounts` hiển thị danh sách và server action để:
+   - Thêm/xóa quyền `role = 'AD'` trong `olympia.participants`.
+   - Sinh/cấp mã truy cập nội bộ, ghi audit log.
+   - Chỉ Admin hệ thống mới có quyền vào trang này (dựa trên RBAC hiện tại của EduSync).
 
 ## 5. Trang quản lý bộ đề (`olympia.<domain>/admin/question-bank`)
 - Bảng câu hỏi với filter theo vòng, môn, độ khó, người tạo.

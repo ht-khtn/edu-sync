@@ -143,6 +143,9 @@ export default async function OlympiaMatchDetailPage({ params }: { params: { mat
           <Button asChild variant="outline" size="sm">
             <Link href="/olympia/admin">Về dashboard</Link>
           </Button>
+          <Button asChild variant="default" size="sm">
+            <Link href={`/olympia/admin/matches/${match.id}/host`}>Mở console host</Link>
+          </Button>
         </div>
       </div>
 

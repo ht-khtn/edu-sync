@@ -36,6 +36,20 @@ const matchIdSchema = z.object({
   matchId: z.string().uuid('Trận không hợp lệ.'),
 })
 
+const roundControlSchema = z.object({
+  matchId: z.string().uuid('Trận không hợp lệ.'),
+  roundType: z.enum(['khoi_dong', 'vcnv', 'tang_toc', 've_dich'], {
+    errorMap: () => ({ message: 'Vòng thi không hợp lệ.' }),
+  }),
+})
+
+const questionStateSchema = z.object({
+  matchId: z.string().uuid('Trận không hợp lệ.'),
+  questionState: z.enum(['hidden', 'showing', 'answer_revealed', 'completed'], {
+    errorMap: () => ({ message: 'Trạng thái câu hỏi không hợp lệ.' }),
+  }),
+})
+
 function generateJoinCode() {
   return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 }
@@ -250,5 +264,99 @@ export async function endLiveSessionAction(_: ActionState, formData: FormData): 
     return { success: 'Đã kết thúc phòng thi.' }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể kết thúc phòng thi.' }
+  }
+}
+
+export async function setLiveSessionRoundAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const parsed = roundControlSchema.safeParse({
+      matchId: formData.get('matchId'),
+      roundType: formData.get('roundType'),
+    })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin vòng.' }
+    }
+
+    const { matchId, roundType } = parsed.data
+    const { data: session, error: sessionError } = await supabase
+      .from('olympia.live_sessions')
+      .select('id, status')
+      .eq('match_id', matchId)
+      .maybeSingle()
+    if (sessionError) return { error: sessionError.message }
+    if (!session) return { error: 'Trận chưa mở phòng live.' }
+    if (session.status !== 'running') {
+      return { error: 'Phòng chưa ở trạng thái running.' }
+    }
+
+    const { data: roundRow, error: roundError } = await supabase
+      .from('olympia.match_rounds')
+      .select('id')
+      .eq('match_id', matchId)
+      .eq('round_type', roundType)
+      .maybeSingle()
+    if (roundError) return { error: roundError.message }
+    if (!roundRow) return { error: 'Trận chưa cấu hình vòng này.' }
+
+    const { error } = await supabase
+      .from('olympia.live_sessions')
+      .update({
+        current_round_id: roundRow.id,
+        current_round_type: roundType,
+        question_state: 'hidden',
+      })
+      .eq('id', session.id)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath(`/olympia/admin/matches/${matchId}`)
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
+    revalidatePath('/olympia/client')
+
+    return { success: `Đã chuyển sang vòng ${roundType}.` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể đổi vòng.' }
+  }
+}
+
+export async function setQuestionStateAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const parsed = questionStateSchema.safeParse({
+      matchId: formData.get('matchId'),
+      questionState: formData.get('questionState'),
+    })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trạng thái.' }
+    }
+
+    const { matchId, questionState } = parsed.data
+    const { data: session, error: sessionError } = await supabase
+      .from('olympia.live_sessions')
+      .select('id, status')
+      .eq('match_id', matchId)
+      .maybeSingle()
+    if (sessionError) return { error: sessionError.message }
+    if (!session) return { error: 'Trận chưa mở phòng live.' }
+
+    const { error } = await supabase
+      .from('olympia.live_sessions')
+      .update({ question_state: questionState })
+      .eq('id', session.id)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath(`/olympia/admin/matches/${matchId}`)
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
+    revalidatePath('/olympia/client')
+
+    return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể cập nhật trạng thái.' }
   }
 }

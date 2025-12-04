@@ -10,8 +10,8 @@
 1. **Cấu hình subdomain**
    - Thêm domain `olympia.<ten-mien>` trên Vercel (hoặc platform deploy hiện tại) và liên kết với cùng project.
    - Cập nhật DNS CNAME về Vercel.
-2. **Middleware nhận biết host**
-   - Tạo `middleware.ts` hoặc cập nhật middleware hiện tại để đọc `request.headers.get('host')`.
+2. **Proxy nhận biết host**
+   - Tạo `proxy.ts` hoặc cập nhật proxy hiện tại để đọc `request.headers.get('host')`.
    - Nếu host bắt đầu bằng `olympia.`, chuyển request vào route group `app/(olympia)`.
 3. **Route group**
    - `app/(olympia-admin)` cho đường dẫn `/admin/*` (ban tổ chức).
@@ -26,24 +26,33 @@
    - Bảng `users` (mapping auth_uid → appUserId) dùng trong `getServerAuthContext`.
    - Bảng `olympia.participants` để xác định vai trò trong hệ thống Olympia:
       - `role = 'AD'` → Olympia admin.
-      - `role = 'MC'` (tương lai) → MC / dẫn chương trình.
       - `role = null` nhưng có `contestant_code` → thí sinh.
    - Các user không có bản ghi participants → guest.
 - Helper dự kiến:
    - `getOlympiaParticipant()` (đã có) đọc từ `olympia.participants` theo `appUserId`.
-   - `summarizeOlympiaRole()` trả về enum đơn giản: `olympia-admin | olympia-player | olympia-guest | olympia-mc`.
+   - `summarizeOlympiaRole()` trả về enum đơn giản: `olympia-admin | olympia-player | olympia-guest` (không dùng role MC; chế độ xem MC sẽ dựa vào mật khẩu phòng, xem chi tiết §2.2).
 - Áp dụng routing:
    - Ở route root `olympia.<domain>/`:
       - Nếu `olympia-admin` → redirect `302` sang `/olympia/admin`.
       - Nếu `olympia-player` hoặc `guest` → redirect sang `/olympia/client`.
-      - Nếu `olympia-mc` (sau này) → redirect sang `/olympia/mc`.
+      - Người xem MC sử dụng cùng route `/olympia/client/watch/[sessionId]` nhưng phải nhập mật khẩu MC riêng (không có layout riêng).
    - Ở layout admin `app/(olympia)/olympia/(admin)/layout.tsx`:
       - Nếu không phải `olympia-admin` → trả 403 hoặc redirect về `/olympia/client`.
    - Ở layout client `app/(olympia)/olympia/(client)/layout.tsx`:
       - Nếu là admin → hiển thị banner/link nhanh về `/olympia/admin`.
       - Nếu chưa đăng nhập → coi như guest, chỉ cho phép xem lịch và join phòng public.
 
-> Lưu ý: guest và quyền riêng cho MC sẽ được triển khai giai đoạn sau (UI + bảng role chi tiết).
+> Lưu ý: không tạo role MC trong `olympia.participants`; chế độ xem MC sử dụng mật khẩu riêng theo §2.2 và sẽ được hoàn thiện UI ở các sprint sau.
+
+## 2.2. Mật khẩu phòng thi & chế độ xem
+- Mỗi `live_session` sinh hai chuỗi mật khẩu khác nhau:
+   - `player_password`: bắt buộc thí sinh nhập cùng join code trước khi vào phòng game.
+   - `mc_view_password`: dành cho chế độ xem kiểu MC (observer có quyền xem toàn bộ state nhưng không tương tác), mật khẩu này khác hoàn toàn player password.
+- Guest xem public (không nhập mật khẩu) chỉ được phép xem lịch, scoreboard tóm tắt và các feed read-only ở chế độ guest.
+- UI yêu cầu:
+   - Form join code ở `/olympia/client` thêm input mật khẩu thí sinh.
+   - Trang `/client/watch/[sessionId]` hiển thị dialog nhập mật khẩu MC trước khi render dữ liệu realtime; nếu bỏ qua sẽ fallback sang chế độ guest read-only.
+- Server actions cần xác thực mật khẩu từng loại trước khi cấp quyền tương ứng (ghi nhận trong `app/(olympia)/olympia/actions.ts`).
 
 ## 3. Schema Supabase `olympia`
 > Lưu ý: chưa tạo bảng nào; toàn bộ DDL cần đưa vào file migration mới trong `supabase/`.
@@ -104,6 +113,9 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
    - `match_id uuid references olympia.matches(id)`
    - `join_code text unique` – mã để thí sinh/khách join
    - `status text` – `pending|running|ended`
+   - `player_password text` – mật khẩu dành cho thí sinh (hash hoặc chuỗi ngẫu nhiên, không hiển thị công khai)
+   - `mc_view_password text` – mật khẩu riêng cho chế độ xem MC (khác player password)
+   - `requires_player_password boolean default true` – hỗ trợ trường hợp phòng practice không cần mật khẩu
    - `current_round_id uuid references olympia.match_rounds(id)`
    - `current_round_type text` – cache kiểu vòng hiện tại (`khoi_dong|vcnv|tang_toc|ve_dich`)
    - `current_round_question_id uuid references olympia.round_questions(id)`
@@ -112,6 +124,8 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
    - `created_by uuid references public.users(id)` – host khởi tạo
    - `created_at timestamptz default now()`
    - `ended_at timestamptz`
+
+> Password nên lưu dạng hash (ít nhất là `crypto.subtle.digest('SHA-256')`) và chỉ hiển thị plaintext một lần khi tạo. Bảng audit log sẽ ghi lại lần đổi mật khẩu gần nhất để ban tổ chức kiểm soát việc chia sẻ.
 
 > Guest xem trận chỉ cần subscribe/live query vào `live_sessions` + các bảng log (`answers`, `match_scores`, `buzzer_events`), không cần đăng nhập.
 - Áp dụng RLS: chỉ Olympia admin thấy toàn bộ; thí sinh chỉ thấy dữ liệu trận mình tham gia.
@@ -146,6 +160,12 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 
 > Giai đoạn sau có thể mở rộng thêm: import danh sách thí sinh từ CSV, gán ghế mặc định cho từng trận, và UI phân quyền chi tiết hơn (MC, observer...).
 
+### 4.2. Liên kết từ dashboard admin chung
+- Trang `app/(admin)/admin/page.tsx` (dashboard quản trị tổng hệ thống) cần có 2 thẻ điều hướng rõ ràng:
+   - "Olympia Admin" → `/olympia/admin/accounts?role=admin`.
+   - "Olympia Thí sinh" → `/olympia/admin/accounts?role=contestant`.
+- Các thẻ này dùng icon khác nhau, mô tả ngắn về phạm vi Olympia và được đặt cạnh các tính năng quản trị hiện hữu để admin dễ phát hiện.
+
 ## 5. Trang quản lý bộ đề (`olympia.<domain>/admin/question-bank`)
 - Bảng câu hỏi với filter theo vòng, môn, độ khó, người tạo.
 - Preview nội dung + assets; badge hiển thị vòng (`Khởi động`, `VCNV`, `Tăng tốc`, `Về đích`).
@@ -156,6 +176,7 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 ## 6. Trang học sinh (`olympia.<domain>/client`)
 1. **Dashboard học sinh**
    - Ô nhập `join_code`, CTA tham gia trận.
+   - Bổ sung input `player_password` (ẩn/required) trước khi gọi server action join; thông báo lỗi nếu sai mật khẩu.
    - Lịch thi sắp tới (dữ liệu từ `olympia.matches` public).
 2. **Session view**
    - Khi đã join: hiển thị trạng thái câu hỏi hiện tại, timer, input (text/multiple choice).
@@ -163,8 +184,10 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
    - Hỗ trợ buzzer: disable input khi chưa giành quyền.
 3. **Lịch sử cá nhân**
    - Bảng điểm từng trận đã tham gia, link xem chi tiết.
-4. **Khán giả** (giai đoạn 2)
-   - Route `/client/watch/[matchId]` để xem scoreboard + luồng câu hỏi read-only.
+4. **Khán giả / MC view**
+   - Route `/client/watch/[matchId]` cho phép 2 chế độ:
+      - Nhập `mc_view_password` → chế độ xem MC (thấy full state realtime, không được gửi đáp án).
+      - Bỏ qua mật khẩu → chế độ guest read-only, chỉ xem scoreboard/timeline public.
 
 ## 6.1. Liên kết từ portal học sinh chung sang Olympia
 - Trên trang client chung của hệ thống (`/client`, file `app/(client)/client/page.tsx`), thêm một mục giới thiệu Olympia trong khu vực sự kiện/hoạt động.

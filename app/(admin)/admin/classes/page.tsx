@@ -1,11 +1,12 @@
-import AdminClassesPage from '@/components/admin/classes/Page'
+import AdminClassesPage from "@/components/admin/classes/Page";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>
-}
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default function ClassesRoutePage({ searchParams }: PageProps) {
-  return <AdminClassesPage searchParams={searchParams} />
+export default async function ClassesRoutePage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  return <AdminClassesPage searchParams={params} />;
 }

@@ -12,7 +12,7 @@ interface ClientHeroProps {
 }
 
 export function ClientHero({
-  imageSrc = "/hero-banner.jpg",
+  imageSrc = "https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/public-bucket/edusync-banner.jpg",
   imageAlt = "EduSync Banner",
   height = 600,
   children,

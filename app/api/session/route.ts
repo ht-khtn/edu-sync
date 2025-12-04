@@ -18,19 +18,27 @@ export async function GET() {
     const authUid = userRes?.user?.id
     if (!authUid) return NextResponse.json({ user: null })
 
-    // Single optimized query with JOINs to get user + roles in one go
+    // First, check if user exists in the system (independent of roles)
+    const { data: appUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_uid', authUid)
+      .maybeSingle()
+
+    if (!appUser?.id) {
+      // User not found in system or not activated
+      return NextResponse.json({ user: null })
+    }
+
+    const appUserId = appUser.id
+
+    // Then get roles (optional - user can exist without roles)
     const { data: roles } = await supabase
       .from('user_roles')
       .select('role_id, target, permissions(scope), users!inner(id, auth_uid)')
       .eq('users.auth_uid', authUid)
 
     const roleList = Array.isArray(roles) ? (roles as RoleRecord[]) : []
-    if (roleList.length === 0) return NextResponse.json({ user: null })
-    
-    // Get appUserId from first role (all roles have same user)
-    const firstRole = roleList[0]
-    const appUserId = firstRole?.users?.[0]?.id
-    if (!appUserId) return NextResponse.json({ user: null })
 
     const hasSchoolScope = roleList.some((r) => {
       const scopes = Array.isArray(r.permissions) ? r.permissions : []

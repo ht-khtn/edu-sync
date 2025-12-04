@@ -17,7 +17,20 @@ const matchStatusLabel: Record<string, string> = {
   finished: 'Đã kết thúc',
 }
 
-const fetchUpcomingMatches = cache(async () => {
+type UpcomingMatchesPayload = {
+  matches: Array<{ id: string; name: string; status: string; scheduled_at: string | null }>
+  sessions: Array<{
+    id: string
+    match_id: string
+    join_code: string
+    status: string
+    question_state: string | null
+    current_round_type: string | null
+  }>
+  error?: string
+}
+
+const fetchUpcomingMatches = cache(async (): Promise<UpcomingMatchesPayload> => {
   const supabase = await getServerSupabase()
   const { data: matches, error } = await supabase
     .from('olympia.matches')
@@ -26,7 +39,10 @@ const fetchUpcomingMatches = cache(async () => {
     .order('scheduled_at', { ascending: true, nullsFirst: false })
     .limit(6)
 
-  if (error) throw error
+  if (error) {
+    console.error('[Olympia] Không tải được danh sách trận:', error.message)
+    return { matches: [], sessions: [], error: 'Không thể tải lịch thi. Vui lòng thử lại sau.' }
+  }
   const rows = matches ?? []
   if (rows.length === 0) return { matches: [], sessions: [] }
 
@@ -42,7 +58,7 @@ const fetchUpcomingMatches = cache(async () => {
 })
 
 export default async function OlympiaClientHomePage() {
-  const { matches, sessions } = await fetchUpcomingMatches()
+  const { matches, sessions, error } = await fetchUpcomingMatches()
   const sessionByMatch = new Map(sessions.map((session) => [session.match_id, session]))
 
   return (
@@ -56,6 +72,13 @@ export default async function OlympiaClientHomePage() {
           <JoinSessionForm />
         </div>
       </div>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Không thể tải dữ liệu</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {matches.length === 0 ? (
         <Alert>

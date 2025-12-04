@@ -38,16 +38,12 @@ const matchIdSchema = z.object({
 
 const roundControlSchema = z.object({
   matchId: z.string().uuid('Trận không hợp lệ.'),
-  roundType: z.enum(['khoi_dong', 'vcnv', 'tang_toc', 've_dich'], {
-    errorMap: () => ({ message: 'Vòng thi không hợp lệ.' }),
-  }),
+  roundType: z.enum(['khoi_dong', 'vcnv', 'tang_toc', 've_dich']),
 })
 
 const questionStateSchema = z.object({
   matchId: z.string().uuid('Trận không hợp lệ.'),
-  questionState: z.enum(['hidden', 'showing', 'answer_revealed', 'completed'], {
-    errorMap: () => ({ message: 'Trạng thái câu hỏi không hợp lệ.' }),
-  }),
+  questionState: z.enum(['hidden', 'showing', 'answer_revealed', 'completed']),
 })
 
 function generateJoinCode() {

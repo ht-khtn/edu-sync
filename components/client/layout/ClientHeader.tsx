@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { UserMenu } from "./UserMenu";
+import { UserMenu } from "../UserMenu";
 import { Trophy, AlertCircle } from "lucide-react";
 
 interface ClientHeaderProps {

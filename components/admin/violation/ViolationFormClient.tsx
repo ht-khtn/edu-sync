@@ -119,7 +119,6 @@ export default function ViolationFormClient({ students, criteria, allowedClasses
         } finally {
           setPending(false)
           router.refresh()
-        } router.refresh()
         }
       }}
       className="grid gap-6 lg:grid-cols-2"

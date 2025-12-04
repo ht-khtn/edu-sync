@@ -100,6 +100,10 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
           action: 'delete',
           actor_id: actor_id ?? null,
           diff: { before },
+        })
+      } catch (err) {
+        console.error('Failed to log audit:', err)
+      }
       toast.success('Đã xoá ghi nhận')
       setOpenDelete(false)
       router.refresh()
@@ -110,9 +114,6 @@ export default function RecordRowActions({ id, initialNote, initialStudentId, in
         toast.error(getErrorMessage(e))
       }
     } finally {
-      setLoading(false)
-    }
-  } } finally {
       setLoading(false)
     }
   }

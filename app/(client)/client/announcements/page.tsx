@@ -1,7 +1,7 @@
-import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
+import { ClientMainContent } from "@/components/client/layout/ClientMainContent";
 import { SectionContainer } from "@/components/ui-extended/SectionContainer";
-import { AnnouncementCard } from "@/components/domain/client/content/AnnouncementCard";
-import { CategoryTabs } from "@/components/domain/client/content/CategoryTabs";
+import { AnnouncementCard } from "@/components/client/AnnouncementCard";
+import { CategoryTabs } from "@/components/client/CategoryTabs";
 import { Button } from "@/components/ui/button";
 import { Filter } from "lucide-react";
 

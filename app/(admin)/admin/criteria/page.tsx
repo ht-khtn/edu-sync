@@ -1,4 +1,4 @@
-import AdminCriteriaPage from '@/components/domain/admin/criteria/page'
+import AdminCriteriaPage from '@/components/admin/criteria/page'
 
 export default function CriteriaRoutePage({
   searchParams,

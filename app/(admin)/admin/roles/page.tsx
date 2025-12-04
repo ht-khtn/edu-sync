@@ -1,4 +1,4 @@
-import AdminRolesPage from '@/components/domain/admin/roles/Page'
+import AdminRolesPage from '@/components/admin/roles/Page'
 
 export const dynamic = 'force-dynamic'
 

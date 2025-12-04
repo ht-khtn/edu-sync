@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ClientHeader } from "@/components/layout/client/ClientHeader";
+import { ClientHeader } from "@/components/client/layout/ClientHeader";
 import { redirect } from "next/navigation";
 import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 
@@ -20,7 +20,7 @@ export default async function ClientLayout({ children }: { children: React.React
   if (!appUserId) {
     return (
       <>
-        <ClientHeader user={null} hasAdminAccess={false} />
+        <ClientHeader user={null} />
         {children}
       </>
     )
@@ -34,7 +34,7 @@ export default async function ClientLayout({ children }: { children: React.React
 
   return (
     <>
-      <ClientHeader user={{ id: appUserId }} hasAdminAccess={false} />
+      <ClientHeader user={{ id: appUserId }} />
       {children}
     </>
   )

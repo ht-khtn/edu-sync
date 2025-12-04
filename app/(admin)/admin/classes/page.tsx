@@ -1,4 +1,4 @@
-import AdminClassesPage from '@/components/domain/admin/classes/Page'
+import AdminClassesPage from '@/components/admin/classes/Page'
 
 export const dynamic = 'force-dynamic'
 

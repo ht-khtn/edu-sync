@@ -1,4 +1,4 @@
-import { CreateQuestionDialog } from '@/components/domain/olympia/CreateQuestionDialog'
+import { CreateQuestionDialog } from '@/components/olympia/CreateQuestionDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'

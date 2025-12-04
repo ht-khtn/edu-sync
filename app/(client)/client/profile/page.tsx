@@ -1,4 +1,4 @@
-import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
+import { ClientMainContent } from "@/components/client/layout/ClientMainContent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";

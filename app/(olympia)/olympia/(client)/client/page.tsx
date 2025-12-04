@@ -1,5 +1,5 @@
-import { JoinSessionForm } from '@/components/domain/olympia/JoinSessionForm'
-import { LiveScheduleAutoRefresh } from '@/components/domain/olympia/LiveScheduleAutoRefresh'
+import { JoinSessionForm } from '@/components/olympia/JoinSessionForm'
+import { LiveScheduleAutoRefresh } from '@/components/olympia/LiveScheduleAutoRefresh'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

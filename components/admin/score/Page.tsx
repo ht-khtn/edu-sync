@@ -1,5 +1,5 @@
 import React from "react"
-import ScoreEntryClient from "@/components/domain/score/ScoreEntryClient"
+import ScoreEntryClient from "@/components/admin/score/ScoreEntryClient"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 
 export default function ScoreEntryPageContent() {

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import Filters from "@/components/domain/violation-history/Filters";
+import Filters from "@/components/admin/violation-history/Filters";
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
 
 export const dynamic = "force-dynamic";

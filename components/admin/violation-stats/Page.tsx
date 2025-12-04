@@ -9,8 +9,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import ClassAggClient from "@/components/domain/violation-stats/ClassAggClient";
-import ExportReportDialog from "@/components/domain/violation-stats/ExportDialog";
+import ClassAggClient from "@/components/admin/violation-stats/ClassAggClient";
+import ExportReportDialog from "@/components/admin/violation-stats/ExportDialog";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";

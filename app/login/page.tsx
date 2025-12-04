@@ -1,4 +1,4 @@
-import { LoginPageContent, metadata } from '@/components/domain/login/LoginComponents'
+import { LoginPageContent, metadata } from '@/components/login/LoginComponents'
 
 export { metadata }
 

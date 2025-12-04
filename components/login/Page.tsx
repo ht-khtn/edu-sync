@@ -1,4 +1,4 @@
-import LoginForm from "@/components/domain/login/LoginForm";
+import LoginForm from "@/components/login/LoginForm";
 
 export const metadata = {
   title: "Đăng nhập — EduSync",

@@ -1,6 +1,6 @@
-import { MyViolationsPageContent } from "@/components/domain/my-violations/MyViolationsComponents";
-import RecordsRealtimeListener from "@/components/domain/violation/RecordsRealtimeListener";
-import { ClientMainContent } from "@/components/layout/client/ClientMainContent";
+import { MyViolationsPageContent } from "@/components/client/my-violations/MyViolationsComponents";
+import RecordsRealtimeListener from "@/components/admin/violation/RecordsRealtimeListener";
+import { ClientMainContent } from "@/components/client/layout/ClientMainContent";
 
 export default async function MyViolationsPage() {
   // try {

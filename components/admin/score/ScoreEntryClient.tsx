@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback } from "react";
-import CSVUploader from "@/components/domain/score/CSVUploader";
-import ScorePreviewTable from "@/components/domain/score/ScorePreviewTable";
+import CSVUploader from "@/components/admin/score/CSVUploader";
+import ScorePreviewTable from "@/components/admin/score/ScorePreviewTable";
 import {
   Card,
   CardHeader,

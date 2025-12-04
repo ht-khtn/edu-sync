@@ -1,5 +1,5 @@
-import { ViolationForm } from "@/components/domain/violation/ViolationForm";
-import RecentRecordsList from "@/components/domain/violation/RecentRecordsList";
+import { ViolationForm } from "@/components/admin/violation/ViolationForm";
+import RecentRecordsList from "@/components/admin/violation/RecentRecordsList";
 import {
   fetchCriteriaFromDB,
   fetchStudentsFromDB,

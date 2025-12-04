@@ -1,4 +1,4 @@
-import AdminAccountsPage from '@/components/domain/admin/accounts/Page'
+import AdminAccountsPage from '@/components/admin/accounts/Page'
 
 export const dynamic = 'force-dynamic'
 

@@ -48,8 +48,13 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!onOlympiaHost && isOlympiaPath) {
-    url.pathname = pathname.replace(/^\/olympia/, '') || '/'
-    return NextResponse.redirect(url)
+    if (envHost) {
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.hostname = envHost
+      return NextResponse.redirect(redirectUrl)
+    }
+    // No dedicated host configured, allow direct access on current domain
+    return NextResponse.next()
   }
 
   // Check if route needs auth BEFORE doing expensive session check

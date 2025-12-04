@@ -19,9 +19,10 @@ const statusVariants: Record<string, string> = {
 
 async function fetchHostData(matchId: string) {
   const { supabase } = await getServerAuthContext()
+  const olympia = supabase.schema('olympia')
 
-  const { data: match, error: matchError } = await supabase
-    .from('olympia.matches')
+  const { data: match, error: matchError } = await olympia
+    .from('matches')
     .select('id, name, status')
     .eq('id', matchId)
     .maybeSingle()
@@ -29,13 +30,13 @@ async function fetchHostData(matchId: string) {
   if (!match) return null
 
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }] = await Promise.all([
-    supabase
-      .from('olympia.live_sessions')
+    olympia
+      .from('live_sessions')
       .select('match_id, status, join_code, question_state, current_round_type')
       .eq('match_id', matchId)
       .maybeSingle(),
-    supabase
-      .from('olympia.match_rounds')
+    olympia
+      .from('match_rounds')
       .select('id, round_type, order_index')
       .eq('match_id', matchId)
       .order('order_index', { ascending: true }),

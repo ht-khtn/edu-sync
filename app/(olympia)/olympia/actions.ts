@@ -46,6 +46,22 @@ const questionStateSchema = z.object({
   questionState: z.enum(['hidden', 'showing', 'answer_revealed', 'completed']),
 })
 
+const submitAnswerSchema = z.object({
+  sessionId: z.string().uuid('Phòng thi không hợp lệ.'),
+  answer: z
+    .string()
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0, 'Vui lòng nhập đáp án.'),
+  notes: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : null)),
+})
+
+const buzzerSchema = z.object({
+  sessionId: z.string().uuid('Phòng thi không hợp lệ.'),
+})
+
 function generateJoinCode() {
   return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 }
@@ -54,6 +70,7 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
   try {
     await ensureOlympiaAdminAccess()
     const { supabase, appUserId } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     if (!appUserId) return { error: 'Không tìm thấy thông tin người dùng.' }
 
     const parsed = matchSchema.safeParse({
@@ -67,7 +84,7 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
     }
 
     const payload = parsed.data
-    const { error } = await supabase.from('olympia.matches').insert({
+    const { error } = await olympia.from('matches').insert({
       name: payload.name,
       tournament_id: payload.tournamentId,
       scheduled_at: payload.scheduledAt,
@@ -89,6 +106,7 @@ export async function createQuestionAction(_: ActionState, formData: FormData): 
   try {
     await ensureOlympiaAdminAccess()
     const { supabase, appUserId } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     const parsed = questionSchema.safeParse({
       code: formData.get('code'),
       category: formData.get('category'),
@@ -102,7 +120,7 @@ export async function createQuestionAction(_: ActionState, formData: FormData): 
     }
 
     const payload = parsed.data
-    const { error } = await supabase.from('olympia.questions').insert({
+    const { error } = await olympia.from('questions').insert({
       code: payload.code.toUpperCase(),
       category: payload.category,
       question_text: payload.questionText,
@@ -132,8 +150,9 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
     }
 
     const supabase = await getServerSupabase()
-    const { data, error } = await supabase
-      .from('olympia.live_sessions')
+    const olympia = supabase.schema('olympia')
+    const { data, error } = await olympia
+      .from('live_sessions')
       .select('id, status, match_id, question_state, current_round_type')
       .eq('join_code', parsed.data.joinCode)
       .maybeSingle()
@@ -154,22 +173,23 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
   try {
     await ensureOlympiaAdminAccess()
     const { supabase, appUserId } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
     }
 
     const matchId = parsed.data.matchId
-    const { data: match, error: matchError } = await supabase
-      .from('olympia.matches')
+    const { data: match, error: matchError } = await olympia
+      .from('matches')
       .select('id, status')
       .eq('id', matchId)
       .maybeSingle()
     if (matchError) return { error: matchError.message }
     if (!match) return { error: 'Không tìm thấy trận.' }
 
-    const { data: session, error: sessionError } = await supabase
-      .from('olympia.live_sessions')
+    const { data: session, error: sessionError } = await olympia
+      .from('live_sessions')
       .select('id, join_code, status')
       .eq('match_id', matchId)
       .maybeSingle()
@@ -178,7 +198,7 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
     const joinCode = session?.join_code ?? generateJoinCode()
 
     if (!session) {
-      const { error } = await supabase.from('olympia.live_sessions').insert({
+      const { error } = await olympia.from('live_sessions').insert({
         match_id: matchId,
         join_code: joinCode,
         status: 'running',
@@ -186,8 +206,8 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
       })
       if (error) return { error: error.message }
     } else {
-      const { error } = await supabase
-        .from('olympia.live_sessions')
+      const { error } = await olympia
+        .from('live_sessions')
         .update({
           status: 'running',
           join_code: joinCode,
@@ -202,7 +222,7 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
     }
 
     if (match.status !== 'live') {
-      const { error } = await supabase.from('olympia.matches').update({ status: 'live' }).eq('id', matchId)
+      const { error } = await olympia.from('matches').update({ status: 'live' }).eq('id', matchId)
       if (error) return { error: error.message }
     }
 
@@ -220,14 +240,15 @@ export async function endLiveSessionAction(_: ActionState, formData: FormData): 
   try {
     await ensureOlympiaAdminAccess()
     const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
     }
 
     const matchId = parsed.data.matchId
-    const { data: session, error: sessionError } = await supabase
-      .from('olympia.live_sessions')
+    const { data: session, error: sessionError } = await olympia
+      .from('live_sessions')
       .select('id, status')
       .eq('match_id', matchId)
       .maybeSingle()
@@ -240,12 +261,12 @@ export async function endLiveSessionAction(_: ActionState, formData: FormData): 
     const endedAt = new Date().toISOString()
 
     const [{ error: liveError }, { error: matchError }] = await Promise.all([
-      supabase
-        .from('olympia.live_sessions')
+      olympia
+        .from('live_sessions')
         .update({ status: 'ended', ended_at: endedAt })
         .eq('id', session.id),
-      supabase
-        .from('olympia.matches')
+      olympia
+        .from('matches')
         .update({ status: 'finished' })
         .eq('id', matchId),
     ])
@@ -267,6 +288,7 @@ export async function setLiveSessionRoundAction(_: ActionState, formData: FormDa
   try {
     await ensureOlympiaAdminAccess()
     const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     const parsed = roundControlSchema.safeParse({
       matchId: formData.get('matchId'),
       roundType: formData.get('roundType'),
@@ -276,8 +298,8 @@ export async function setLiveSessionRoundAction(_: ActionState, formData: FormDa
     }
 
     const { matchId, roundType } = parsed.data
-    const { data: session, error: sessionError } = await supabase
-      .from('olympia.live_sessions')
+    const { data: session, error: sessionError } = await olympia
+      .from('live_sessions')
       .select('id, status')
       .eq('match_id', matchId)
       .maybeSingle()
@@ -287,8 +309,8 @@ export async function setLiveSessionRoundAction(_: ActionState, formData: FormDa
       return { error: 'Phòng chưa ở trạng thái running.' }
     }
 
-    const { data: roundRow, error: roundError } = await supabase
-      .from('olympia.match_rounds')
+    const { data: roundRow, error: roundError } = await olympia
+      .from('match_rounds')
       .select('id')
       .eq('match_id', matchId)
       .eq('round_type', roundType)
@@ -296,8 +318,8 @@ export async function setLiveSessionRoundAction(_: ActionState, formData: FormDa
     if (roundError) return { error: roundError.message }
     if (!roundRow) return { error: 'Trận chưa cấu hình vòng này.' }
 
-    const { error } = await supabase
-      .from('olympia.live_sessions')
+    const { error } = await olympia
+      .from('live_sessions')
       .update({
         current_round_id: roundRow.id,
         current_round_type: roundType,
@@ -322,6 +344,7 @@ export async function setQuestionStateAction(_: ActionState, formData: FormData)
   try {
     await ensureOlympiaAdminAccess()
     const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
     const parsed = questionStateSchema.safeParse({
       matchId: formData.get('matchId'),
       questionState: formData.get('questionState'),
@@ -331,16 +354,16 @@ export async function setQuestionStateAction(_: ActionState, formData: FormData)
     }
 
     const { matchId, questionState } = parsed.data
-    const { data: session, error: sessionError } = await supabase
-      .from('olympia.live_sessions')
+    const { data: session, error: sessionError } = await olympia
+      .from('live_sessions')
       .select('id, status')
       .eq('match_id', matchId)
       .maybeSingle()
     if (sessionError) return { error: sessionError.message }
     if (!session) return { error: 'Trận chưa mở phòng live.' }
 
-    const { error } = await supabase
-      .from('olympia.live_sessions')
+    const { error } = await olympia
+      .from('live_sessions')
       .update({ question_state: questionState })
       .eq('id', session.id)
 
@@ -354,5 +377,92 @@ export async function setQuestionStateAction(_: ActionState, formData: FormData)
     return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể cập nhật trạng thái.' }
+  }
+}
+
+export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const { supabase, authUid, appUserId } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+    if (!authUid || !appUserId) {
+      return { error: 'Bạn cần đăng nhập để gửi đáp án.' }
+    }
+
+    const parsed = submitAnswerSchema.safeParse({
+      sessionId: formData.get('sessionId'),
+      answer: formData.get('answer'),
+      notes: formData.get('notes'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const sessionId = parsed.data.sessionId
+    const { data: session, error } = await olympia
+      .from('live_sessions')
+      .select('id, status')
+      .eq('id', sessionId)
+      .maybeSingle()
+
+    if (error) return { error: error.message }
+    if (!session) return { error: 'Không tìm thấy phòng thi.' }
+    if (session.status !== 'running') {
+      return { error: 'Phòng chưa mở nhận đáp án.' }
+    }
+
+    // TODO: persist payload vào `olympia.answers` và kích hoạt service chấm điểm.
+    console.info('[Olympia] submitAnswerAction stub', {
+      responder: appUserId,
+      sessionId,
+      answer: parsed.data.answer,
+      notes: parsed.data.notes,
+    })
+
+    return {
+      success: 'Hệ thống đã nhận được đáp án (stub). Tính năng chấm điểm sẽ bật trong bản cập nhật kế tiếp.',
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể gửi đáp án ngay lúc này.' }
+  }
+}
+
+export async function triggerBuzzerAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const { supabase, authUid, appUserId } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+    if (!authUid || !appUserId) {
+      return { error: 'Bạn cần đăng nhập để bấm chuông.' }
+    }
+
+    const parsed = buzzerSchema.safeParse({ sessionId: formData.get('sessionId') })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Mã phòng không hợp lệ.' }
+    }
+
+    const { data: session, error } = await olympia
+      .from('live_sessions')
+      .select('id, status, match_id')
+      .eq('id', parsed.data.sessionId)
+      .maybeSingle()
+
+    if (error) return { error: error.message }
+    if (!session) return { error: 'Không tìm thấy phòng thi.' }
+    if (session.status !== 'running') {
+      return { error: 'Phòng chưa sẵn sàng nhận tín hiệu buzzer.' }
+    }
+
+    // TODO: ghi nhận buzzer event (ưu tiên Supabase Realtime cho vòng VCNV).
+    console.info('[Olympia] triggerBuzzerAction stub', {
+      responder: appUserId,
+      sessionId: parsed.data.sessionId,
+      matchId: session.match_id,
+    })
+
+    return {
+      success: 'Đã gửi tín hiệu buzzer (stub). Host sẽ xác nhận khi tính năng hoàn tất.',
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể gửi tín hiệu buzzer.' }
   }
 }

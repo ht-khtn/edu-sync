@@ -38,14 +38,15 @@ const formatDate = (value: string | null) => {
 
 async function fetchMatchesData() {
   const { supabase } = await getServerAuthContext()
+  const olympia = supabase.schema('olympia')
 
   const [{ data: tournaments, error: tournamentError }, { data: matches, error: matchError }] = await Promise.all([
-    supabase
-      .from('olympia.tournaments')
+    olympia
+      .from('tournaments')
       .select('id, name, status, starts_at, ends_at')
       .order('starts_at', { ascending: true, nullsFirst: true }),
-    supabase
-      .from('olympia.matches')
+    olympia
+      .from('matches')
       .select('id, name, status, scheduled_at, tournament_id')
       .order('scheduled_at', { ascending: true, nullsFirst: true }),
   ])
@@ -63,8 +64,8 @@ async function fetchMatchesData() {
 
   if (matches && matches.length > 0) {
     const matchIds = matches.map((match) => match.id)
-    const { data: sessions, error: sessionsError } = await supabase
-      .from('olympia.live_sessions')
+    const { data: sessions, error: sessionsError } = await olympia
+      .from('live_sessions')
       .select('match_id, status, join_code, question_state, current_round_type')
       .in('match_id', matchIds)
 

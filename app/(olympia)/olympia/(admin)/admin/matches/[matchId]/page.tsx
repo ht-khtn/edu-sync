@@ -40,9 +40,10 @@ function formatDate(value: string | null | undefined) {
 
 async function fetchMatchDetail(matchId: string) {
   const { supabase } = await getServerAuthContext()
+  const olympia = supabase.schema('olympia')
 
-  const { data: match, error: matchError } = await supabase
-    .from('olympia.matches')
+  const { data: match, error: matchError } = await olympia
+    .from('matches')
     .select('id, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
     .eq('id', matchId)
     .maybeSingle()
@@ -51,26 +52,26 @@ async function fetchMatchDetail(matchId: string) {
   if (!match) return null
 
   const tournamentPromise = match.tournament_id
-    ? supabase
-        .from('olympia.tournaments')
+    ? olympia
+        .from('tournaments')
         .select('id, name, status, starts_at, ends_at')
         .eq('id', match.tournament_id)
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
   const [liveSessionResult, playersResult, roundsResult, tournamentResult] = await Promise.all([
-    supabase
-      .from('olympia.live_sessions')
+    olympia
+      .from('live_sessions')
       .select('match_id, status, join_code, question_state, current_round_type, timer_deadline')
       .eq('match_id', matchId)
       .maybeSingle(),
-    supabase
-      .from('olympia.match_players')
+    olympia
+      .from('match_players')
       .select('id, seat_index, display_name, participant_id, created_at')
       .eq('match_id', matchId)
       .order('seat_index', { ascending: true }),
-    supabase
-      .from('olympia.match_rounds')
+    olympia
+      .from('match_rounds')
       .select('id, round_type, order_index, config')
       .eq('match_id', matchId)
       .order('order_index', { ascending: true }),
@@ -88,8 +89,8 @@ async function fetchMatchDetail(matchId: string) {
     .filter((value): value is string => Boolean(value))
 
   if (playerParticipantIds.length > 0) {
-    const { data: participants, error: participantError } = await supabase
-      .from('olympia.participants')
+    const { data: participants, error: participantError } = await olympia
+      .from('participants')
       .select('user_id, contestant_code, role')
       .in('user_id', playerParticipantIds)
 

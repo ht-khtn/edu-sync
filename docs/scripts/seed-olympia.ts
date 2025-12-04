@@ -12,6 +12,7 @@ if (!url || !serviceRoleKey) {
 const supabase = createClient(url, serviceRoleKey, {
   auth: { persistSession: false },
 })
+const olympia = supabase.schema('olympia')
 
 const tournamentId = '00000000-0000-4000-8000-000000000111'
 const upcomingMatchId = '00000000-0000-4000-8000-000000000222'
@@ -29,7 +30,7 @@ const questions = [
 async function seed() {
   console.log('Seeding olympia schema...')
 
-  const { error: tournamentError } = await supabase.from('olympia.tournaments').upsert(
+  const { error: tournamentError } = await olympia.from('tournaments').upsert(
     [
       {
         id: tournamentId,
@@ -44,7 +45,7 @@ async function seed() {
   )
   if (tournamentError) throw tournamentError
 
-  const { error: matchesError } = await supabase.from('olympia.matches').upsert(
+  const { error: matchesError } = await olympia.from('matches').upsert(
     [
       {
         id: upcomingMatchId,
@@ -67,10 +68,10 @@ async function seed() {
   )
   if (matchesError) throw matchesError
 
-  const { error: questionsError } = await supabase.from('olympia.questions').upsert(questions, { onConflict: 'id' })
+  const { error: questionsError } = await olympia.from('questions').upsert(questions, { onConflict: 'id' })
   if (questionsError) throw questionsError
 
-  const { error: liveSessionError } = await supabase.from('olympia.live_sessions').upsert(
+  const { error: liveSessionError } = await olympia.from('live_sessions').upsert(
     [
       {
         id: liveSessionId,

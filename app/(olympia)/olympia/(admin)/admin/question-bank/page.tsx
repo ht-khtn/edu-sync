@@ -20,8 +20,9 @@ const formatDate = (value: string) => dateFormatter.format(new Date(value))
 
 async function fetchQuestionBank() {
   const { supabase } = await getServerAuthContext()
-  const { data, error, count } = await supabase
-    .from('olympia.questions')
+  const olympia = supabase.schema('olympia')
+  const { data, error, count } = await olympia
+    .from('questions')
     .select('id, code, category, question_text, answer_text, note, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .limit(50)

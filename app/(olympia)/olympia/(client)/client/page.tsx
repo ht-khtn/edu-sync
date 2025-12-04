@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getServerSupabase } from '@/lib/server-auth'
+import { getServerAuthContext } from '@/lib/server-auth'
 import { cache } from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +31,15 @@ type UpcomingMatchesPayload = {
 }
 
 const fetchUpcomingMatches = cache(async (): Promise<UpcomingMatchesPayload> => {
-  const supabase = await getServerSupabase()
+  const { supabase, authUid } = await getServerAuthContext()
+
+  if (!authUid) {
+    return {
+      matches: [],
+      sessions: [],
+      error: 'Bạn cần đăng nhập để xem lịch thi Olympia.',
+    }
+  }
   const { data: matches, error } = await supabase
     .from('olympia.matches')
     .select('id, name, status, scheduled_at')

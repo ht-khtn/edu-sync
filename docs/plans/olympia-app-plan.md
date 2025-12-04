@@ -188,3 +188,46 @@ Không dùng bảng tags; chỉ một bảng câu hỏi chính, cấu trúc bám
 6. **QA & Monitoring**
    - Viết script seed bổ sung (players, rounds) để test realtime.
    - Thiết lập logging khi server actions thất bại; cân nhắc thêm `olympia.audit_logs`.
+
+## 11. Backlog còn lại (ngoài RLS)
+1. **Player session UI (game client)**
+   - Route đề xuất: `app/(olympia)/olympia/(client)/game/[sessionId]/page.tsx`.
+   - Yêu cầu: đọc live session + match state, hiển thị câu hỏi, timer, input trả lời, trạng thái buzzer.
+   - Kết nối Supabase Realtime (hoặc channel custom) để nhận sự kiện `current_round_type`, `question_state`, `timer_deadline`, `round_questions`.
+   - Logic chấm điểm phía client chỉ hiển thị; việc tính điểm sẽ gọi server actions/edge.
+2. **Host advanced controls**
+   - Bổ sung bảng phụ trong console host: chọn câu hỏi trong vòng (`round_questions`), reveal đáp án, đặt timer deadline.
+   - Server actions mới: `setLiveQuestionAction`, `setTimerAction`, `broadcastEventAction`.
+3. **Scoring & gameplay services**
+   - Tạo module `lib/olympia/{questions,rounds,scoring,buzzer}.ts` xử lý: gán câu cho vòng, tính điểm theo rule từng vòng, ghi nhận buzzer/answers.
+   - Viết unit tests cơ bản (vitest) cho từng service.
+4. **Realtime nâng cao**
+   - Hook `useOlympiaRealtime` dùng chung: manage multiple channels, retry backoff, expose `useStore` cho client.
+   - Dùng realtime để cập nhật dashboard admin (banner, toast) và player session.
+5. **Join/registration flow**
+   - Trang đăng ký thí sinh (mapping `participants` với user), bao gồm form info + assign seat (pending approval).
+   - Hỗ trợ export QR code join code.
+6. **Logging & audit**
+   - Thêm bảng `olympia.audit_logs` ghi lại action host (open room, change round, reveal answer).
+   - Hiển thị log trong tab “Nhật ký” ở trang chi tiết trận.
+7. **CI/Test coverage**
+   - Viết Vitest cho server actions (mock Supabase), storybook snapshot cho component host/client quan trọng, và tối thiểu 1 e2e flow (Playwright / Cypress) kiểm chứng: admin mở phòng → client thấy join code → host chuyển vòng.
+
+## 12. Trang Game (player session) – yêu cầu khung & TODO
+1. **Cấu trúc & routing**
+   - Tạo route `app/(olympia)/olympia/(client)/game/[sessionId]/page.tsx` (SSR) + `loading.tsx` + `error.tsx`.
+   - Layout: toàn màn hình, chia panel chính (video/image/câu hỏi) và sidebar (điểm/thứ hạng/buzzer).
+2. **Logic cần chuẩn bị**
+   - Hook client `useOlympiaGameState` (trong `components/olympia/game/`) subscribe realtime vào `live_sessions`, `round_questions`, `match_scores`, `buzzer_events`.
+   - State machine cơ bản: `hidden → showing → answer_revealed → completed`, bao gồm countdown timer (`timer_deadline`).
+   - Server actions placeholder: ghi đáp án (`submitAnswerAction`), bấm buzzer (`triggerBuzzerAction`), đồng bộ timer.
+   - Tất cả điểm/tính toán implemented ở server services nhưng kết quả reflect về client qua realtime.
+3. **UI placeholder & TODO markers**
+   - Component khung hiển thị media: chừa `// TODO: render question media (image/video)` và `// TODO: render host video feed`.
+   - Phần scoreboard và log: chừa `// TODO: custom styling / animation` để chủ động tinh chỉnh.
+   - Loading skeleton: reuse palette xám giống client/admin; placeholder sections cho video, câu hỏi, scoreboard.
+4. **Tích hợp với plan**
+   - Khi host mở phòng và chuyển câu → route game được refresh realtime.
+   - Khi người chơi đăng nhập và truy cập `/olympia/game/[join_code]`, flow: join form → redirect sang trang này cùng sessionId.
+
+> Lưu ý: phần media (video, hình ảnh, asset động) sẽ do người phụ trách (user) triển khai sau. Các chỗ cần chèn nội dung thực tế phải có comment `// TODO` rõ ràng để Todo Tree tìm được.

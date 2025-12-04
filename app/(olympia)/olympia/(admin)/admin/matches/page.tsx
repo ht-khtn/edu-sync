@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -175,7 +176,14 @@ export default async function OlympiaMatchesAdminPage() {
                   const session = liveSessionLookup.get(match.id)
                   return (
                     <TableRow key={match.id}>
-                      <TableCell className="font-medium">{match.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/olympia/admin/matches/${match.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {match.name}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         {tournament ? (
                           <div className="space-y-1">

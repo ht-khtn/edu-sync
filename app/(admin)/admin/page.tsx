@@ -4,7 +4,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { BarChart3, Building2, FileText, ShieldCheck, Trophy, Users, AlertTriangle } from "lucide-react";
+import { BarChart3, Building2, FileText, ShieldCheck, Trophy, Users, AlertTriangle, KeySquare, GraduationCap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 
@@ -67,6 +67,18 @@ const dashboardCards: ReadonlyArray<DashboardCard> = [
     description: "Thông tin lớp và GVCN",
     icon: Building2,
     href: "/admin/classes",
+  },
+  {
+    title: "Olympia Admin",
+    description: "Cấp quyền và quản lý ban tổ chức Olympia",
+    icon: KeySquare,
+    href: "/admin/olympia-accounts",
+  },
+  {
+    title: "Olympia Thí sinh",
+    description: "Đi tới trang quản lý tài khoản thi Olympia",
+    icon: GraduationCap,
+    href: "/olympia/admin/accounts?role=contestant",
   },
 ] as const;
 

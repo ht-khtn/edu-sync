@@ -7,6 +7,8 @@ export type OlympiaParticipant = {
   role: string | null
 }
 
+export type OlympiaRoleSummary = 'olympia-admin' | 'olympia-player' | 'olympia-mc' | 'olympia-guest'
+
 export const getOlympiaParticipant = cache(async (): Promise<OlympiaParticipant | null> => {
   const { supabase, appUserId } = await getServerAuthContext()
   if (!appUserId) return null
@@ -28,4 +30,14 @@ export async function ensureOlympiaAdminAccess() {
     throw new Error('FORBIDDEN_OLYMPIA_ADMIN')
   }
   return participant
+}
+
+export async function summarizeOlympiaRole(): Promise<OlympiaRoleSummary> {
+  const participant = await getOlympiaParticipant()
+  if (!participant) return 'olympia-guest'
+
+  if (participant.role === 'AD') return 'olympia-admin'
+  if (participant.role === 'MC') return 'olympia-mc'
+  if (participant.contestant_code) return 'olympia-player'
+  return 'olympia-guest'
 }

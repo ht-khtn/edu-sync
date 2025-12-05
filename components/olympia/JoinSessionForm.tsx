@@ -11,15 +11,17 @@ const initialState: ActionState = { error: null, success: null }
 
 export function JoinSessionForm() {
   const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
   const handleAction = useCallback(
     async (prevState: ActionState, formData: FormData) => {
       const result = await lookupJoinCodeAction(prevState, formData)
       if (result.success) {
         setCode('')
+        setPassword('')
       }
       return result
     },
-    [setCode]
+    [setCode, setPassword]
   )
   const [state, formAction] = useFormState(handleAction, initialState)
 
@@ -35,13 +37,22 @@ export function JoinSessionForm() {
         onChange={(event) => setCode(event.target.value)}
         required
       />
+      <Input
+        name="playerPassword"
+        placeholder="Mật khẩu thí sinh"
+        type="password"
+        className="sm:w-48"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        required
+      />
       <Button type="submit">Vào phòng</Button>
       {hasMessage ? (
         <p className={cn('text-xs sm:ml-3', state.error ? 'text-destructive' : 'text-green-600')}>
           {state.error ?? state.success}
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">Nhập mã do BTC cung cấp để kiểm tra trạng thái phòng.</p>
+        <p className="text-xs text-muted-foreground">Nhập mã phòng và mật khẩu thí sinh do BTC cung cấp.</p>
       )}
     </form>
   )

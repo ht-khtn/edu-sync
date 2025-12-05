@@ -1,5 +1,6 @@
 'use server'
 
+import { createHash, randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { ensureOlympiaAdminAccess } from '@/lib/olympia-access'
@@ -8,6 +9,20 @@ import { getServerAuthContext, getServerSupabase } from '@/lib/server-auth'
 export type ActionState = {
   error?: string | null
   success?: string | null
+}
+
+function generateRoomPassword() {
+  return randomBytes(3).toString('hex').toUpperCase()
+}
+
+function hashPassword(raw: string) {
+  return createHash('sha256').update(raw).digest('hex')
+}
+
+function isPasswordMatch(stored: string | null | undefined, provided: string) {
+  if (!stored) return false
+  const hashed = hashPassword(provided)
+  return stored === hashed || stored === provided
 }
 
 const matchSchema = z.object({
@@ -30,6 +45,20 @@ const joinSchema = z.object({
     .min(4, 'Mã tối thiểu 4 ký tự')
     .max(32, 'Mã tối đa 32 ký tự')
     .transform((val) => val.trim().toUpperCase()),
+  playerPassword: z
+    .string()
+    .min(4, 'Mật khẩu tối thiểu 4 ký tự')
+    .max(64, 'Mật khẩu quá dài')
+    .transform((val) => val.trim()),
+})
+
+const mcPasswordSchema = z.object({
+  matchId: z.string().uuid('Trận không hợp lệ.'),
+  mcPassword: z
+    .string()
+    .min(4, 'Mật khẩu tối thiểu 4 ký tự')
+    .max(64, 'Mật khẩu quá dài')
+    .transform((val) => val.trim()),
 })
 
 const matchIdSchema = z.object({
@@ -144,7 +173,10 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
     const { authUid } = await getServerAuthContext()
     if (!authUid) return { error: 'Bạn cần đăng nhập để tham gia phòng.' }
 
-    const parsed = joinSchema.safeParse({ joinCode: formData.get('joinCode') })
+    const parsed = joinSchema.safeParse({
+      joinCode: formData.get('joinCode'),
+      playerPassword: formData.get('playerPassword'),
+    })
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Mã tham gia không hợp lệ.' }
     }
@@ -153,7 +185,7 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
     const olympia = supabase.schema('olympia')
     const { data, error } = await olympia
       .from('live_sessions')
-      .select('id, status, match_id, question_state, current_round_type')
+      .select('id, status, match_id, question_state, current_round_type, player_password, requires_player_password')
       .eq('join_code', parsed.data.joinCode)
       .maybeSingle()
 
@@ -161,11 +193,60 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
     if (!data) return { error: 'Không tìm thấy phòng với mã này.' }
     if (data.status !== 'running') return { error: 'Phòng chưa mở cho khán giả.' }
 
+    const requiresPassword = data.requires_player_password !== false
+    if (requiresPassword) {
+      if (!parsed.data.playerPassword) {
+        return { error: 'Phòng yêu cầu mật khẩu thí sinh.' }
+      }
+      if (!isPasswordMatch(data.player_password, parsed.data.playerPassword)) {
+        return { error: 'Sai mật khẩu thí sinh.' }
+      }
+    }
+
     return {
       success: `Phòng đang chạy (round: ${data.current_round_type ?? 'N/A'}, trạng thái: ${data.question_state}).` as const,
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể kiểm tra mã tham gia.' }
+  }
+}
+
+export async function verifyMcPasswordAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const parsed = mcPasswordSchema.safeParse({
+      matchId: formData.get('matchId'),
+      mcPassword: formData.get('mcPassword'),
+    })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Mật khẩu không hợp lệ.' }
+    }
+
+    const supabase = await getServerSupabase()
+    const olympia = supabase.schema('olympia')
+    const { data: session, error } = await olympia
+      .from('live_sessions')
+      .select('mc_view_password, status')
+      .eq('match_id', parsed.data.matchId)
+      .maybeSingle()
+
+    if (error) return { error: error.message }
+    if (!session) return { error: 'Trận này chưa có phòng live.' }
+
+    if (!session.mc_view_password) {
+      return { error: 'Phòng chưa cấu hình mật khẩu MC.' }
+    }
+
+    if (!isPasswordMatch(session.mc_view_password, parsed.data.mcPassword)) {
+      return { error: 'Sai mật khẩu MC.' }
+    }
+
+    if (session.status !== 'running') {
+      return { success: 'Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.' }
+    }
+
+    return { success: 'Đã mở khóa chế độ xem MC.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể xác thực mật khẩu MC.' }
   }
 }
 
@@ -196,6 +277,10 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
     if (sessionError) return { error: sessionError.message }
 
     const joinCode = session?.join_code ?? generateJoinCode()
+    const playerPasswordPlain = generateRoomPassword()
+    const mcPasswordPlain = generateRoomPassword()
+    const hashedPlayerPassword = hashPassword(playerPasswordPlain)
+    const hashedMcPassword = hashPassword(mcPasswordPlain)
 
     if (!session) {
       const { error } = await olympia.from('live_sessions').insert({
@@ -203,6 +288,9 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
         join_code: joinCode,
         status: 'running',
         created_by: appUserId,
+        player_password: hashedPlayerPassword,
+        mc_view_password: hashedMcPassword,
+        requires_player_password: true,
       })
       if (error) return { error: error.message }
     } else {
@@ -216,6 +304,9 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
           current_round_question_id: null,
           timer_deadline: null,
           ended_at: null,
+          player_password: hashedPlayerPassword,
+          mc_view_password: hashedMcPassword,
+          requires_player_password: true,
         })
         .eq('id', session.id)
       if (error) return { error: error.message }
@@ -230,7 +321,9 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
     revalidatePath('/olympia/admin')
     revalidatePath('/olympia/client')
 
-    return { success: `Đã mở phòng. Mã tham gia: ${joinCode}.` }
+    return {
+      success: `Đã mở phòng. Mã tham gia: ${joinCode}. Mật khẩu thí sinh: ${playerPasswordPlain}. Mật khẩu MC: ${mcPasswordPlain}.`,
+    }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể mở phòng thi.' }
   }

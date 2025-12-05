@@ -21,7 +21,7 @@ export function McPasswordGate({ matchId }: McPasswordGateProps) {
       setUnlocked(true)
     }
     return result
-  }, [matchId])
+  }, [])
   const [state, formAction] = useFormState(handler, initialState)
   const hasMessage = state.error || state.success
 

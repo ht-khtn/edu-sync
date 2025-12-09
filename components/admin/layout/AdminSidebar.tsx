@@ -117,8 +117,11 @@ function AdminSidebarComponent() {
   }, [user?.id]);
   
   // Derive permissions from user roles
-  const canEnterViolations = user?.hasCC && !user?.hasSchoolScope;
-  const canViewViolationStats = user?.hasSchoolScope || false;
+  const hasCC = user?.hasCC || false;
+  const hasMOD = user?.roles?.includes('MOD') || false;
+  const hasSEC = user?.roles?.includes('SEC') || false;
+  const canEnterViolations = hasCC || hasMOD || hasSEC;
+  const canViewViolationStats = user?.hasSchoolScope || hasMOD || user?.roles?.includes('AD') || false;
   const canManageSystem = user?.roles?.some(r => r === 'AD' || r === 'MOD') || false;
   
   const filteredOperations = React.useMemo(() => {

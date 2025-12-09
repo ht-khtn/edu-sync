@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { deleteCriteriaAction, toggleCriteriaStatusAction } from '@/app/(admin)/admin/actions'
 import type { Criteria } from '@/lib/violations'
-import { Trash2 } from 'lucide-react'
+import { Trash2, XCircle, CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
@@ -39,8 +39,9 @@ export function CriteriaRowActions({ criteria }: Props) {
       {criteria.isActive ? (
         <AlertDialog open={dialog === 'disable'} onOpenChange={(open) => setDialog(open ? 'disable' : null)}>
           <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              Ngưng dùng
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+              <XCircle className="h-4 w-4" />
+              <span className="sr-only">Ngưng dùng</span>
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -63,11 +64,32 @@ export function CriteriaRowActions({ criteria }: Props) {
           </AlertDialogContent>
         </AlertDialog>
       ) : (
-        <form action={toggleCriteriaStatusAction}>
-          <input type="hidden" name="id" value={criteria.id} />
-          <input type="hidden" name="status" value="enable" />
-          <SubmitButton variant="secondary">Kích hoạt lại</SubmitButton>
-        </form>
+        <AlertDialog open={dialog === 'enable'} onOpenChange={(open) => setDialog(open ? 'enable' : null)}>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-green-600">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="sr-only">Kích hoạt lại</span>
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Kích hoạt lại tiêu chí?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tiêu chí này sẽ có thể được chọn khi ghi nhận vi phạm.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Hủy</AlertDialogCancel>
+              <AlertDialogAction asChild>
+                <form action={toggleCriteriaStatusAction}>
+                  <input type="hidden" name="id" value={criteria.id} />
+                  <input type="hidden" name="status" value="enable" />
+                  <SubmitButton variant="secondary">Xác nhận</SubmitButton>
+                </form>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       <AlertDialog open={dialog === 'delete'} onOpenChange={(open) => setDialog(open ? 'delete' : null)}>

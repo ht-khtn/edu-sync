@@ -56,8 +56,7 @@ export default async function AdminCriteriaPage({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Tổng tiêu chí" value={stats.total} />
-        <SummaryCard title="Đang sử dụng" value={stats.active} />
+        <SummaryCard title="Đang sử dụng" value={`${stats.active}/${stats.total}`} />
         <SummaryCard title="Theo phạm vi" value={formatSummary(stats.byCategory)} />
         <SummaryCard title="Theo mức độ" value={formatSummary(stats.byType)} />
       </div>

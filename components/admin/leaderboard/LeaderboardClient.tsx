@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableHeader,
@@ -38,50 +39,45 @@ interface LeaderboardClientProps {
 export default function LeaderboardClient({ initialData }: LeaderboardClientProps) {
   const [basePoints, setBasePoints] = useState<number>(500);
 
-  // Calculate final points and ranking
-  const processedData = useMemo(() => {
-    const classesWithPoints = initialData.map((cls) => ({
-      ...cls,
-      final_points: basePoints - cls.total_violation_score,
-    }));
-
-    // Sort by final points descending to assign ranks
-    const sorted = [...classesWithPoints].sort(
-      (a, b) => b.final_points - a.final_points
-    );
-
-    // Assign ranks (handling ties)
-    const dataWithRanks: ClassDataWithRank[] = [];
-    let currentRank = 1;
-    let prevPoints: number | null = null;
-
-    sorted.forEach((cls, index) => {
-      if (prevPoints !== null && cls.final_points !== prevPoints) {
-        currentRank = index + 1;
-      }
-      dataWithRanks.push({ ...cls, rank: currentRank });
-      prevPoints = cls.final_points;
-    });
-
-    return dataWithRanks;
-  }, [initialData, basePoints]);
-
-  // Group by grade
+  // Group by grade and calculate final points + per-grade ranking
   const groupedByGrade: GradeGroup[] = useMemo(() => {
-    const gradeMap = new Map<string, ClassDataWithRank[]>();
-
-    for (const cls of processedData) {
+    // First, group all classes by grade
+    const gradeMap = new Map<string, ClassData[]>();
+    for (const cls of initialData) {
       if (!gradeMap.has(cls.grade)) {
         gradeMap.set(cls.grade, []);
       }
       gradeMap.get(cls.grade)!.push(cls);
     }
 
-    // Sort each grade's classes by rank
+    // For each grade, calculate points and assign per-grade ranks
     const result: GradeGroup[] = [];
-    for (const [grade, classes] of gradeMap) {
-      classes.sort((a, b) => a.rank - b.rank);
-      result.push({ grade, classes });
+    for (const [grade, classesInGrade] of gradeMap) {
+      // Calculate final points for all classes in this grade
+      const classesWithPoints = classesInGrade.map((cls) => ({
+        ...cls,
+        final_points: basePoints - cls.total_violation_score,
+      }));
+
+      // Sort by final points descending within this grade
+      const sorted = [...classesWithPoints].sort(
+        (a, b) => b.final_points - a.final_points
+      );
+
+      // Assign ranks within this grade only (handling ties)
+      const dataWithRanks: ClassDataWithRank[] = [];
+      let currentRank = 1;
+      let prevPoints: number | null = null;
+
+      sorted.forEach((cls, index) => {
+        if (prevPoints !== null && cls.final_points !== prevPoints) {
+          currentRank = index + 1;
+        }
+        dataWithRanks.push({ ...cls, rank: currentRank });
+        prevPoints = cls.final_points;
+      });
+
+      result.push({ grade, classes: dataWithRanks });
     }
 
     // Sort grades naturally (10, 11, 12)
@@ -93,7 +89,7 @@ export default function LeaderboardClient({ initialData }: LeaderboardClientProp
     });
 
     return result;
-  }, [processedData]);
+  }, [initialData, basePoints]);
 
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="h-5 w-5 text-amber-500" />;
@@ -101,6 +97,9 @@ export default function LeaderboardClient({ initialData }: LeaderboardClientProp
     if (rank === 3) return <Award className="h-5 w-5 text-amber-700" />;
     return null;
   };
+
+  // Get the default tab (first grade with classes)
+  const defaultTab = groupedByGrade.length > 0 ? groupedByGrade[0].grade : undefined;
 
   return (
     <div className="space-y-4">
@@ -127,66 +126,84 @@ export default function LeaderboardClient({ initialData }: LeaderboardClientProp
         </CardContent>
       </Card>
 
-      {/* Leaderboard by Grade */}
-      <div className="space-y-4">
-        {groupedByGrade.map((gradeGroup) => (
-          <Card key={gradeGroup.grade} className="shadow-sm">
-            <CardHeader className="bg-muted/30 border-b">
-              <CardTitle className="text-lg font-semibold">Khối {gradeGroup.grade}</CardTitle>
-              <CardDescription>
-                {gradeGroup.classes.length} lớp
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableHead className="w-20 font-semibold">#</TableHead>
-                    <TableHead className="font-semibold">Lớp</TableHead>
-                    <TableHead className="text-right font-semibold">Vi phạm</TableHead>
-                    <TableHead className="text-right font-semibold">Điểm</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {gradeGroup.classes.map((cls) => {
-                    const rank = cls.rank;
-                    return (
-                      <TableRow
-                        key={cls.class_id}
-                        className={
-                          rank <= 3 ? "bg-accent/5 hover:bg-accent/10" : "hover:bg-muted/30"
-                        }
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            {getRankIcon(rank)}
-                            <span>{rank}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{cls.class_name}</TableCell>
-                        <TableCell className="text-right text-destructive">
-                          -{Math.abs(cls.total_violation_score)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-lg">
-                          {cls.final_points}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Leaderboard with Grade Tabs */}
+      {groupedByGrade.length > 0 ? (
+        <Tabs defaultValue={defaultTab} className="w-full space-y-4">
+          <TabsList className="inline-flex h-10 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-full sm:w-auto">
+            {groupedByGrade.map((gradeGroup) => (
+              <TabsTrigger
+                key={gradeGroup.grade}
+                value={gradeGroup.grade}
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              >
+                Khối {gradeGroup.grade}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        {!groupedByGrade.length && (
-          <Card className="shadow-sm">
-            <CardContent className="h-24 flex items-center justify-center text-muted-foreground">
-              Chưa có dữ liệu.
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          {groupedByGrade.map((gradeGroup) => (
+            <TabsContent
+              key={gradeGroup.grade}
+              value={gradeGroup.grade}
+              className="mt-0"
+            >
+              <Card className="shadow-sm">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-semibold">Khối {gradeGroup.grade}</CardTitle>
+                  <CardDescription>
+                    {gradeGroup.classes.length} lớp - Xếp hạng riêng khối
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="w-20 font-semibold">#</TableHead>
+                        <TableHead className="font-semibold">Lớp</TableHead>
+                        <TableHead className="text-right font-semibold">Vi phạm</TableHead>
+                        <TableHead className="text-right font-semibold">Điểm</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {gradeGroup.classes.map((cls) => {
+                        const rank = cls.rank;
+                        return (
+                          <TableRow
+                            key={cls.class_id}
+                            className={
+                              rank <= 3 ? "bg-accent/5 hover:bg-accent/10" : "hover:bg-muted/30"
+                            }
+                          >
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {getRankIcon(rank)}
+                                <span>{rank}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">{cls.class_name}</TableCell>
+                            <TableCell className="text-right text-destructive">
+                              -{Math.abs(cls.total_violation_score)}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-lg">
+                              {cls.final_points}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : (
+        <Card className="shadow-sm">
+          <CardContent className="h-24 flex items-center justify-center text-muted-foreground">
+            Chưa có dữ liệu.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

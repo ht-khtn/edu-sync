@@ -27,8 +27,6 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-export const dynamic = "force-dynamic";
-
 export default async function ViolationEntryPageContent() {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);

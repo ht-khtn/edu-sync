@@ -5,7 +5,7 @@ import { CriteriaTable } from "./CriteriaTable";
 import { CriteriaFilters } from "./CriteriaFilters";
 import { CreateCriteriaDialog } from "./CreateCriteriaDialog";
 import QueryToasts from "@/components/common/QueryToasts";
-import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
+import { getServerSupabase, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 import { hasAdminManagementAccess } from "@/lib/admin-access";
 import {
   fetchCriteriaData,
@@ -16,19 +16,16 @@ import {
   getParam,
 } from "@/hooks/domain/useCriteria";
 
-export const dynamic = "force-dynamic";
-
 export default async function AdminCriteriaPage({
   searchParams,
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const [{ supabase, appUserId }, roles] = await Promise.all([
-    getServerAuthContext(),
+  // Auth handled by middleware - only check admin access for granular permissions
+  const [supabase, roles] = await Promise.all([
+    getServerSupabase(),
     getServerRoles(),
   ]);
-
-  if (!appUserId) redirect("/login");
 
   const summary = summarizeRoles(roles);
   if (!hasAdminManagementAccess(summary)) redirect("/admin");

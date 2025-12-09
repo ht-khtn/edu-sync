@@ -1,7 +1,8 @@
+import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 
-export async function getSupabaseServer() {
+export const getSupabaseServer = cache(async () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -23,6 +24,6 @@ export async function getSupabaseServer() {
   })
 
   return client
-}
+})
 
 export default getSupabaseServer

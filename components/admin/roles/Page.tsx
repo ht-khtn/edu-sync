@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
+import { getServerSupabase, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 import { hasAdminManagementAccess } from "@/lib/admin-access";
 import {
   Table,
@@ -36,12 +36,11 @@ type AdminRolesPageProps = {
 };
 
 export default async function AdminRolesPage({ searchParams }: AdminRolesPageProps) {
-  const [{ supabase, appUserId }, userRoles] = await Promise.all([
-    getServerAuthContext(),
+  // Auth handled by middleware - only check admin access
+  const [supabase, userRoles] = await Promise.all([
+    getServerSupabase(),
     getServerRoles(),
   ]);
-
-  if (!appUserId) redirect("/login");
 
   const summary = summarizeRoles(userRoles);
   if (!hasAdminManagementAccess(summary)) redirect("/admin");

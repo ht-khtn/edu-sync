@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
+import { getServerSupabase, getServerRoles, summarizeRoles } from '@/lib/server-auth'
 import { hasAdminManagementAccess } from '@/lib/admin-access'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -31,35 +31,45 @@ type UserRow = {
 export const revalidate = 30
 
 export default async function OlympiaAdminAccountsSystemPage() {
-  const [{ supabase, appUserId }, roles] = await Promise.all([getServerAuthContext(), getServerRoles()])
-  if (!appUserId) {
-    redirect('/login')
-  }
+  // Auth handled by middleware - only check admin access
+  const [supabase, roles] = await Promise.all([getServerSupabase(), getServerRoles()])
 
   const summary = summarizeRoles(roles)
   if (!hasAdminManagementAccess(summary)) {
     redirect('/admin')
   }
 
+  // Optimized: Single query with JOIN instead of N+1 pattern
   const olympia = supabase.schema('olympia')
   const { data: participants, error } = await olympia
     .from('participants')
-    .select('user_id, contestant_code, role, created_at')
+    .select(`
+      user_id, 
+      contestant_code, 
+      role, 
+      created_at,
+      users:user_id (id, user_name, email, class_id, user_profiles(full_name))
+    `)
     .eq('role', 'AD')
     .order('created_at', { ascending: false })
     .limit(200)
 
-  const rows: ParticipantRow[] = participants ?? []
-  const userIds = rows.map((row) => row.user_id)
+  // Transform data structure to match original Map-based pattern
+  const rows: ParticipantRow[] = []
   const usersMap = new Map<string, UserRow>()
 
-  if (userIds.length > 0) {
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, user_name, email, class_id, user_profiles(full_name)')
-      .in('id', userIds)
-    for (const user of users ?? []) {
-      usersMap.set(user.id, user)
+  for (const p of participants ?? []) {
+    rows.push({
+      user_id: p.user_id,
+      contestant_code: p.contestant_code,
+      role: p.role,
+      created_at: p.created_at,
+    })
+    
+    // Handle users relation (Supabase returns single object for foreign key)
+    const userData = p.users as any
+    if (userData) {
+      usersMap.set(p.user_id, userData)
     }
   }
 

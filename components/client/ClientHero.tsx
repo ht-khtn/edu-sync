@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import { getImageSizes, getResponsiveImage } from "@/lib/image-optimizer";
 
 interface ClientHeroProps {
   imageSrc?: string;
@@ -9,6 +10,7 @@ interface ClientHeroProps {
   children?: ReactNode;
   className?: string;
   overlay?: boolean;
+  priority?: boolean;
 }
 
 export function ClientHero({
@@ -18,7 +20,10 @@ export function ClientHero({
   children,
   className,
   overlay = true,
+  priority = true,
 }: ClientHeroProps) {
+  const imageConfig = getResponsiveImage('hero', priority ? 'eager' : 'lazy');
+  
   return (
     <section
       className={cn("relative w-full overflow-hidden border-b", className)}
@@ -29,7 +34,9 @@ export function ClientHero({
         alt={imageAlt}
         fill
         className="object-cover"
-        priority
+        sizes={getImageSizes('hero')}
+        quality={imageConfig.quality}
+        priority={imageConfig.priority}
       />
 
       {overlay && (

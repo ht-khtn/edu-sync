@@ -4,14 +4,23 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { OfflineIndicator } from "@/components/common/OfflineIndicator";
 
+// Optimize fonts with font-display: swap for faster initial render
+// font-display: swap allows fallback font to display immediately
+// while custom font loads in the background (FOUT strategy)
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap", // Show system font immediately, swap when custom font loads
+  preload: true, // Preload font file during build
+  fallback: ["system-ui", "-apple-system", "sans-serif"], // Fallback fonts
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
+  preload: true,
+  fallback: ["monospace"],
 });
 
 export const metadata: Metadata = {

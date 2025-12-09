@@ -67,12 +67,12 @@ export default function ExportReportDialog() {
       const g = c.group || "Khác";
       const sg = c.subgroup || c.name || "Mục";
       if (!groups.has(g)) groups.set(g, new Map());
-      groups.get(g)!.set(sg, { id: c.id, name: c.name, subgroup: c.subgroup });
+      groups.get(g)!.set(sg, { id: c.id, name: c.name });
     }
     const result = Array.from(groups.entries())
       .map(([group, subs]) => ({
         group,
-        subgroups: Array.from(subs.entries()).map(([subgroup, data]) => ({ subgroup, ...data })),
+        subgroups: Array.from(subs.entries()).map(([subgroup, data]) => ({ ...data, subgroup })),
       }))
       .sort((a, b) => a.group.localeCompare(b.group, "vi"));
     return result;

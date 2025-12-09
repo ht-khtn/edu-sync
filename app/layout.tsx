@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { OfflineIndicator } from "@/components/common/OfflineIndicator";
+import { ServiceWorkerRegistration } from "@/components/common/ServiceWorkerRegistration";
 
 // Optimize fonts with font-display: swap for faster initial render
 // font-display: swap allows fallback font to display immediately
@@ -27,6 +28,24 @@ export const metadata: Metadata = {
   title: "EduSync",
   description:
     "Hệ thống hỗ trợ quản lý phong trào và thi đua dành cho học sinh THPT",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "EduSync",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
@@ -34,10 +53,27 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* PWA meta tags */}
+        <meta name="theme-color" content="#000000" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="EduSync" />
+        
+        {/* Icons for PWA */}
+        <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        
+        {/* Preconnect to external resources */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-neutral-50 dark:bg-zinc-900`}
         suppressHydrationWarning
       >
+        <ServiceWorkerRegistration />
         <OfflineIndicator />
         {children}
         <Toaster position="top-right" richColors closeButton />

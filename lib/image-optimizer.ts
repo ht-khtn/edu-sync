@@ -251,7 +251,6 @@ export function getPictureHtml(
   sizes: string
 ): string {
   const baseUrl = src.split('?')[0]; // Remove query params
-  const ext = baseUrl.split('.').pop();
   const baseSrc = baseUrl.substring(0, baseUrl.lastIndexOf('.'));
   
   return `

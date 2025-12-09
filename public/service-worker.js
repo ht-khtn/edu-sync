@@ -1,0 +1,369 @@
+/**
+ * Service Worker for EduSync
+ * 
+ * Handles:
+ * - Offline functionality
+ * - Cache strategies (network-first, cache-first, SWR)
+ * - Background sync
+ * - Push notifications
+ * 
+ * Install: Copy to public/service-worker.js
+ */
+
+const CACHE_NAMES = {
+  static: 'static-v1',
+  pages: 'pages-v1',
+  api: 'api-v1',
+  images: 'images-v1',
+  fonts: 'fonts-v1',
+};
+
+const STATIC_ASSETS = [
+  '/',
+  '/offline',
+  '/_next/static/chunks/main.js',
+  '/manifest.json',
+];
+
+/**
+ * Install event - cache static assets
+ */
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAMES.static).then((cache) => {
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
+        console.warn('Failed to cache some static assets:', err);
+      });
+    })
+  );
+  
+  // Skip waiting to activate immediately
+  self.skipWaiting?.();
+});
+
+/**
+ * Activate event - cleanup old caches
+ */
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          // Delete old cache versions
+          if (!Object.values(CACHE_NAMES).includes(cacheName)) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+  
+  // Take control of clients immediately
+  self.clients.claim?.();
+});
+
+/**
+ * Determine cache strategy based on URL
+ */
+function getCacheStrategy(url) {
+  const pathname = new URL(url).pathname;
+  
+  // Never cache auth
+  if (pathname.includes('/auth/') || pathname.includes('/session')) {
+    return 'network-only';
+  }
+  
+  // API: network first
+  if (pathname.startsWith('/api/')) {
+    return 'network-first';
+  }
+  
+  // Static assets: cache first
+  if (pathname.startsWith('/_next/static/') || pathname.startsWith('/static/')) {
+    return 'cache-first';
+  }
+  
+  // Images: cache first
+  if (/\.(jpg|png|webp|avif|gif)$/i.test(pathname)) {
+    return 'cache-first';
+  }
+  
+  // Fonts: cache first
+  if (pathname.startsWith('/fonts/') || /\.(ttf|woff|woff2)$/i.test(pathname)) {
+    return 'cache-first';
+  }
+  
+  // Pages: stale while revalidate
+  return 'stale-while-revalidate';
+}
+
+/**
+ * Get cache name for strategy
+ */
+function getCacheName(strategy) {
+  switch (strategy) {
+    case 'cache-first':
+      return CACHE_NAMES.static;
+    case 'stale-while-revalidate':
+      return CACHE_NAMES.pages;
+    case 'network-first':
+      return CACHE_NAMES.api;
+    default:
+      return CACHE_NAMES.pages;
+  }
+}
+
+/**
+ * Network first strategy
+ * Try network, fallback to cache, fallback to offline page
+ */
+async function networkFirst(request) {
+  const cacheName = getCacheName('network-first');
+  
+  try {
+    // Try to fetch from network
+    const response = await fetch(request);
+    
+    // Cache successful responses
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    
+    return response;
+  } catch {
+    // Network failed, try cache
+    const cached = await caches.match(request);
+    if (cached) {
+      return cached;
+    }
+    
+    // Cache miss, return offline page for HTML
+    if (request.headers.get('accept')?.includes('text/html')) {
+      const offlineResponse = await caches.match('/offline');
+      if (offlineResponse) {
+        return offlineResponse;
+      }
+    }
+    
+    // Return error response
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+  }
+}
+
+/**
+ * Cache first strategy
+ * Try cache, fallback to network
+ */
+async function cacheFirst(request) {
+  const cacheName = getCacheName('cache-first');
+  
+  // Try cache first
+  const cached = await caches.match(request);
+  if (cached) {
+    return cached;
+  }
+  
+  try {
+    // Cache miss, fetch from network
+    const response = await fetch(request);
+    
+    // Cache successful responses
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    
+    return response;
+  } catch {
+    // Network failed and no cache
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+  }
+}
+
+/**
+ * Stale while revalidate strategy
+ * Return cached immediately, update in background
+ */
+async function staleWhileRevalidate(request) {
+  const cacheName = getCacheName('stale-while-revalidate');
+  
+  // Check cache first
+  const cached = await caches.match(request);
+  
+  // Always fetch in background to update cache
+  const fetchPromise = fetch(request).then((response) => {
+    if (response.ok) {
+      const cache = caches.open(cacheName);
+      cache.then((c) => c.put(request, response.clone()));
+    }
+    return response;
+  });
+  
+  // Return cached if available, otherwise wait for network
+  return cached || fetchPromise;
+}
+
+/**
+ * Network only strategy
+ * Never cache, always fetch from network
+ */
+async function networkOnly(request) {
+  try {
+    return await fetch(request);
+  } catch {
+    // Network failed
+    if (request.headers.get('accept')?.includes('text/html')) {
+      const offlineResponse = await caches.match('/offline');
+      if (offlineResponse) {
+        return offlineResponse;
+      }
+    }
+    
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+  }
+}
+
+/**
+ * Fetch event - apply cache strategies
+ */
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const strategy = getCacheStrategy(request.url);
+  
+  // Handle based on strategy
+  if (strategy === 'network-first') {
+    event.respondWith(networkFirst(request));
+  } else if (strategy === 'cache-first') {
+    event.respondWith(cacheFirst(request));
+  } else if (strategy === 'stale-while-revalidate') {
+    event.respondWith(staleWhileRevalidate(request));
+  } else if (strategy === 'network-only') {
+    event.respondWith(networkOnly(request));
+  }
+});
+
+/**
+ * Message event - handle messages from clients
+ */
+self.addEventListener('message', (event) => {
+  const { type, payload } = event.data;
+  
+  switch (type) {
+    case 'SKIP_WAITING':
+      // Skip waiting and activate immediately
+      self.skipWaiting?.();
+      break;
+      
+    case 'CLEAR_CACHE':
+      // Clear specific cache
+      event.waitUntil(
+        caches.delete(payload.cacheName).then(() => {
+          event.ports[0]?.postMessage({ type: 'CACHE_CLEARED' });
+        })
+      );
+      break;
+      
+    case 'CACHE_URLS':
+      // Cache specific URLs
+      event.waitUntil(
+        caches.open(payload.cacheName).then((cache) => {
+          return cache.addAll(payload.urls).then(() => {
+            event.ports[0]?.postMessage({ type: 'URLS_CACHED' });
+          });
+        })
+      );
+      break;
+  }
+});
+
+/**
+ * Push event - handle push notifications
+ */
+self.addEventListener('push', (event) => {
+  let notificationData = {
+    title: 'EduSync Notification',
+    body: 'You have a new message',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+  };
+  
+  if (event.data) {
+    try {
+      notificationData = event.data.json();
+    } catch {
+      notificationData.body = event.data.text();
+    }
+  }
+  
+  event.waitUntil(
+    self.registration.showNotification(notificationData.title, {
+      body: notificationData.body,
+      icon: notificationData.icon,
+      badge: notificationData.badge,
+      tag: 'edusync-notification',
+      requireInteraction: false,
+    })
+  );
+});
+
+/**
+ * Notification click event - navigate to URL
+ */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clientList) => {
+      // Find existing window
+      for (const client of clientList) {
+        if (client.url === '/' && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      
+      // Open new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
+    })
+  );
+});
+
+/**
+ * Sync event - background sync for offline actions
+ */
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-violations') {
+    event.waitUntil(
+      // Sync violations when back online
+      fetch('/api/violations/sync', { method: 'POST' })
+        .then(() => {
+          // Notify client of successful sync
+          self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({
+                type: 'SYNC_COMPLETE',
+                tag: 'sync-violations',
+              });
+            });
+          });
+        })
+        .catch(() => {
+          // Retry sync
+          event.waitUntil(new Promise((resolve) => setTimeout(resolve, 5000)));
+        })
+    );
+  }
+});
+
+console.log('Service Worker loaded');

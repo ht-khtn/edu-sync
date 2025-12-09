@@ -7,6 +7,9 @@ import { AnnouncementCard } from "@/components/client/AnnouncementCard";
 import { EventCard } from "@/components/client/EventCard";
 import { ArrowRight } from "lucide-react";
 
+// ISR: Cache for 1 hour, homepage is mostly static marketing content
+export const revalidate = 3600;
+
 const featuredAnnouncements = [
   {
     id: "1",

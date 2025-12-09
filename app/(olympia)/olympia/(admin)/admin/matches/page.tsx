@@ -8,6 +8,9 @@ import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
+// ISR: Cache for 30 seconds, match data updates frequently
+export const revalidate = 30;
+
 const statusColorMap: Record<string, string> = {
   draft: 'bg-slate-200 text-slate-700',
   scheduled: 'bg-blue-100 text-blue-700',

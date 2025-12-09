@@ -2,6 +2,9 @@ import { MyViolationsPageContent } from "@/components/client/my-violations/MyVio
 import RecordsRealtimeListener from "@/components/admin/violation/RecordsRealtimeListener";
 import { ClientMainContent } from "@/components/client/layout/ClientMainContent";
 
+// User-specific data: Cannot use ISR, must be dynamic per user
+export const dynamic = 'force-dynamic';
+
 export default async function MyViolationsPage() {
   // try {
   //   const supabase = await getSupabaseServer()

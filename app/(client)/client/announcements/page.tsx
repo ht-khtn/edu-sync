@@ -5,6 +5,9 @@ import { CategoryTabs } from "@/components/client/CategoryTabs";
 import { Button } from "@/components/ui/button";
 import { Filter } from "lucide-react";
 
+// ISR: Cache for 1 minute, announcements update regularly
+export const revalidate = 60;
+
 const mockAnnouncements = [
   {
     id: "1",

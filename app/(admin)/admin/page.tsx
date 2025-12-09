@@ -8,8 +8,8 @@ import { BarChart3, Building2, FileText, ShieldCheck, Trophy, Users, AlertTriang
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 
-// Remove force-dynamic since this page has no dynamic data fetching
-// export const dynamic = "force-dynamic";
+// ISR: Cache for 1 hour, dashboard is static menu with no dynamic data
+export const revalidate = 3600;
 
 type DashboardCard = {
   title: string

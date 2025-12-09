@@ -14,6 +14,9 @@ import {
   Settings,
 } from "lucide-react";
 
+// User-specific data: Cannot use ISR, must be dynamic per user
+export const dynamic = 'force-dynamic';
+
 export default function ProfilePage() {
   // Mock user data
   const user = {

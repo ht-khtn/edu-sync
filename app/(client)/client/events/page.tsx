@@ -3,6 +3,9 @@ import { SectionContainer } from "@/components/ui-extended/SectionContainer";
 import { EventCard } from "@/components/client/EventCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+// ISR: Cache for 1 minute, events update regularly
+export const revalidate = 60;
+
 const mockEvents = [
   {
     id: "1",

@@ -26,7 +26,7 @@ import React from 'react';
  * );
  * ```
  */
-export function createDynamicComponent<T extends React.ComponentType<any>>(
+export function createDynamicComponent<T extends React.ComponentType<Record<string, unknown>>>(
   importFn: () => Promise<{ default: T }>,
   loadingComponent: React.ReactNode,
   options?: Parameters<typeof dynamic>[1]
@@ -51,7 +51,7 @@ export function createDynamicComponent<T extends React.ComponentType<any>>(
  * ```
  */
 export function preloadComponent(
-  importFn: () => Promise<{ default: React.ComponentType<any> }>
+  importFn: () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>
 ) {
   // Trigger the import in the background
   importFn().catch((error) => {
@@ -118,7 +118,7 @@ export function useShouldLoadComponent(
  * );
  * ```
  */
-export function getConditionalComponent<T extends React.ComponentType<any>>(
+export function getConditionalComponent<T extends React.ComponentType<Record<string, unknown>>>(
   condition: boolean,
   trueFn: () => Promise<{ default: T }>,
   falseFn: () => Promise<{ default: T }>
@@ -133,22 +133,22 @@ export function getConditionalComponent<T extends React.ComponentType<any>>(
  * Reduces boilerplate when you have many lazy-loaded components
  */
 export function createDynamicComponents<
-  T extends Record<string, () => Promise<{ default: React.ComponentType<any> }>>
+  T extends Record<string, () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>>
 >(
   components: T,
   loadingComponent?: React.ReactNode
 ): {
-  [K in keyof T]: React.ComponentType<any>;
+  [K in keyof T]: React.ComponentType<Record<string, unknown>>;
 } {
   return Object.fromEntries(
     Object.entries(components).map(([key, importFn]) => [
       key,
       createDynamicComponent(
-        importFn as () => Promise<{ default: React.ComponentType<any> }>,
+        importFn as () => Promise<{ default: React.ComponentType<Record<string, unknown>> }>,
         loadingComponent
       )
     ])
-  ) as any;
+  ) as Record<keyof T, React.ComponentType<Record<string, unknown>>>;
 }
 
 /**

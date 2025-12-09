@@ -21,6 +21,21 @@ export type PaginatedResult<T> = {
   total?: number;
 };
 
+export type ViolationRecordRow = {
+  id: string;
+  created_at: string;
+  student_id: string;
+  class_id: string;
+  score: number;
+  note: string | null;
+  classes: { id: string; name: string | null } | { id: string; name: string | null }[] | null;
+  criteria: { id: string; name: string | null } | { id: string; name: string | null }[] | null;
+  users: {
+    user_profiles: { full_name: string | null }[] | { full_name: string | null } | null;
+    user_name: string | null;
+  } | null;
+};
+
 /**
  * Default page size for queries
  * Keep small to avoid memory issues and improve TTFB
@@ -50,7 +65,7 @@ export async function paginateViolationRecords(
     startDate?: string;
     endDate?: string;
   }
-): Promise<PaginatedResult<any>> {
+): Promise<PaginatedResult<ViolationRecordRow>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const direction = params.direction || 'next';
 
@@ -129,7 +144,7 @@ export async function paginateMyViolations(
   supabase: SupabaseClient,
   userId: string,
   params: PaginationParams
-): Promise<PaginatedResult<any>> {
+): Promise<PaginatedResult<ViolationRecordRow>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const direction = params.direction || 'next';
 
@@ -191,7 +206,7 @@ export async function paginateRecentRecords(
   supabase: SupabaseClient,
   classIds: string[],
   params: PaginationParams & { startOfDay: string }
-): Promise<PaginatedResult<any>> {
+): Promise<PaginatedResult<ViolationRecordRow>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
   let query = supabase

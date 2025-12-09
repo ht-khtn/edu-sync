@@ -29,6 +29,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { useUser } from "@/hooks/useUser";
+import { getPrefetchConfig } from "@/lib/link-optimizer";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -149,6 +150,7 @@ function AdminSidebarComponent() {
     <SidebarMenu>
       {items.map((item) => {
         const Icon = item.icon;
+        const { prefetch } = getPrefetchConfig(item.href);
         return (
           <SidebarMenuItem key={item.href}>
             <SidebarMenuButton
@@ -156,7 +158,7 @@ function AdminSidebarComponent() {
               isActive={pathname === item.href}
               className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
             >
-              <Link href={item.href}>
+              <Link href={item.href} prefetch={prefetch as boolean | 'intent'}>
                 <Icon className="h-4 w-4" />
                 <span>{item.title}</span>
               </Link>

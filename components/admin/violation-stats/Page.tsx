@@ -13,8 +13,6 @@ import ClassAggClient from "@/components/admin/violation-stats/ClassAggClient";
 import ExportReportDialog from "@/components/admin/violation-stats/ExportDialog";
 import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
 type RecordRow = {
   score: number;
   criteria: { id: string; name: string | null } | null;

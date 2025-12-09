@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { getServerAuthContext } from '@/lib/server-auth'
 import { cache } from 'react'
 
-export const dynamic = 'force-dynamic'
+// ISR: Match schedule updates every 30s. Real-time listener handles live updates.
+export const revalidate = 30
 
 const formatter = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'full', timeStyle: 'short' })
 const matchStatusLabel: Record<string, string> = {

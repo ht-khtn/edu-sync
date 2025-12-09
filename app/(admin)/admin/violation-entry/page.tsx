@@ -4,7 +4,8 @@ import QueryToasts from '@/components/common/QueryToasts'
 import RecordsRealtimeListener from '@/components/admin/violation/RecordsRealtimeListener'
 import { getServerAuthContext, getServerRoles, summarizeRoles } from '@/lib/server-auth'
 
-export const dynamic = 'force-dynamic'
+// ISR: Revalidate every 60s. User list + criteria cached.
+export const revalidate = 60
 
 export default async function ViolationEntryPage({ 
   searchParams 

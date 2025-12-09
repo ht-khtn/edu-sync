@@ -7,6 +7,7 @@ import { OlympiaGameClient } from '@/components/olympia/game'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
+// KEEP force-dynamic: Real-time game state (timer, scores, questions update per-second)
 export const dynamic = 'force-dynamic'
 
 type PageProps = {

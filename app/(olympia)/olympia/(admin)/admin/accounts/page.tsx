@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/utils/cn'
 
-export const dynamic = 'force-dynamic'
+// ISR: Participant list. Revalidate every 30s.
+export const revalidate = 30
 
 const dateFormatter = new Intl.DateTimeFormat('vi-VN', {
   dateStyle: 'medium',

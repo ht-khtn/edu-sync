@@ -1,6 +1,7 @@
 import AdminClassesPage from "@/components/admin/classes/Page";
 
-export const dynamic = "force-dynamic";
+// ISR: Cache for 1 hour, revalidate on demand via revalidateTag('admin-classes')
+export const revalidate = 3600;
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;

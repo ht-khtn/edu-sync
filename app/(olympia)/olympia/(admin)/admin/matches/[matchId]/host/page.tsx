@@ -7,6 +7,7 @@ import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { HostRoundControls } from '@/components/olympia/HostRoundControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
+// KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
 
 const statusVariants: Record<string, string> = {

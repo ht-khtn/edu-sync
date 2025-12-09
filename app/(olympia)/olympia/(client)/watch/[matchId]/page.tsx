@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { McPasswordGate } from '@/components/olympia/McPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 
+// KEEP force-dynamic: Real-time match state (live scores, current question)
 export const dynamic = 'force-dynamic'
 
 type WatchPageProps = {

@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
-export const dynamic = 'force-dynamic'
+// ISR: Match detail page. Real-time handled by LiveSessionControls component.
+export const revalidate = 30
 
 const statusVariants: Record<string, string> = {
   draft: 'bg-slate-200 text-slate-700',

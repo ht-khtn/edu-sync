@@ -28,7 +28,7 @@ type UserRow = {
   user_profiles: null | { full_name: string | null } | Array<{ full_name: string | null }>
 }
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 30
 
 export default async function OlympiaAdminAccountsSystemPage() {
   const [{ supabase, appUserId }, roles] = await Promise.all([getServerAuthContext(), getServerRoles()])

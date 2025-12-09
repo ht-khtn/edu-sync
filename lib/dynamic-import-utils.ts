@@ -5,40 +5,10 @@
  * Provides consistent skeleton/loading state patterns
  */
 
+'use client';
+
 import dynamic from 'next/dynamic';
 import React from 'react';
-
-/**
- * Skeleton loader component - placeholder while component loads
- * Prevents layout shift (CLS) by matching component dimensions
- */
-export function ChartSkeleton() {
-  return (
-    <div className="w-full h-64 bg-muted rounded-lg animate-pulse flex items-center justify-center">
-      <p className="text-muted-foreground text-sm">Loading chart...</p>
-    </div>
-  );
-}
-
-export function CardSkeleton() {
-  return (
-    <div className="w-full bg-muted rounded-lg p-6 animate-pulse space-y-4">
-      <div className="h-6 bg-muted-foreground/20 rounded w-1/3"></div>
-      <div className="h-4 bg-muted-foreground/20 rounded w-full"></div>
-      <div className="h-4 bg-muted-foreground/20 rounded w-5/6"></div>
-    </div>
-  );
-}
-
-export function TableSkeleton() {
-  return (
-    <div className="w-full bg-muted rounded-lg p-6 animate-pulse space-y-3">
-      {[...Array(5)].map((_, i) => (
-        <div key={i} className="h-10 bg-muted-foreground/20 rounded w-full"></div>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Create a dynamic component with sensible defaults
@@ -49,6 +19,7 @@ export function TableSkeleton() {
  * 
  * @example
  * ```tsx
+ * import { ChartSkeleton } from '@/components/common/Skeletons';
  * const DynamicChart = createDynamicComponent(
  *   () => import('./MyChart'),
  *   <ChartSkeleton />
@@ -57,7 +28,7 @@ export function TableSkeleton() {
  */
 export function createDynamicComponent<T extends React.ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
-  loadingComponent: React.ReactNode = <ChartSkeleton />,
+  loadingComponent: React.ReactNode,
   options?: Parameters<typeof dynamic>[1]
 ) {
   return dynamic(importFn, {
@@ -79,42 +50,59 @@ export function createDynamicComponent<T extends React.ComponentType<any>>(
  * }, []);
  * ```
  */
-export async function preloadComponent(
+export function preloadComponent(
   importFn: () => Promise<{ default: React.ComponentType<any> }>
 ) {
-  try {
-    await importFn();
-  } catch (error) {
+  // Trigger the import in the background
+  importFn().catch((error) => {
     console.warn('Failed to preload component:', error);
-  }
+  });
 }
 
 /**
- * Check if a component should be lazy-loaded based on viewport
- * Useful for below-the-fold content
+ * Hook for viewport-based lazy loading using IntersectionObserver
+ * Only load component when it scrolls into view
+ * 
+ * @param ref - React ref to the container element
+ * @returns boolean - true when element is visible in viewport
+ * 
+ * @example
+ * ```tsx
+ * const ref = useRef(null);
+ * const isVisible = useShouldLoadComponent(ref);
+ * 
+ * return (
+ *   <div ref={ref}>
+ *     {isVisible && <DynamicChart />}
+ *   </div>
+ * );
+ * ```
  */
-export function useShouldLoadComponent(ref: React.RefObject<HTMLDivElement>) {
-  const [shouldLoad, setShouldLoad] = React.useState(false);
+export function useShouldLoadComponent(
+  ref: React.RefObject<HTMLElement>,
+  options?: IntersectionObserverInit
+): boolean {
+  const [isVisible, setIsVisible] = React.useState(false);
 
   React.useEffect(() => {
     if (!ref.current) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setShouldLoad(true);
-          observer.unobserve(entry.target);
-        }
-      },
-      { rootMargin: '100px' } // Start loading 100px before entering viewport
-    );
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsVisible(true);
+        // Stop observing after visible
+        observer.unobserve(entry.target);
+      }
+    }, {
+      rootMargin: '50px', // Start loading 50px before entering viewport
+      ...options
+    });
 
     observer.observe(ref.current);
-
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, options]);
 
-  return shouldLoad;
+  return isVisible;
 }
 
 /**

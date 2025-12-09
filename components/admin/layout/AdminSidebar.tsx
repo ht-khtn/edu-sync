@@ -150,7 +150,9 @@ function AdminSidebarComponent() {
     <SidebarMenu>
       {items.map((item) => {
         const Icon = item.icon;
-        const { prefetch } = getPrefetchConfig(item.href);
+        const config = getPrefetchConfig(item.href);
+        // Next.js Link only supports boolean prefetch, convert 'intent' → true
+        const shouldPrefetch = config.prefetch !== false;
         return (
           <SidebarMenuItem key={item.href}>
             <SidebarMenuButton
@@ -158,7 +160,7 @@ function AdminSidebarComponent() {
               isActive={pathname === item.href}
               className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
             >
-              <Link href={item.href} prefetch={prefetch as boolean | 'intent'}>
+              <Link href={item.href} prefetch={shouldPrefetch}>
                 <Icon className="h-4 w-4" />
                 <span>{item.title}</span>
               </Link>

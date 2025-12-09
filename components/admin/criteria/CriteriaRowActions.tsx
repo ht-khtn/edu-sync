@@ -35,16 +35,21 @@ export function CriteriaRowActions({ criteria }: Props) {
   const [dialog, setDialog] = useState<'disable' | 'enable' | 'delete' | null>(null)
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
       {criteria.isActive ? (
         <AlertDialog open={dialog === 'disable'} onOpenChange={(open) => setDialog(open ? 'disable' : null)}>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={(e) => e.stopPropagation()}
+            >
               <XCircle className="h-4 w-4" />
               <span className="sr-only">Ngưng dùng</span>
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
             <AlertDialogHeader>
               <AlertDialogTitle>Ngưng sử dụng tiêu chí?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -66,12 +71,17 @@ export function CriteriaRowActions({ criteria }: Props) {
       ) : (
         <AlertDialog open={dialog === 'enable'} onOpenChange={(open) => setDialog(open ? 'enable' : null)}>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-green-600">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-green-600"
+              onClick={(e) => e.stopPropagation()}
+            >
               <CheckCircle2 className="h-4 w-4" />
               <span className="sr-only">Kích hoạt lại</span>
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
             <AlertDialogHeader>
               <AlertDialogTitle>Kích hoạt lại tiêu chí?</AlertDialogTitle>
               <AlertDialogDescription>
@@ -94,12 +104,17 @@ export function CriteriaRowActions({ criteria }: Props) {
 
       <AlertDialog open={dialog === 'delete'} onOpenChange={(open) => setDialog(open ? 'delete' : null)}>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-8 w-8 text-destructive"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Trash2 className="h-4 w-4" />
             <span className="sr-only">Xóa tiêu chí</span>
           </Button>
         </AlertDialogTrigger>
-        <AlertDialogContent>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
             <AlertDialogTitle>Xóa tiêu chí?</AlertDialogTitle>
             <AlertDialogDescription>

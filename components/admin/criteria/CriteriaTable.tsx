@@ -1,12 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import type { Criteria } from "@/lib/violations";
@@ -14,6 +13,8 @@ import { cn } from "@/utils/cn";
 import { EditCriteriaDialog } from "./EditCriteriaDialog";
 import { CriteriaRowActions } from "./CriteriaRowActions";
 import { CriteriaDetail, useCriteriaDetail } from "./CriteriaDetail";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 type Props = {
   rows: Criteria[];
@@ -35,6 +36,32 @@ const typeColor: Record<string, string> = {
 
 export function CriteriaTable({ rows }: Props) {
   const { selectedCriteria, isOpen, openDetail, setIsOpen } = useCriteriaDetail();
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedSubgroups, setCollapsedSubgroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) {
+        next.delete(group);
+      } else {
+        next.add(group);
+      }
+      return next;
+    });
+  };
+
+  const toggleSubgroup = (key: string) => {
+    setCollapsedSubgroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
   if (!rows.length) {
     return (
@@ -65,57 +92,56 @@ export function CriteriaTable({ rows }: Props) {
 
   return (
     <div className="bg-background w-full overflow-hidden rounded-xl border shadow-sm space-y-4">
-      {groupedList.map((groupData) => (
-        <div key={groupData.group}>
-          {/* Group header */}
-          <div className="px-6 py-3 bg-muted/40 border-b font-semibold text-sm">
-            {groupData.group}
-          </div>
-
-          {/* Subgroups */}
-          {Array.from(groupData.subgroups.entries()).map(([subgroup, subgroupCriteria]) => (
-            <div key={`${groupData.group}-${subgroup}`} className="overflow-x-auto">
-              {subgroup !== "—" && (
-                <div className="px-6 py-2 bg-muted/20 text-xs text-muted-foreground font-medium border-b">
-                  {subgroup}
-                </div>
-              )}
-
-              <Table className="min-w-[1000px]">
-                {subgroup === "—" && groupData.subgroups.size === 1 && (
-                  <TableHeader>
-                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-b">
-                      <TableHead className="h-12 w-[25%] min-w-[200px] font-semibold">
-                        Tên tiêu chí
-                      </TableHead>
-                      <TableHead className="h-12 w-[12%] min-w-[110px] font-semibold">Mức độ</TableHead>
-                      <TableHead className="h-12 w-[10%] min-w-20 text-center font-semibold">Điểm</TableHead>
-                      <TableHead className="h-12 w-[15%] min-w-[120px] font-semibold">Phạm vi</TableHead>
-                      <TableHead className="h-12 w-[12%] min-w-[110px] font-semibold">Trạng thái</TableHead>
-                      <TableHead className="h-12 w-[10%] min-w-[100px] text-right font-semibold">
-                        Thao tác
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
+      {groupedList.map((groupData) => {
+        const isGroupCollapsed = collapsedGroups.has(groupData.group);
+        return (
+          <div key={groupData.group}>
+            {/* Group header with collapse button */}
+            <div className="px-6 py-3 bg-muted/40 border-b font-semibold text-sm flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => toggleGroup(groupData.group)}
+              >
+                {isGroupCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
                 )}
-                {!(subgroup === "—" && groupData.subgroups.size === 1) && (
-                  <TableHeader>
-                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-b">
-                      <TableHead className="h-12 w-[25%] min-w-[200px] font-semibold">
-                        Tên tiêu chí
-                      </TableHead>
-                      <TableHead className="h-12 w-[12%] min-w-[110px] font-semibold">Mức độ</TableHead>
-                      <TableHead className="h-12 w-[10%] min-w-20 text-center font-semibold">Điểm</TableHead>
-                      <TableHead className="h-12 w-[15%] min-w-[120px] font-semibold">Phạm vi</TableHead>
-                      <TableHead className="h-12 w-[12%] min-w-[110px] font-semibold">Trạng thái</TableHead>
-                      <TableHead className="h-12 w-[10%] min-w-[100px] text-right font-semibold">
-                        Thao tác
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                )}
+              </Button>
+              {groupData.group}
+            </div>
 
-                <TableBody>
+            {/* Subgroups - only show if group is not collapsed */}
+            {!isGroupCollapsed && Array.from(groupData.subgroups.entries()).map(([subgroup, subgroupCriteria]) => {
+              const subgroupKey = `${groupData.group}-${subgroup}`;
+              const isSubgroupCollapsed = collapsedSubgroups.has(subgroupKey);
+              
+              return (
+                <div key={subgroupKey} className="overflow-x-auto">
+                  {subgroup !== "—" && (
+                    <div className="px-6 py-2 bg-muted/20 text-xs text-muted-foreground font-medium border-b flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0"
+                        onClick={() => toggleSubgroup(subgroupKey)}
+                      >
+                        {isSubgroupCollapsed ? (
+                          <ChevronRight className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )}
+                      </Button>
+                      {subgroup}
+                    </div>
+                  )}
+
+                  {/* Only show table if subgroup is not collapsed */}
+                  {!isSubgroupCollapsed && (
+                    <Table className="min-w-[1000px]">
+                      <TableBody>
                   {subgroupCriteria.map((row) => (
                     <TableRow
                       key={row.id}
@@ -197,8 +223,10 @@ export function CriteriaTable({ rows }: Props) {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          ))}
+            )}
+          </div>
+        );
+      })}
         </div>
       ))}
 

@@ -82,12 +82,14 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
   }
 
   const hasCC = roleIds.includes('CC')
+  const hasMOD = roleIds.includes('MOD')
+  const hasSEC = roleIds.includes('SEC')
   const hasExplicitElevatedRole = roleIds.some((id) => !STUDENT_ROLES.has(id))
   const hasAnyScope = hasSchoolScope || hasClassScope
   const hasElevatedRole = hasExplicitElevatedRole || hasAnyScope
   const isStudentOnly = !hasElevatedRole
 
-  const canEnterViolations = hasCC && !hasSchoolScope
+  const canEnterViolations = hasCC || hasMOD || hasSEC
   const canViewViolationStats = hasSchoolScope
   const canManageSystem = roleIds.includes('AD') || roleIds.includes('MOD')
 

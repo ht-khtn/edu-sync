@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Building2,
   AlertTriangle,
+  GraduationCap,
+  KeySquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -93,6 +95,26 @@ const managementNavItems = [
 function AdminSidebarComponent() {
   const pathname = usePathname();
   const { user } = useUser();
+  const [hasOlympiaAccess, setHasOlympiaAccess] = React.useState(false);
+  
+  // Check for OLYMPIA access
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { getSupabase } = await import("@/lib/supabase");
+        const supabase = await getSupabase();
+        const { data } = await supabase
+          .schema("olympia")
+          .from("participants")
+          .select("user_id")
+          .eq("user_id", user?.id)
+          .maybeSingle();
+        setHasOlympiaAccess(!!data);
+      } catch {
+        setHasOlympiaAccess(false);
+      }
+    })();
+  }, [user?.id]);
   
   // Derive permissions from user roles
   const canEnterViolations = user?.hasCC && !user?.hasSchoolScope;
@@ -106,6 +128,19 @@ function AdminSidebarComponent() {
       return true;
     });
   }, [canEnterViolations, canViewViolationStats]);
+
+  const olympiaNavItems = [
+    {
+      title: "Olympia Admin",
+      href: "/admin/olympia-accounts",
+      icon: KeySquare,
+    },
+    {
+      title: "Olympia Thí sinh",
+      href: "/olympia/admin/accounts?role=contestant",
+      icon: GraduationCap,
+    },
+  ] as const satisfies ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>;
 
   const renderNavItems = (items: ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>) => (
     <SidebarMenu>
@@ -166,6 +201,16 @@ function AdminSidebarComponent() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               {renderNavItems(managementNavItems)}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {hasOlympiaAccess && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Olympia
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              {renderNavItems(olympiaNavItems)}
             </SidebarGroupContent>
           </SidebarGroup>
         )}

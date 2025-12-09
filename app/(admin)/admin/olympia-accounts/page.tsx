@@ -7,6 +7,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Plus } from 'lucide-react'
+import OlympiaAdminForm from './OlympiaAdminForm'
 
 const formatter = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -74,7 +80,23 @@ export default async function OlympiaAdminAccountsSystemPage() {
           <Button variant="outline" asChild>
             <Link href="/olympia/admin/accounts?role=contestant">Quản lý thí sinh</Link>
           </Button>
-          <Button disabled>Thêm admin (sắp có)</Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-primary hover:bg-primary/90">
+                <Plus className="h-4 w-4" />
+                Thêm admin
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold">Cấp quyền Admin Olympia</DialogTitle>
+                <DialogDescription>
+                  Chọn người dùng để cấp quyền quản trị viên Olympia
+                </DialogDescription>
+              </DialogHeader>
+              <OlympiaAdminForm />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

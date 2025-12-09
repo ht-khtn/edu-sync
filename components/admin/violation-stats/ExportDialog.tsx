@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { getSupabase } from "@/lib/supabase";
-import { Download, Calendar, GraduationCap } from "lucide-react";
+import { Download, Calendar, GraduationCap, AlertTriangle } from "lucide-react";
 
 // Excel export (browser-friendly build)
 import ExcelJS from "exceljs/dist/exceljs.min.js";
@@ -57,28 +57,64 @@ export default function ExportReportDialog() {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [gradeId, setGradeId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [criteriaList, setCriteriaList] = useState<Array<{ id: string; name: string; group: string | null; subgroup: string | null }>>([]);
+  const [selectedViolations, setSelectedViolations] = useState<Set<string>>(new Set());
+
+  // Group violations by group/subgroup
+  const violationGroups = React.useMemo(() => {
+    const groups = new Map<string, Map<string, { id: string; name: string; subgroup: string | null }>>();
+    for (const c of criteriaList) {
+      const g = c.group || "Khác";
+      const sg = c.subgroup || c.name || "Mục";
+      if (!groups.has(g)) groups.set(g, new Map());
+      groups.get(g)!.set(sg, { id: c.id, name: c.name, subgroup: c.subgroup });
+    }
+    const result = Array.from(groups.entries())
+      .map(([group, subs]) => ({
+        group,
+        subgroups: Array.from(subs.entries()).map(([subgroup, data]) => ({ subgroup, ...data })),
+      }))
+      .sort((a, b) => a.group.localeCompare(b.group, "vi"));
+    return result;
+  }, [criteriaList]);
 
   useEffect(() => {
     if (!open) return;
     (async () => {
       try {
         const supabase = await getSupabase();
-        const { data, error } = await supabase
-          .from("grades")
-          .select("id,name")
-          .order("name");
-        if (error) throw new Error(error.message);
-        setGrades(data || []);
-        if (data && data.length) setGradeId((prev) => prev || data[0].id);
+        const [gradesRes, criteriaRes] = await Promise.all([
+          supabase.from("grades").select("id,name").order("name"),
+          supabase.from("criteria").select("id,name,group,subgroup").order("group,subgroup,name"),
+        ]);
+        if (gradesRes.error) throw new Error(gradesRes.error.message);
+        if (criteriaRes.error) throw new Error(criteriaRes.error.message);
+        
+        setGrades(gradesRes.data || []);
+        setCriteriaList(criteriaRes.data || []);
+        
+        if (gradesRes.data && gradesRes.data.length) {
+          setGradeId((prev) => prev || gradesRes.data![0].id);
+        }
+        
+        // Auto-select all violations on first load
+        if (!selectedViolations.size && criteriaRes.data) {
+          setSelectedViolations(new Set(criteriaRes.data.map((c) => c.id)));
+        }
       } catch (e) {
         const message = e instanceof Error ? e.message : "";
-        toast.error("Không tải được danh sách khối: " + message);
+        toast.error("Không tải được danh sách: " + message);
       }
     })();
-  }, [open]);
+  }, [open, selectedViolations.size]);
 
   async function handleExport() {
     try {
+      if (selectedViolations.size === 0) {
+        toast.error("Vui lòng chọn ít nhất một loại vi phạm");
+        return;
+      }
+      
       setLoading(true);
       const supabase = await getSupabase();
       // fetch classes of selected grade
@@ -92,7 +128,7 @@ export default function ExportReportDialog() {
       if (classIds.length === 0)
         throw new Error("Không có lớp thuộc khối đã chọn");
 
-      // fetch records in range for these classes
+      // fetch records in range for these classes with selected criteria only
       let q = supabase
         .from("records")
         .select(
@@ -100,6 +136,7 @@ export default function ExportReportDialog() {
         )
         .is("deleted_at", null)
         .in("class_id", classIds)
+        .in("criteria_id", Array.from(selectedViolations))
         .order("created_at", { ascending: true });
 
       if (start) {
@@ -118,11 +155,12 @@ export default function ExportReportDialog() {
       if (rErr) throw new Error(rErr.message);
       const recs = (rows || []) as unknown as RecordRow[];
 
-      // Build group/subgroup axes from criteria
+      // Build group/subgroup axes from SELECTED criteria (not from records)
+      const selectedCriteria = criteriaList.filter((c) => selectedViolations.has(c.id));
       const groups = new Map<string, Map<string, true>>();
-      for (const r of recs) {
-        const g = r.criteria?.group || "Khác";
-        const sg = r.criteria?.subgroup || r.criteria?.name || "Mục";
+      for (const c of selectedCriteria) {
+        const g = c.group || "Khác";
+        const sg = c.subgroup || c.name || "Mục";
         if (!groups.has(g)) groups.set(g, new Map());
         groups.get(g)!.set(sg, true);
       }
@@ -193,6 +231,39 @@ export default function ExportReportDialog() {
         sData.count += 1;
         sData.deduction += Math.abs(score < 0 ? score : -Math.abs(score)); // ensure deduction positive
         gData.totalDeduction += Math.abs(score < 0 ? score : -Math.abs(score));
+      }
+
+      // Ensure all classes exist in classMap (even if no records)
+      for (const className of classNameById.values()) {
+        if (!classMap.has(className)) {
+          // This shouldn't happen since we're iterating classIds, but add safety
+        }
+      }
+      for (const classId of classIds) {
+        if (!classMap.has(classId)) {
+          const className = classNameById.get(classId) || classId;
+          classMap.set(classId, {
+            name: className,
+            byGroup: new Map(),
+            totalPoints: 0,
+          });
+        }
+      }
+
+      // Ensure all selected groups/subgroups exist for all classes
+      for (const [, classData] of classMap) {
+        for (const g of sortedGroups) {
+          if (!classData.byGroup.has(g)) {
+            classData.byGroup.set(g, { bySub: new Map(), totalDeduction: 0 });
+          }
+          const gData = classData.byGroup.get(g)!;
+          const subs = groupToSubgroups.get(g) || [];
+          for (const sg of subs) {
+            if (!gData.bySub.has(sg)) {
+              gData.bySub.set(sg, { entries: [], count: 0, deduction: 0 });
+            }
+          }
+        }
       }
 
       // Compute totals
@@ -375,7 +446,66 @@ export default function ExportReportDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-6 py-4 max-h-96 overflow-y-auto">
+          <Card className="bg-muted/50 border-muted">
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                <h3 className="font-semibold">Chọn loại vi phạm</h3>
+              </div>
+              <Separator className="bg-border" />
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedViolations(new Set(criteriaList.map((c) => c.id)))}
+                  >
+                    Chọn tất cả
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedViolations(new Set())}
+                  >
+                    Bỏ chọn tất cả
+                  </Button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded p-2 bg-background">
+                  {violationGroups.map((group) => (
+                    <div key={group.group} className="space-y-1">
+                      <div className="font-medium text-sm pl-1">{group.group}</div>
+                      <div className="space-y-1 pl-4">
+                        {group.subgroups.map((sub) => (
+                          <label key={sub.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={selectedViolations.has(sub.id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedViolations);
+                                if (e.target.checked) {
+                                  newSet.add(sub.id);
+                                } else {
+                                  newSet.delete(sub.id);
+                                }
+                                setSelectedViolations(newSet);
+                              }}
+                              className="w-4 h-4 rounded"
+                            />
+                            <span>{sub.subgroup || sub.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Đã chọn: {selectedViolations.size}/{criteriaList.length}
+                </p>
+              </div>
+            </div>
+          </Card>
+
           <Card className="bg-muted/50 border-muted">
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-2">

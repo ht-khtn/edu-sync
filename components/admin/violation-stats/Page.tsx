@@ -21,6 +21,13 @@ type RecordRow = {
   class_id: string;
   classes: { name: string | null } | null;
 };
+
+type ClassWithGrade = {
+  id: string;
+  name: string | null;
+  grades: { name: string | null } | { name: string | null }[] | null;
+};
+
 // file touched to ensure editors/TS server reload recognize the latest content
 export default async function ViolationStatsPageContent() {
   const [{ supabase, appUserId }, roles] = await Promise.all([
@@ -42,6 +49,12 @@ export default async function ViolationStatsPageContent() {
     .select("score, criteria(id,name), class_id, classes(name)")
     .is("deleted_at", null)
     .limit(20000);
+
+  // Fetch all classes with their grades
+  const { data: allClasses } = await supabase
+    .from("classes")
+    .select("id, name, grades(name)")
+    .order("name");
 
   if (error) {
     return (
@@ -72,24 +85,59 @@ export default async function ViolationStatsPageContent() {
   }));
   criteriaAgg.sort((a, b) => b.total - a.total);
 
-  // Aggregate by class
-  const byClass = new Map<
-    string,
-    { name: string; total: number; count: number }
-  >();
+  // Build violation score map from records
+  const violationScoreMap = new Map<string, { total: number; count: number }>();
   for (const r of rows) {
-    const key = r.class_id;
-    const name = r.classes?.name || r.class_id;
-    const m = byClass.get(key) || { name, total: 0, count: 0 };
+    const classId = r.class_id;
+    const m = violationScoreMap.get(classId) || { total: 0, count: 0 };
     m.total += Number(r.score || 0);
     m.count += 1;
-    byClass.set(key, m);
+    violationScoreMap.set(classId, m);
   }
-  const classAgg = Array.from(byClass.entries()).map(([id, v]) => ({
-    id,
-    ...v,
-  }));
-  classAgg.sort((a, b) => b.total - a.total);
+
+  // Build complete class list with violation scores, grouped by grade
+  const byGrade = new Map<string, Array<{ id: string; name: string; total: number; count: number }>>();
+  
+  for (const cls of allClasses || []) {
+    const classId = cls.id;
+    const className = cls.name || "—";
+    const gradeInfo = Array.isArray(cls.grades) ? cls.grades[0] : cls.grades;
+    const gradeName = gradeInfo?.name || "—";
+    
+    const violationData = violationScoreMap.get(classId) || { total: 0, count: 0 };
+    
+    if (!byGrade.has(gradeName)) {
+      byGrade.set(gradeName, []);
+    }
+    
+    byGrade.get(gradeName)!.push({
+      id: classId,
+      name: className,
+      total: violationData.total,
+      count: violationData.count,
+    });
+  }
+
+  // Sort each grade's classes by total violations (descending)
+  const sortedGrades = Array.from(byGrade.entries())
+    .map(([grade, classes]) => ({
+      grade,
+      classes: classes.sort((a, b) => b.total - a.total),
+    }))
+    .sort((a, b) => {
+      const gradeA = parseInt(a.grade) || 999;
+      const gradeB = parseInt(b.grade) || 999;
+      if (isNaN(gradeA)) return a.grade.localeCompare(b.grade);
+      return gradeA - gradeB;
+    });
+
+  // Flatten for ClassAggClient (all classes, sorted by grade then by violations)
+  const classAgg: Array<{ id: string; name: string; total: number; count: number }> = [];
+  for (const gradeGroup of sortedGrades) {
+    for (const cls of gradeGroup.classes) {
+      classAgg.push(cls);
+    }
+  }
 
   return (
     <div className="space-y-6" suppressHydrationWarning>

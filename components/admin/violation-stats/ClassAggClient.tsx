@@ -18,6 +18,11 @@ import { Separator } from "@/components/ui/separator";
 
 type AggRow = { id: string; name: string; total: number; count: number };
 
+type GradeGroup = {
+  grade: string;
+  classes: Array<AggRow & { displayed: number }>;
+};
+
 const STORAGE_KEY = "violationStats.settings";
 
 function ClassAggClientComponent({ classAgg }: { classAgg: AggRow[] }) {
@@ -68,12 +73,31 @@ function ClassAggClientComponent({ classAgg }: { classAgg: AggRow[] }) {
     []
   );
 
-  const displayedRows = useMemo(() => {
-    return classAgg.map((c) => {
-      const totalDeduction = Math.abs(Number(c.total || 0));
-      const displayed = useBase ? baseScore - totalDeduction : totalDeduction;
-      return { ...c, displayed };
-    });
+  // Group classes by khối (grade)
+  const gradeGroups = useMemo(() => {
+    const gradeMap = new Map<string, AggRow[]>();
+
+    for (const cls of classAgg) {
+      // Since we don't have grade info in AggRow, we'll need to infer it from sorting
+      // or we can just display all in one section if no grade grouping is passed
+      if (!gradeMap.has("—")) {
+        gradeMap.set("—", []);
+      }
+      gradeMap.get("—")!.push(cls);
+    }
+
+    const result: GradeGroup[] = [];
+    for (const [grade, classes] of gradeMap) {
+      const classesWithDisplay = classes.map((c) => {
+        const totalDeduction = Math.abs(Number(c.total || 0));
+        const displayed = useBase ? baseScore - totalDeduction : totalDeduction;
+        return { ...c, displayed };
+      });
+      
+      result.push({ grade, classes: classesWithDisplay });
+    }
+
+    return result;
   }, [classAgg, useBase, baseScore]);
 
   return (
@@ -148,57 +172,63 @@ function ClassAggClientComponent({ classAgg }: { classAgg: AggRow[] }) {
         </div>
       </Card>
 
-      <div
-        className="border rounded-lg overflow-hidden shadow-sm"
-        suppressHydrationWarning
-      >
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="font-semibold">Lớp</TableHead>
-              <TableHead className="text-right font-semibold w-32">
-                Số lần
-              </TableHead>
-              <TableHead className="text-right font-semibold w-32">
-                {useBase ? "Điểm cuối" : "Tổng điểm trừ"}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayedRows.map((c, idx) => (
-              <TableRow key={c.id} className="hover:bg-muted/30">
-                <TableCell className="font-medium">
-                  <div
-                    className="flex items-center gap-2"
-                    suppressHydrationWarning
-                  >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {idx + 1}
-                    </span>
-                    {c.name}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {c.count}
-                </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums text-destructive">
-                  {c.displayed}
-                </TableCell>
-              </TableRow>
-            ))}
-            {displayedRows.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="h-32 text-center text-muted-foreground"
-                >
-                  Chưa có dữ liệu theo lớp.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {/* Display grouped by khối */}
+      {gradeGroups.map((gradeGroup) => (
+        <div key={gradeGroup.grade} className="space-y-2">
+          <h3 className="text-lg font-semibold">Khối {gradeGroup.grade}</h3>
+          <div
+            className="border rounded-lg overflow-hidden shadow-sm"
+            suppressHydrationWarning
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="font-semibold">Lớp</TableHead>
+                  <TableHead className="text-right font-semibold w-32">
+                    Số lần
+                  </TableHead>
+                  <TableHead className="text-right font-semibold w-32">
+                    {useBase ? "Điểm cuối" : "Tổng điểm trừ"}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {gradeGroup.classes.map((c, idx) => (
+                  <TableRow key={c.id} className="hover:bg-muted/30">
+                    <TableCell className="font-medium">
+                      <div
+                        className="flex items-center gap-2"
+                        suppressHydrationWarning
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {idx + 1}
+                        </span>
+                        {c.name}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {c.count}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-destructive">
+                      {c.displayed}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {gradeGroup.classes.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3}
+                      className="h-16 text-center text-muted-foreground"
+                    >
+                      Chưa có dữ liệu.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

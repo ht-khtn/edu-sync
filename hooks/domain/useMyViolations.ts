@@ -48,13 +48,15 @@ export function useMyViolations(userId: string | null): UseMyViolationsResult {
 
     try {
       const supabase = await getSupabase()
+      // Use pagination-friendly limit (50 instead of 300)
+      // User can load more with "Load More" button
       const { data: rows, error: queryError } = await supabase
         .from('records')
         .select('id, created_at, score, note, criteria(id,name), classes(id,name)')
         .eq('student_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
-        .limit(300)
+        .limit(50)
 
       if (queryError) throw queryError
 

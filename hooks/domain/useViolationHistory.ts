@@ -8,6 +8,8 @@ export type ViolationHistorySearchParams = {
     criteriaId?: string;
     start?: string;
     end?: string;
+    pageSize?: number;
+    cursor?: string;
 };
 
 export type ClassOption = {
@@ -101,6 +103,9 @@ function buildRecordsQuery(
     searchParams: ViolationHistorySearchParams | undefined,
     allowedViewClassIds: Set<string> | null
 ) {
+    // Use pagination-friendly limit (50 default, max 200)
+    const pageSize = searchParams?.pageSize ? Math.min(searchParams.pageSize, 200) : 50;
+    
     let query = supabase
         .from("records")
         .select(
@@ -108,7 +113,7 @@ function buildRecordsQuery(
         )
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(pageSize);
 
     if (allowedViewClassIds) {
         query = query.in("class_id", Array.from(allowedViewClassIds));

@@ -82,7 +82,7 @@ export default async function ViolationStatsPageContent() {
   for (const r of rows) {
     const classId = r.class_id;
     const m = violationScoreMap.get(classId) || { total: 0, count: 0 };
-    m.total += Number(r.score || 0);
+    m.total -= Number(r.score || 0);
     m.count += 1;
     violationScoreMap.set(classId, m);
   }

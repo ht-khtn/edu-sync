@@ -54,6 +54,7 @@ export default async function RecentRecordsList() {
   // Filter to records from start of today
   const startOfDay = new Date(); startOfDay.setHours(0,0,0,0)
   const startIso = startOfDay.toISOString()
+  // Use smaller limit for faster initial load (50 instead of 200)
   const { data: rows, error: rowsErr } = await supabase
     .from('records')
     .select('id, created_at, student_id, class_id, score, note, classes(id,name), criteria(name,id), users:student_id(user_profiles(full_name), user_name)')
@@ -61,7 +62,7 @@ export default async function RecentRecordsList() {
   .in('class_id', Array.from(allowedWriteClassIds))
   .gte('created_at', startIso)
   .order('created_at', { ascending: false })
-  .limit(200)
+  .limit(50)
 
   if (rowsErr) return null
 

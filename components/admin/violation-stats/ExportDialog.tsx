@@ -67,7 +67,7 @@ export default function ExportReportDialog() {
       const g = c.group || "Khác";
       const sg = c.subgroup || c.name || "Mục";
       if (!groups.has(g)) groups.set(g, new Map());
-      groups.get(g)!.set(sg, { id: c.id, name: c.name });
+      groups.get(g)!.set(sg, { id: c.id, name: c.name, subgroup: c.subgroup });
     }
     const result = Array.from(groups.entries())
       .map(([group, subs]) => ({

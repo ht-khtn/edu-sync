@@ -22,12 +22,6 @@ type RecordRow = {
   classes: { name: string | null } | null;
 };
 
-type ClassWithGrade = {
-  id: string;
-  name: string | null;
-  grades: { name: string | null } | { name: string | null }[] | null;
-};
-
 // file touched to ensure editors/TS server reload recognize the latest content
 export default async function ViolationStatsPageContent() {
   const [{ supabase, appUserId }, roles] = await Promise.all([

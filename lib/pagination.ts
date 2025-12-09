@@ -65,7 +65,7 @@ export async function paginateViolationRecords(
     startDate?: string;
     endDate?: string;
   }
-): Promise<PaginatedResult<ViolationRecordRow>> {
+): Promise<PaginatedResult<unknown>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const direction = params.direction || 'next';
 
@@ -144,7 +144,7 @@ export async function paginateMyViolations(
   supabase: SupabaseClient,
   userId: string,
   params: PaginationParams
-): Promise<PaginatedResult<ViolationRecordRow>> {
+): Promise<PaginatedResult<unknown>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const direction = params.direction || 'next';
 
@@ -206,7 +206,7 @@ export async function paginateRecentRecords(
   supabase: SupabaseClient,
   classIds: string[],
   params: PaginationParams & { startOfDay: string }
-): Promise<PaginatedResult<ViolationRecordRow>> {
+): Promise<PaginatedResult<unknown>> {
   const pageSize = Math.min(params.pageSize || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
   let query = supabase

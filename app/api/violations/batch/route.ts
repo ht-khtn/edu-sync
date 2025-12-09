@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase-server';
+import { createCacheHeaders } from '@/lib/cache-headers';
 
 export const runtime = 'nodejs'; // Use Node.js runtime for better performance
 export const dynamic = 'force-dynamic'; // Always fresh data
@@ -74,7 +75,10 @@ export async function POST(request: NextRequest) {
           failed: 0,
           duration_ms: Date.now() - startTime
         } as BatchResponse,
-        { status: 400 }
+        { 
+          status: 400,
+          headers: createCacheHeaders('no-cache') // Never cache errors
+        }
       );
     }
 
@@ -88,7 +92,10 @@ export async function POST(request: NextRequest) {
           failed: 0,
           duration_ms: Date.now() - startTime
         } as BatchResponse,
-        { status: 400 }
+        { 
+          status: 400,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -105,7 +112,10 @@ export async function POST(request: NextRequest) {
           failed: 0,
           duration_ms: Date.now() - startTime
         } as BatchResponse,
-        { status: 401 }
+        { 
+          status: 401,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -140,7 +150,10 @@ export async function POST(request: NextRequest) {
           failed: violations.length,
           duration_ms: Date.now() - startTime
         } as BatchResponse,
-        { status: 500 }
+        { 
+          status: 500,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -154,7 +167,10 @@ export async function POST(request: NextRequest) {
         failed: 0,
         duration_ms: duration
       } as BatchResponse,
-      { status: 200 }
+      { 
+        status: 200,
+        headers: createCacheHeaders('no-cache') // Mutations never cached
+      }
     );
 
   } catch (error) {
@@ -169,7 +185,10 @@ export async function POST(request: NextRequest) {
         failed: 0,
         duration_ms: duration
       } as BatchResponse,
-      { status: 500 }
+      { 
+        status: 500,
+        headers: createCacheHeaders('no-cache')
+      }
     );
   }
 }
@@ -204,7 +223,10 @@ export async function DELETE(request: NextRequest) {
           error: 'ids array is required and cannot be empty',
           duration_ms: Date.now() - startTime
         },
-        { status: 400 }
+        { 
+          status: 400,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -215,7 +237,10 @@ export async function DELETE(request: NextRequest) {
           error: 'Batch size exceeds maximum of 500 records',
           duration_ms: Date.now() - startTime
         },
-        { status: 400 }
+        { 
+          status: 400,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -229,7 +254,10 @@ export async function DELETE(request: NextRequest) {
           error: 'Unauthorized',
           duration_ms: Date.now() - startTime
         },
-        { status: 401 }
+        { 
+          status: 401,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -246,7 +274,10 @@ export async function DELETE(request: NextRequest) {
           error: error.message,
           duration_ms: Date.now() - startTime
         },
-        { status: 500 }
+        { 
+          status: 500,
+          headers: createCacheHeaders('no-cache')
+        }
       );
     }
 
@@ -256,7 +287,10 @@ export async function DELETE(request: NextRequest) {
         deleted: ids.length,
         duration_ms: Date.now() - startTime
       },
-      { status: 200 }
+      { 
+        status: 200,
+        headers: createCacheHeaders('no-cache')
+      }
     );
 
   } catch (error) {
@@ -266,7 +300,10 @@ export async function DELETE(request: NextRequest) {
         error: error instanceof Error ? error.message : 'Unknown error',
         duration_ms: Date.now() - startTime
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: createCacheHeaders('no-cache')
+      }
     );
   }
 }

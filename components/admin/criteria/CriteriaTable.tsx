@@ -142,17 +142,17 @@ export function CriteriaTable({ rows }: Props) {
                   {!isSubgroupCollapsed && (
                     <Table className="min-w-[1000px]">
                       <TableBody>
-                  {subgroupCriteria.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      className="hover:bg-muted/40 cursor-pointer transition-colors"
-                      onClick={(e) => {
-                        const target = e.target as HTMLElement;
-                        if (!target.closest("button")) {
-                          openDetail(row);
-                        }
-                      }}
-                    >
+                        {subgroupCriteria.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            className="hover:bg-muted/40 cursor-pointer transition-colors"
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement;
+                              if (!target.closest("button")) {
+                                openDetail(row);
+                              }
+                            }}
+                          >
                       <TableCell className="min-w-[200px] py-4">
                         <div className="space-y-1">
                           <div className="max-w-[250px] truncate font-medium" title={row.name}>
@@ -227,8 +227,9 @@ export function CriteriaTable({ rows }: Props) {
           </div>
         );
       })}
-        </div>
-      ))}
+          </div>
+        );
+      })}
 
       {/* Dialog chi tiết */}
       {selectedCriteria && (

@@ -312,8 +312,16 @@ async function networkOnly(request) {
  */
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // If this is a navigation (user visiting /), prefer network-first so
+  // redirects and Set-Cookie from the server are applied (important after login).
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
   const strategy = getCacheStrategy(request.url);
-  
+
   // Handle based on strategy
   if (strategy === 'network-first') {
     event.respondWith(networkFirst(request));

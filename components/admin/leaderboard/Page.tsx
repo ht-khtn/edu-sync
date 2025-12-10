@@ -1,5 +1,4 @@
 import { getServerSupabase } from "@/lib/server-auth";
-import { getAllowedClassIdsForView } from "@/lib/rbac";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import LeaderboardClient from "./LeaderboardClient";

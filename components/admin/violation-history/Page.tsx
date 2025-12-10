@@ -1,7 +1,6 @@
 import { getServerSupabase, getServerRoles, summarizeRoles } from "@/lib/server-auth";
 import { redirect } from "next/navigation";
 import { fetchCriteriaFromDB, fetchStudentsFromDB } from "@/lib/violations";
-import { getAllowedClassIdsForView } from "@/lib/rbac";
 import {
   Table,
   TableHeader,

@@ -28,7 +28,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { useUser } from "@/hooks/useUser";
+import { useAdminPermissions } from "@/hooks/domain/useAdminPermissions";
 import { getPrefetchConfig } from "@/lib/link-optimizer";
 
 import type { LucideIcon } from "lucide-react";
@@ -37,7 +37,7 @@ type NavItem = {
   title: string
   href: string
   icon: LucideIcon
-  requires?: "violation-entry" | "violation-stats"
+  requires?: "violation-entry" | "violation-stats" | "system-management" | "olympia"
 }
 
 const operationsNavItems: ReadonlyArray<NavItem> = [
@@ -70,69 +70,72 @@ const operationsNavItems: ReadonlyArray<NavItem> = [
   },
 ] as const;
 
-const managementNavItems = [
+const managementNavItems: ReadonlyArray<NavItem> = [
   {
     title: "Tài khoản",
     href: "/admin/accounts",
     icon: Users,
+    requires: "system-management",
   },
   {
     title: "Tiêu chí vi phạm",
     href: "/admin/criteria",
     icon: AlertTriangle,
+    requires: "system-management",
   },
   {
     title: "Vai trò",
     href: "/admin/roles",
     icon: ShieldCheck,
+    requires: "system-management",
   },
   {
     title: "Lớp học",
     href: "/admin/classes",
     icon: Building2,
+    requires: "system-management",
   },
-] as const satisfies ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>;
+] as const;
+
+const olympiaNavItems: ReadonlyArray<NavItem> = [
+  {
+    title: "Olympia Admin",
+    href: "/admin/olympia-accounts",
+    icon: KeySquare,
+    requires: "olympia",
+  },
+  {
+    title: "Olympia Thí sinh",
+    href: "/olympia/admin/accounts?role=contestant",
+    icon: GraduationCap,
+    requires: "olympia",
+  },
+] as const;
 
 function AdminSidebarComponent() {
   const pathname = usePathname();
-  const { user } = useUser();
+  const permissions = useAdminPermissions();
   
-  // Derive permissions from user roles
-  const hasCC = user?.hasCC || false;
-  const hasMOD = user?.roles?.includes('MOD') || false;
-  const hasSEC = user?.roles?.includes('SEC') || false;
-  const hasOlympiaAccess = user?.hasOlympiaAccess || false;
-  const canEnterViolations = hasCC || hasMOD || hasSEC;
-  const canViewViolationStats = user?.hasSchoolScope || hasMOD || user?.roles?.includes('AD') || false;
-  const canManageSystem = user?.roles?.some(r => r === 'AD' || r === 'MOD') || false;
-  
-  const filteredOperations = React.useMemo(() => {
-    return operationsNavItems.filter((item) => {
-      if (item.requires === "violation-entry") return canEnterViolations;
-      if (item.requires === "violation-stats") return canViewViolationStats;
+  // Filter items based on permissions - using callback for stability
+  const getVisibleItems = React.useCallback((items: ReadonlyArray<NavItem>) => {
+    return items.filter((item) => {
+      if (item.requires === "violation-entry") return permissions.canEnterViolations;
+      if (item.requires === "violation-stats") return permissions.canViewViolationStats;
+      if (item.requires === "system-management") return permissions.canManageSystem;
+      if (item.requires === "olympia") return permissions.hasOlympiaAccess;
       return true;
     });
-  }, [canEnterViolations, canViewViolationStats]);
+  }, [permissions]);
 
-  const olympiaNavItems = [
-    {
-      title: "Olympia Admin",
-      href: "/admin/olympia-accounts",
-      icon: KeySquare,
-    },
-    {
-      title: "Olympia Thí sinh",
-      href: "/olympia/admin/accounts?role=contestant",
-      icon: GraduationCap,
-    },
-  ] as const satisfies ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>;
+  const filteredOperations = React.useMemo(() => getVisibleItems(operationsNavItems), [getVisibleItems]);
+  const filteredManagement = React.useMemo(() => getVisibleItems(managementNavItems), [getVisibleItems]);
+  const filteredOlympia = React.useMemo(() => getVisibleItems(olympiaNavItems), [getVisibleItems]);
 
-  const renderNavItems = (items: ReadonlyArray<{ title: string; href: string; icon: LucideIcon }>) => (
+  const renderNavItems = (items: ReadonlyArray<NavItem>) => (
     <SidebarMenu>
       {items.map((item) => {
         const Icon = item.icon;
         const config = getPrefetchConfig(item.href);
-        // Next.js Link only supports boolean prefetch, convert 'intent' → true
         const shouldPrefetch = config.prefetch !== false;
         return (
           <SidebarMenuItem key={item.href}>
@@ -182,23 +185,25 @@ function AdminSidebarComponent() {
             {renderNavItems(filteredOperations)}
           </SidebarGroupContent>
         </SidebarGroup>
-        {canManageSystem && (
+        
+        {filteredManagement.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Hệ thống
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              {renderNavItems(managementNavItems)}
+              {renderNavItems(filteredManagement)}
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        {hasOlympiaAccess && (
+        
+        {filteredOlympia.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Olympia
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              {renderNavItems(olympiaNavItems)}
+              {renderNavItems(filteredOlympia)}
             </SidebarGroupContent>
           </SidebarGroup>
         )}

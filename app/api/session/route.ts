@@ -81,8 +81,9 @@ export async function GET() {
       const ccRole = roleList.find((r) => r.role_id === 'CC' && r.target)
       if (ccRole?.target) {
         // First check if we already fetched this class in the parallel query
-        const classesArray = Array.isArray(classes) ? classes : []
-        const foundClass = classesArray.find((c: any) => c.name === ccRole.target)
+        type ClassRecord = { id: string; name: string | null }
+        const classesArray = Array.isArray(classes) ? (classes as ClassRecord[]) : []
+        const foundClass = classesArray.find((c) => c.name === ccRole.target)
         if (foundClass) {
           ccClassId = foundClass.id
         }

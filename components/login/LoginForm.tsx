@@ -14,7 +14,6 @@ import {
   FormMessage,
   FormField,
 } from "@/components/ui/form";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,7 +32,6 @@ export default function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
   const errorRef = useRef<HTMLParagraphElement | null>(null);
 
   useEffect(() => {

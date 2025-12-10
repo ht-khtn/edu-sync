@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useAdminPermissions } from "@/hooks/domain/useAdminPermissions";
 import { getPrefetchConfig } from "@/lib/link-optimizer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -115,6 +116,7 @@ const olympiaNavItems: ReadonlyArray<NavItem> = [
 function AdminSidebarComponent() {
   const pathname = usePathname();
   const permissions = useAdminPermissions();
+  const isLoading = permissions.isLoading;
   
   // Filter items based on permissions - using callback for stability
   const getVisibleItems = React.useCallback((items: ReadonlyArray<NavItem>) => {
@@ -130,6 +132,34 @@ function AdminSidebarComponent() {
   const filteredOperations = React.useMemo(() => getVisibleItems(operationsNavItems), [getVisibleItems]);
   const filteredManagement = React.useMemo(() => getVisibleItems(managementNavItems), [getVisibleItems]);
   const filteredOlympia = React.useMemo(() => getVisibleItems(olympiaNavItems), [getVisibleItems]);
+
+  if (isLoading) {
+    return (
+      <Sidebar className="border-r border-sidebar-border bg-sidebar" suppressHydrationWarning>
+        <SidebarHeader className="border-b border-sidebar-border bg-sidebar">
+          <div className="flex items-center gap-2 px-4 py-4" suppressHydrationWarning>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <span className="text-lg font-bold">E</span>
+            </div>
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarContent className="bg-sidebar">
+          <div className="space-y-3 p-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border bg-sidebar">
+          <div className="p-4 text-xs text-muted-foreground">EduSync v1.0</div>
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
 
   const renderNavItems = (items: ReadonlyArray<NavItem>) => (
     <SidebarMenu>

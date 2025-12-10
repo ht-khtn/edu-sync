@@ -14,13 +14,11 @@ import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { User, LogOut } from "lucide-react";
 import NotificationsBell from "@/components/common/NotificationsBell";
+import { useUser } from "@/hooks/useUser";
 
-interface AdminHeaderProps {
-  user?: { id: string } | null;
-}
-
-function AdminHeaderComponent({ user }: AdminHeaderProps) {
+function AdminHeaderComponent() {
   const router = useRouter();
+  const { user } = useUser();
 
   const handleLogout = useCallback(async () => {
     try {

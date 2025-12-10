@@ -76,29 +76,27 @@ export default function LoginForm() {
           return;
         }
 
-        const res = await fetch("/api/auth/set-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ access_token, refresh_token, expires_in }),
-        });
-
-        if (!res.ok) {
-          await supabase.auth.signOut();
-          setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
-          toast.error("Thiết lập phiên thất bại");
-          return;
-        }
-
-        // Parallelize: both setSession and getSession can run in parallel
-        const [, profileRes] = await Promise.all([
-          res,  // setSession already completed
+        // Parallelize: start both setSession and getSession in parallel (truly independent)
+        const [setSessionRes, profileRes] = await Promise.all([
+          fetch("/api/auth/set-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ access_token, refresh_token, expires_in }),
+          }),
           fetch("/api/session", {
             method: "GET",
             credentials: "include",
             cache: "no-store",
           }),
         ]);
+
+        if (!setSessionRes.ok) {
+          await supabase.auth.signOut();
+          setError("Không thể thiết lập phiên đăng nhập. Vui lòng thử lại.");
+          toast.error("Thiết lập phiên thất bại");
+          return;
+        }
 
         if (!profileRes.ok) {
           await supabase.auth.signOut();

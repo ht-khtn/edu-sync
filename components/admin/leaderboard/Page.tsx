@@ -46,12 +46,18 @@ export default async function LeaderboardPageContent() {
     .is("deleted_at", null);
 
   // Build violation score map
+  // Note: score in records is typically negative (e.g., -4 for -4 points)
+  // We need to ensure total_violation_score represents the SUM of penalties
+  // so that: final_points = basePoints - total_violation_score
+  // Example: if penalties are -4, -5, total_violation_score should be 9 (absolute sum)
   const violationScoreMap = new Map<string, number>();
   for (const row of raw || []) {
     const cid = row.class_id;
     if (!cid) continue;
     const existing = violationScoreMap.get(cid) || 0;
-    violationScoreMap.set(cid, existing + (row.score || 0));
+    // Convert to absolute value to get total penalty points
+    const penalty = Math.abs(row.score || 0);
+    violationScoreMap.set(cid, existing + penalty);
   }
 
   // Build complete class list with violation scores

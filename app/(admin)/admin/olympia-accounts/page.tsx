@@ -39,7 +39,8 @@ export default async function OlympiaAdminAccountsSystemPage() {
     redirect('/admin')
   }
 
-  // Optimized: Single query with JOIN instead of N+1 pattern
+  // Optimized: Fetch participants with users relationship
+  // Note: Cross-schema JOINs (olympia.participants -> public.users) may need careful handling
   const olympia = supabase.schema('olympia')
   const { data: participants, error } = await olympia
     .from('participants')
@@ -47,12 +48,20 @@ export default async function OlympiaAdminAccountsSystemPage() {
       user_id, 
       contestant_code, 
       role, 
-      created_at,
-      users:user_id (id, user_name, email, class_id, user_profiles(full_name))
+      created_at
     `)
     .eq('role', 'AD')
     .order('created_at', { ascending: false })
     .limit(200)
+
+  // Fetch user details separately (avoid cross-schema relationship issues)
+  const userIds = (participants ?? []).map(p => p.user_id).filter(Boolean);
+  const { data: usersData } = userIds.length > 0 
+    ? await supabase
+        .from('users')
+        .select('id, user_name, email, class_id, user_profiles(full_name)')
+        .in('id', userIds)
+    : { data: [] };
 
   // Transform data structure to match original Map-based pattern
   const rows: ParticipantRow[] = []
@@ -65,11 +74,12 @@ export default async function OlympiaAdminAccountsSystemPage() {
       role: p.role,
       created_at: p.created_at,
     })
-    
-    // Handle users relation (Supabase returns single object for foreign key)
-    const userData = p.users as any
-    if (userData) {
-      usersMap.set(p.user_id, userData)
+  }
+
+  // Build users map from separately fetched data
+  if (Array.isArray(usersData)) {
+    for (const user of usersData) {
+      usersMap.set(user.id, user)
     }
   }
 

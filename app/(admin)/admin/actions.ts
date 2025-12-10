@@ -73,37 +73,62 @@ export async function createAccountAction(formData: FormData) {
 
   const username = usernameInput ?? email.split('@')[0] ?? null
 
-  const { data: insertedUser, error } = await supabase
+  // Step 1: Create auth user via admin API
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: Math.random().toString(36).slice(2, 15), // Generate random password
+    email_confirm: true,
+    user_metadata: { created_by: 'admin' },
+  })
+
+  if (authError || !authData?.user?.id) {
+    return redirect('/admin/accounts?error=auth-create')
+  }
+
+  const authUid = authData.user.id
+
+  // Step 2: Trigger will create public.users row automatically
+  // Wait a moment for trigger to complete
+  await new Promise(resolve => setTimeout(resolve, 500))
+
+  // Step 3: Update the created public.users row with username and class
+  const { data: users, error: lookupError } = await supabase
     .from('users')
-    .insert({
-      email,
+    .select('id')
+    .eq('auth_uid', authUid)
+    .single()
+
+  if (lookupError || !users?.id) {
+    return redirect('/admin/accounts?error=lookup')
+  }
+
+  const userId = users.id
+
+  // Step 4: Update user with username and class (parallelize operations)
+  const updatePromise = supabase
+    .from('users')
+    .update({
       user_name: username,
       class_id: classId,
     })
-    .select('id')
-    .single()
+    .eq('id', userId)
 
-  if (error || !insertedUser?.id) {
-    return redirect('/admin/accounts?error=insert')
-  }
-
-  // Parallelize profile upsert and audit log insert (independent operations)
   const auditPromise = supabase.from('audit_logs').insert({
     table_name: 'users',
-    record_id: insertedUser.id,
+    record_id: userId,
     action: 'INSERT',
     actor_id: appUserId,
-    diff: { email, user_name: username, class_id: classId },
+    diff: { email, user_name: username, class_id: classId, auth_uid: authUid },
     meta: { type: 'admin-create-user' },
   })
 
   const profilePromise = fullName
     ? supabase
         .from('user_profiles')
-        .upsert({ user_id: insertedUser.id, full_name: fullName })
+        .upsert({ user_id: userId, full_name: fullName })
     : Promise.resolve(null)
 
-  await Promise.all([auditPromise, profilePromise])
+  await Promise.all([updatePromise, auditPromise, profilePromise])
 
   revalidatePath('/admin/accounts')
   return redirect('/admin/accounts?ok=1')

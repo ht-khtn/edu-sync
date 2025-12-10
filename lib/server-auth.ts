@@ -90,7 +90,12 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
   const hasElevatedRole = hasExplicitElevatedRole || hasAnyScope
   const isStudentOnly = !hasElevatedRole
 
-  const canEnterViolations = hasCC || hasMOD || hasSEC
+  // Allow entering violations if user has CC/MOD/SEC roles
+  // Additionally allow any role that has school scope and target === 'ALL'
+  const hasSchoolScopeTargetAll = roleRows.some(
+    (r) => normalizeScope(r.permissions?.scope) === 'school' && String(r.target) === 'ALL'
+  )
+  const canEnterViolations = hasCC || hasMOD || hasSEC || hasSchoolScopeTargetAll
   const canViewViolationStats = hasSchoolScope
   const canManageSystem = roleIds.includes('AD') || roleIds.includes('MOD')
   

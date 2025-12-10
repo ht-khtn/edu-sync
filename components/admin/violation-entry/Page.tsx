@@ -29,6 +29,30 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Natural (numeric-aware) comparator so class names like 10A9 sort before 10A10
+function naturalCompare(a: string | null | undefined, b: string | null | undefined) {
+  const sa = String(a ?? '')
+  const sb = String(b ?? '')
+  const re = /(\d+|\D+)/g
+  const ta = sa.match(re) || []
+  const tb = sb.match(re) || []
+  const len = Math.max(ta.length, tb.length)
+  for (let i = 0; i < len; i++) {
+    const pa = ta[i] || ''
+    const pb = tb[i] || ''
+    const na = pa.match(/^\d+$/)
+    const nb = pb.match(/^\d+$/)
+    if (na && nb) {
+      const da = Number(pa)
+      const db = Number(pb)
+      if (da !== db) return da - db
+    } else if (pa !== pb) {
+      return pa.localeCompare(pb, undefined, { numeric: true, sensitivity: 'base' })
+    }
+  }
+  return 0
+}
+
 export default async function ViolationEntryPageContent() {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
@@ -82,6 +106,9 @@ export default async function ViolationEntryPageContent() {
           allowedClasses.push({ id, name });
         }
       }
+
+      // Sort classes in a natural / numeric-aware order so that e.g. 10A9 comes before 10A10
+      allowedClasses.sort((x, y) => naturalCompare(x?.name, y?.name));
 
       try {
         const classFilterSet = currentClass?.id

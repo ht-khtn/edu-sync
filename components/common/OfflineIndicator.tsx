@@ -85,7 +85,7 @@ export function OfflineIndicator() {
 
   if (mode === 'reconnected') {
     return (
-      <div className="fixed top-0 left-0 right-0 z-50 animate-in slide-in-from-top">
+      <div className="sticky top-0 z-50 w-full animate-in slide-in-from-top">
         <Alert className="rounded-none border-x-0 border-t-0 bg-green-50 text-green-900 dark:bg-green-900/20 dark:text-green-100">
           <Wifi className="h-4 w-4" />
           <AlertDescription>
@@ -97,7 +97,7 @@ export function OfflineIndicator() {
   }
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 animate-in slide-in-from-top">
+    <div className="sticky top-0 z-50 w-full animate-in slide-in-from-top">
       <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
         <WifiOff className="h-4 w-4" />
         <AlertDescription className="flex items-center gap-2">

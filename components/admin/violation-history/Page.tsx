@@ -45,7 +45,7 @@ export default async function ViolationHistoryPageContent({
   const allowedViewClassIds = new Set<string>();
 
   // Parallel fetch: classes, students, criteria
-  const [{ data: classes }, students, criteriaList] = await Promise.all([
+  const [{ data: classes }, studentsResult, criteriaList] = await Promise.all([
     supabase.from("classes").select("id,name").order("name"),
     fetchStudentsFromDB(
       supabase,
@@ -54,6 +54,9 @@ export default async function ViolationHistoryPageContent({
     ),
     fetchCriteriaFromDB(supabase, { includeInactive: true }),
   ]);
+
+  // Extract students from paginated result
+  const students = studentsResult?.students || [];
 
   // Fetch violation history data using the hook
   const {

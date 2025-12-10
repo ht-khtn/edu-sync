@@ -10,6 +10,7 @@ export type SessionInfo = {
   user: SessionUser | null
   hasCC?: boolean
   hasSchoolScope?: boolean
+  hasOlympiaAccess?: boolean
   ccClassId?: string | null
   roles?: string[]
 }

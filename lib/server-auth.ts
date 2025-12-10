@@ -63,6 +63,7 @@ export type RoleSummary = {
   hasSchoolScope: boolean
   hasClassScope: boolean
   hasCC: boolean
+  hasOlympiaAccess: boolean
   canEnterViolations: boolean
   canViewViolationStats: boolean
   canManageSystem: boolean
@@ -92,6 +93,9 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
   const canEnterViolations = hasCC || hasMOD || hasSEC
   const canViewViolationStats = hasSchoolScope
   const canManageSystem = roleIds.includes('AD') || roleIds.includes('MOD')
+  
+  // Check for Olympia access via role IDs
+  const hasOlympiaAccess = roleIds.includes('OLYMPIA_ADMIN') || roleIds.includes('OLYMPIA_USER') || hasMOD
 
   return {
     roleIds,
@@ -100,6 +104,7 @@ export function summarizeRoles(roleRows: RoleRow[]): RoleSummary {
     hasSchoolScope,
     hasClassScope,
     hasCC,
+    hasOlympiaAccess,
     canEnterViolations,
     canViewViolationStats,
     canManageSystem,

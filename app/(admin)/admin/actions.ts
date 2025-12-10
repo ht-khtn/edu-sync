@@ -87,13 +87,8 @@ export async function createAccountAction(formData: FormData) {
     return redirect('/admin/accounts?error=insert')
   }
 
-  if (fullName) {
-    await supabase
-      .from('user_profiles')
-      .upsert({ user_id: insertedUser.id, full_name: fullName })
-  }
-
-  await supabase.from('audit_logs').insert({
+  // Parallelize profile upsert and audit log insert (independent operations)
+  const auditPromise = supabase.from('audit_logs').insert({
     table_name: 'users',
     record_id: insertedUser.id,
     action: 'INSERT',
@@ -101,6 +96,14 @@ export async function createAccountAction(formData: FormData) {
     diff: { email, user_name: username, class_id: classId },
     meta: { type: 'admin-create-user' },
   })
+
+  const profilePromise = fullName
+    ? supabase
+        .from('user_profiles')
+        .upsert({ user_id: insertedUser.id, full_name: fullName })
+    : Promise.resolve(null)
+
+  await Promise.all([auditPromise, profilePromise])
 
   revalidatePath('/admin/accounts')
   return redirect('/admin/accounts?ok=1')

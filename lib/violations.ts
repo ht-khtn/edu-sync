@@ -105,27 +105,33 @@ export const fetchCriteriaFromDB = cache(async (
 
 // Fetch students from users + user_profiles. Optionally filter by classId.
 // Optimized: single query join users -> user_profiles; optional filter by classId or a set of classIds
+// Now with pagination support
 export async function fetchStudentsFromDB(
   supabase: GenericSupabaseClient,
   classId?: string,
-  classIdsSet?: Set<string> | null
-): Promise<Student[]> {
+  classIdsSet?: Set<string> | null,
+  limit: number = 100,
+  offset: number = 0
+): Promise<{ students: Student[]; total: number }> {
   try {
-    let q = supabase.from('users').select('id,class_id,user_name,user_profiles(full_name,email)')
+    let q = supabase.from('users').select('id,class_id,user_name,user_profiles(full_name,email)', { count: 'exact' })
     if (classId) {
       q = q.eq('class_id', classId)
     } else if (classIdsSet && classIdsSet.size > 0) {
       q = q.in('class_id', Array.from(classIdsSet))
     }
 
-    const { data, error } = await q
+    const { data, error, count } = await q
+      .order('user_name')
+      .range(offset, offset + limit - 1)
+    
     if (error) {
       console.warn('fetchStudentsFromDB error:', error.message)
-      return []
+      return { students: [], total: 0 }
     }
 
     const users = (data || []) as StudentRow[]
-    return users.map((u) => {
+    const students = users.map((u) => {
       const prof = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
       const fullname = prof?.full_name ?? 'Chưa cập nhật'
       const code = prof?.email ?? String(u.id).slice(0, 8)
@@ -137,10 +143,12 @@ export async function fetchStudentsFromDB(
         class_id: u.class_id ?? ''
       } as Student
     })
+    
+    return { students, total: count ?? 0 }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn('fetchStudentsFromDB exception:', message)
-    return []
+    return { students: [], total: 0 }
   }
 }
 

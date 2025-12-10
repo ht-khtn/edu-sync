@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type RoleWithScope = {
@@ -6,7 +7,7 @@ export type RoleWithScope = {
   scope: 'school' | 'class' | string | null
 }
 
-export async function getUserRolesWithScope(supabase: SupabaseClient, userId: string): Promise<RoleWithScope[]> {
+export const getUserRolesWithScope = cache(async (supabase: SupabaseClient, userId: string): Promise<RoleWithScope[]> => {
   const { data, error } = await supabase
     .from('user_roles')
     .select('role_id,target,permissions(scope)')
@@ -17,9 +18,9 @@ export async function getUserRolesWithScope(supabase: SupabaseClient, userId: st
     target: r.target,
     scope: (r as { permissions?: { scope?: string | null } }).permissions?.scope ?? null,
   }))
-}
+})
 
-export async function getClassInfo(supabase: SupabaseClient, classId: string): Promise<{ name: string | null } | null> {
+export const getClassInfo = cache(async (supabase: SupabaseClient, classId: string): Promise<{ name: string | null } | null> => {
   const { data, error } = await supabase
     .from('classes')
     .select('name')
@@ -27,7 +28,7 @@ export async function getClassInfo(supabase: SupabaseClient, classId: string): P
     .maybeSingle()
   if (error) return null
   return { name: data?.name ?? null }
-}
+})
 
 export function canWriteForClass(roles: RoleWithScope[], className: string | null): boolean {
   if (!roles?.length || !className) return false
@@ -41,7 +42,7 @@ export function canWriteForClass(roles: RoleWithScope[], className: string | nul
   return false
 }
 
-export async function getAllowedClassIdsForView(supabase: SupabaseClient, userId: string): Promise<null | Set<string>> {
+export const getAllowedClassIdsForView = cache(async (supabase: SupabaseClient, userId: string): Promise<null | Set<string>> => {
   const roles = await getUserRolesWithScope(supabase, userId)
   if (!roles.length) return new Set<string>()
   // If user has any school-scope role, allow viewing all classes (null means all)
@@ -60,9 +61,9 @@ export async function getAllowedClassIdsForView(supabase: SupabaseClient, userId
     if (c?.id) allowed.add(c.id)
   }
   return allowed
-}
+})
 
-export async function getAllowedClassIdsForWrite(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
+export const getAllowedClassIdsForWrite = cache(async (supabase: SupabaseClient, userId: string): Promise<Set<string>> => {
   const roles = await getUserRolesWithScope(supabase, userId)
   const allowed = new Set<string>()
   if (!roles.length) return allowed
@@ -79,4 +80,4 @@ export async function getAllowedClassIdsForWrite(supabase: SupabaseClient, userI
   const { data: classes } = await supabase.from('classes').select('id,name').in('name', targets)
   for (const c of classes || []) allowed.add(c.id)
   return allowed
-}
+})

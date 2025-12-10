@@ -6,6 +6,7 @@ export type UserInfo = {
   id: string
   hasCC: boolean
   hasSchoolScope: boolean
+  hasOlympiaAccess: boolean
   ccClassId: string | null
   roles: string[]
 }
@@ -39,6 +40,7 @@ export function useUser(): UseUserResult {
     id: data.user.id,
     hasCC: data.hasCC ?? false,
     hasSchoolScope: data.hasSchoolScope ?? false,
+    hasOlympiaAccess: data.hasOlympiaAccess ?? false,
     ccClassId: data.ccClassId ?? null,
     roles: data.roles ?? [],
   }

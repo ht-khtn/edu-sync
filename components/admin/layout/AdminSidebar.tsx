@@ -96,31 +96,12 @@ const managementNavItems = [
 function AdminSidebarComponent() {
   const pathname = usePathname();
   const { user } = useUser();
-  const [hasOlympiaAccess, setHasOlympiaAccess] = React.useState(false);
-  
-  // Check for OLYMPIA access
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const { getSupabase } = await import("@/lib/supabase");
-        const supabase = await getSupabase();
-        const { data } = await supabase
-          .schema("olympia")
-          .from("participants")
-          .select("user_id")
-          .eq("user_id", user?.id)
-          .maybeSingle();
-        setHasOlympiaAccess(!!data);
-      } catch {
-        setHasOlympiaAccess(false);
-      }
-    })();
-  }, [user?.id]);
   
   // Derive permissions from user roles
   const hasCC = user?.hasCC || false;
   const hasMOD = user?.roles?.includes('MOD') || false;
   const hasSEC = user?.roles?.includes('SEC') || false;
+  const hasOlympiaAccess = user?.hasOlympiaAccess || false;
   const canEnterViolations = hasCC || hasMOD || hasSEC;
   const canViewViolationStats = user?.hasSchoolScope || hasMOD || user?.roles?.includes('AD') || false;
   const canManageSystem = user?.roles?.some(r => r === 'AD' || r === 'MOD') || false;

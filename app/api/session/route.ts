@@ -18,12 +18,18 @@ export async function GET() {
     const authUid = userRes?.user?.id
     if (!authUid) return NextResponse.json({ user: null })
 
-    // First, check if user exists in the system (independent of roles)
-    const { data: appUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_uid', authUid)
-      .maybeSingle()
+    // Parallelize user lookup and roles fetch (independent queries)
+    const [{ data: appUser }, { data: roles }] = await Promise.all([
+      supabase
+        .from('users')
+        .select('id')
+        .eq('auth_uid', authUid)
+        .maybeSingle(),
+      supabase
+        .from('user_roles')
+        .select('role_id, target, permissions(scope), users!inner(id)')
+        .eq('users.auth_uid', authUid)
+    ])
 
     if (!appUser?.id) {
       // User not found in system or not activated
@@ -31,12 +37,6 @@ export async function GET() {
     }
 
     const appUserId = appUser.id
-
-    // Then get roles (optional - user can exist without roles)
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('role_id, target, permissions(scope), users!inner(id, auth_uid)')
-      .eq('users.auth_uid', authUid)
 
     const roleList = Array.isArray(roles) ? (roles as RoleRecord[]) : []
 
@@ -48,6 +48,9 @@ export async function GET() {
     
     // Extract role IDs for client
     const roleIds = roleList.map((r) => r.role_id).filter(Boolean) as string[]
+
+    // Calculate Olympia access
+    const hasOlympiaAccess = roleIds.includes('OLYMPIA_ADMIN') || roleIds.includes('OLYMPIA_USER') || roleIds.includes('MOD')
 
     // For CC role, get class ID if target is set (requires separate query due to no FK)
     let ccClassId: string | null = null
@@ -64,7 +67,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { user: { id: appUserId }, hasCC, hasSchoolScope, ccClassId, roles: roleIds },
+      { user: { id: appUserId }, hasCC, hasSchoolScope, hasOlympiaAccess, ccClassId, roles: roleIds },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (err) {

@@ -26,6 +26,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Suspense } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default async function ViolationEntryPageContent() {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
@@ -58,17 +60,7 @@ export default async function ViolationEntryPageContent() {
         if (match?.id) managedClassIds.add(match.id);
       }
 
-      if (managedClassIds.size === 0 && classTargets.length > 0) {
-        try {
-          const { data: usersByName } = await supabaseServer
-            .from("users")
-            .select("id,class_id,user_name")
-            .in("user_name", classTargets);
-          for (const u of usersByName || []) {
-            if (u.class_id) managedClassIds.add(u.class_id);
-          }
-        } catch {}
-      }
+      // Removed fallback query - if class not found by name, it doesn't exist
 
       if (managedClassIds.size === 1) {
         const onlyId = Array.from(managedClassIds)[0];
@@ -99,11 +91,14 @@ export default async function ViolationEntryPageContent() {
           : allowedSet && allowedSet.size > 0
           ? allowedSet
           : null;
-        const fetched = await fetchStudentsFromDB(
+        const result = await fetchStudentsFromDB(
           supabaseServer,
           undefined,
-          classFilterSet === null ? null : classFilterSet || undefined
+          classFilterSet === null ? null : classFilterSet || undefined,
+          100,  // limit
+          0     // offset
         );
+        const fetched = result.students;
         if (Array.isArray(fetched) && fetched.length) {
           effectiveStudents = fetched.map((s) => ({
             ...s,
@@ -113,7 +108,8 @@ export default async function ViolationEntryPageContent() {
       } catch {}
 
       if (!effectiveStudents?.length) {
-        const fetchedAll = await fetchStudentsFromDB(supabaseServer);
+        const fetchedAllResult = await fetchStudentsFromDB(supabaseServer, undefined, null, 100, 0);
+        const fetchedAll = fetchedAllResult.students;
         const studentsWithClass = fetchedAll.map((s) => ({
           ...s,
           class_name: classMap.get(s.class_id) ?? "",
@@ -194,9 +190,21 @@ export default async function ViolationEntryPageContent() {
         </CardHeader>
 
         <CardContent className="pt-6">
-          <RecentRecordsList />
+          <Suspense fallback={<RecentRecordsSkeleton />}>
+            <RecentRecordsList />
+          </Suspense>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function RecentRecordsSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full rounded-md" />
+      ))}
     </div>
   );
 }

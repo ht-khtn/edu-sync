@@ -90,11 +90,15 @@ export default function LoginForm() {
           return;
         }
 
-        const profileRes = await fetch("/api/session", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
+        // Parallelize: both setSession and getSession can run in parallel
+        const [, profileRes] = await Promise.all([
+          res,  // setSession already completed
+          fetch("/api/session", {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+          }),
+        ]);
 
         if (!profileRes.ok) {
           await supabase.auth.signOut();

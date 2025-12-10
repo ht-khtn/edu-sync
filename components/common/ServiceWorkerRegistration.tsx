@@ -26,12 +26,23 @@ export function ServiceWorkerRegistration() {
     registerServiceWorker()
       .then((registration) => {
         if (registration) {
-          // Precache critical admin pages after registration
-          const adminPages = [
+          // Precache ALL admin and client pages for full offline support
+          const allPages = [
             '/admin',
             '/admin/leaderboard', 
             '/admin/violation-history',
             '/admin/violation-entry',
+            '/admin/violation-stats',
+            '/admin/accounts',
+            '/admin/criteria',
+            '/admin/roles',
+            '/admin/classes',
+            '/admin/olympia-accounts',
+            '/olympia/admin',
+            '/olympia/admin/matches',
+            '/olympia/admin/rooms',
+            '/olympia/admin/question-bank',
+            '/olympia/admin/accounts',
             '/client',
           ];
           
@@ -40,7 +51,7 @@ export function ServiceWorkerRegistration() {
             type: 'CACHE_URLS',
             payload: {
               cacheName: 'pages-v1',
-              urls: adminPages,
+              urls: allPages,
             },
           });
         }

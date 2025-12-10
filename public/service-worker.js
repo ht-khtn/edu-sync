@@ -25,6 +25,18 @@ const STATIC_ASSETS = [
   '/admin',
   '/admin/leaderboard',
   '/admin/violation-history',
+  '/admin/violation-entry',
+  '/admin/violation-stats',
+  '/admin/accounts',
+  '/admin/criteria',
+  '/admin/roles',
+  '/admin/classes',
+  '/admin/olympia-accounts',
+  '/olympia/admin',
+  '/olympia/admin/matches',
+  '/olympia/admin/rooms',
+  '/olympia/admin/question-bank',
+  '/olympia/admin/accounts',
   '/client',
   '/manifest.json',
 ];
@@ -77,14 +89,14 @@ function getCacheStrategy(url) {
     return 'stale-while-revalidate';
   }
   
-  // Never cache auth
+  // Never cache auth (login/logout must always hit server)
   if (pathname.includes('/auth/')) {
     return 'network-only';
   }
   
-  // API: network first
+  // All other API: cache with network first (fallback to cache when offline)
   if (pathname.startsWith('/api/')) {
-    return 'network-first';
+    return 'cache-first-fallback';
   }
   
   // Static assets: cache first
@@ -102,8 +114,8 @@ function getCacheStrategy(url) {
     return 'cache-first';
   }
   
-  // Pages: stale while revalidate
-  return 'stale-while-revalidate';
+  // All pages: cache first with network fallback for full offline support
+  return 'cache-first-fallback';
 }
 
 /**
@@ -112,6 +124,7 @@ function getCacheStrategy(url) {
 function getCacheName(strategy) {
   switch (strategy) {
     case 'cache-first':
+    case 'cache-first-fallback':
       return CACHE_NAMES.static;
     case 'stale-while-revalidate':
       return CACHE_NAMES.pages;
@@ -119,6 +132,58 @@ function getCacheName(strategy) {
       return CACHE_NAMES.api;
     default:
       return CACHE_NAMES.pages;
+  }
+}
+
+/**
+ * Cache first with network fallback strategy
+ * Try cache first, if miss then fetch from network and cache
+ * Perfect for offline-first apps
+ */
+async function cacheFirstFallback(request) {
+  const cacheName = getCacheName('cache-first-fallback');
+  
+  // Try cache first
+  const cached = await caches.match(request);
+  if (cached) {
+    // Update cache in background without blocking
+    fetch(request).then((response) => {
+      if (response.ok) {
+        caches.open(cacheName).then((cache) => {
+          cache.put(request, response.clone());
+        });
+      }
+    }).catch(() => {
+      // Network failed, but we have cache so it's OK
+    });
+    
+    return cached;
+  }
+  
+  // Cache miss - fetch from network
+  try {
+    const response = await fetch(request);
+    
+    // Cache successful responses
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    
+    return response;
+  } catch {
+    // Network failed and no cache
+    if (request.headers.get('accept')?.includes('text/html')) {
+      const offlineResponse = await caches.match('/offline');
+      if (offlineResponse) {
+        return offlineResponse;
+      }
+    }
+    
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
   }
 }
 
@@ -254,6 +319,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request));
   } else if (strategy === 'cache-first') {
     event.respondWith(cacheFirst(request));
+  } else if (strategy === 'cache-first-fallback') {
+    event.respondWith(cacheFirstFallback(request));
   } else if (strategy === 'stale-while-revalidate') {
     event.respondWith(staleWhileRevalidate(request));
   } else if (strategy === 'network-only') {

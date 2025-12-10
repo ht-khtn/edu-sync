@@ -113,8 +113,9 @@ export default function LoginForm() {
           return;
         }
 
-        router.refresh();
-        router.push("/");
+        // Use window.location for hard redirect to ensure cookies are read by server-side middleware
+        // This ensures proxy.ts can detect the authenticated user immediately
+        window.location.href = "/";
         toast.success("Đăng nhập thành công");
       }
     } catch (err) {

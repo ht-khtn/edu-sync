@@ -61,7 +61,8 @@ export async function proxy(request: NextRequest) {
   const needsAuth = isProtectedAdminRoute(pathname) || 
                     isProtectedClientRoute(pathname) || 
                     isProtectedOlympiaRoute(pathname) ||
-                    isLoginRoute(pathname)
+                    isLoginRoute(pathname) ||
+                    pathname === '/'  // Also check root path for redirect
   
   if (!needsAuth) {
     // Public route - skip auth check entirely for better performance
@@ -120,6 +121,18 @@ export async function proxy(request: NextRequest) {
         url.pathname = getDashboardForUser(session)
       }
       return NextResponse.redirect(url)
+    }
+  }
+
+  // Rule 5: Handle root path redirect
+  if (pathname === '/') {
+    if (session.isAuthenticated) {
+      const url = request.nextUrl.clone()
+      url.pathname = getDashboardForUser(session)
+      return NextResponse.redirect(url)
+    } else {
+      // Not authenticated - let page handle the redirect to /client
+      return NextResponse.next()
     }
   }
 

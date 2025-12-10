@@ -88,23 +88,33 @@ export async function createAccountAction(formData: FormData) {
   const authUid = authData.user.id
 
   // Step 2: Trigger will create public.users row automatically
-  // Wait a moment for trigger to complete
-  await new Promise(resolve => setTimeout(resolve, 500))
+  // Wait for trigger to complete (with retry logic for safety)
+  let userId: string | null = null
+  let attempts = 0
+  const maxAttempts = 10
+  const delayMs = 300
 
-  // Step 3: Update the created public.users row with username and class
-  const { data: users, error: lookupError } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_uid', authUid)
-    .single()
-
-  if (lookupError || !users?.id) {
-    return redirect('/admin/accounts?error=lookup')
+  while (!userId && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, delayMs))
+    
+    const { data: users } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_uid', authUid)
+      .single()
+    
+    if (users?.id) {
+      userId = users.id
+      break
+    }
+    attempts++
   }
 
-  const userId = users.id
+  if (!userId) {
+    return redirect('/admin/accounts?error=trigger-timeout')
+  }
 
-  // Step 4: Update user with username and class (parallelize operations)
+  // Step 3: Update the created public.users row with username and class
   const updatePromise = supabase
     .from('users')
     .update({

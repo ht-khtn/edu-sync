@@ -18,18 +18,29 @@ export async function GET() {
     const authUid = userRes?.user?.id
     if (!authUid) return NextResponse.json({ user: null })
 
-    // Parallelize user lookup and roles fetch (independent queries)
-    const [{ data: appUser }, { data: roles }] = await Promise.all([
-      supabase
+    // Fetch user with retry logic (in case trigger hasn't completed yet)
+    let appUser = null
+    let attempts = 0
+    const maxAttempts = 3
+
+    while (!appUser && attempts < maxAttempts) {
+      const { data } = await supabase
         .from('users')
         .select('id')
         .eq('auth_uid', authUid)
-        .maybeSingle(),
-      supabase
-        .from('user_roles')
-        .select('role_id, target, permissions(scope), users!inner(id)')
-        .eq('users.auth_uid', authUid)
-    ])
+        .maybeSingle()
+      
+      if (data?.id) {
+        appUser = data
+        break
+      }
+      
+      if (attempts < maxAttempts - 1) {
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      attempts++
+    }
 
     if (!appUser?.id) {
       // User not found in system or not activated
@@ -37,6 +48,12 @@ export async function GET() {
     }
 
     const appUserId = appUser.id
+
+    // Fetch roles (parallel to user lookup)
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role_id, target, permissions(scope), users!inner(id)')
+      .eq('users.auth_uid', authUid)
 
     const roleList = Array.isArray(roles) ? (roles as RoleRecord[]) : []
 

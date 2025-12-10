@@ -23,6 +23,8 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
   const fallbackClassId = selectedClassId || allowedClasses?.[0]?.id || ''
   const classIdForSubmit = currentClass?.id ?? fallbackClassId
 
+  console.log('[SelectFields] allowedClasses:', allowedClasses?.length || 0, 'currentClass:', currentClass?.name, 'canRecordForClass:', canRecordForClass)
+
   return (
     <>
       <section>

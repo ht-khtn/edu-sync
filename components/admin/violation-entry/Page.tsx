@@ -97,11 +97,12 @@ export default async function ViolationEntryPageContent() {
         appUserId
       );
 
+      // allowedSet === null means user can access all classes
       if (allowedSet === null) {
         for (const c of classes || [])
           allowedClasses.push({ id: c.id, name: c.name });
-      } else {
-        for (const id of Array.from(allowedSet || [])) {
+      } else if (allowedSet.size > 0) {
+        for (const id of Array.from(allowedSet)) {
           const name = classMap.get(id) ?? id;
           allowedClasses.push({ id, name });
         }
@@ -109,6 +110,8 @@ export default async function ViolationEntryPageContent() {
 
       // Sort classes in a natural / numeric-aware order so that e.g. 10A9 comes before 10A10
       allowedClasses.sort((x, y) => naturalCompare(x?.name, y?.name));
+
+      console.log('[violation-entry] allowedClasses count:', allowedClasses.length, 'allowedSet:', allowedSet === null ? 'NULL (all)' : `Set(${allowedSet.size})`)
 
       try {
         const classFilterSet = currentClass?.id

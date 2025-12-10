@@ -10,11 +10,12 @@ export const revalidate = 60
 export default async function ViolationEntryPage({ 
   searchParams 
 }: { 
-  searchParams?: { ok?: string, error?: string } 
+  searchParams: Promise<{ ok?: string, error?: string }> 
 }) {
-  const [{ appUserId }, roles] = await Promise.all([
+  const [{ appUserId }, roles, params] = await Promise.all([
     getServerAuthContext(),
-    getServerRoles()
+    getServerRoles(),
+    searchParams
   ])
   
   if (!appUserId) return redirect('/login')
@@ -27,7 +28,7 @@ export default async function ViolationEntryPage({
   return (
     <>
       <ViolationEntryPageContent />
-      <QueryToasts ok={searchParams?.ok} error={searchParams?.error} />
+      <QueryToasts ok={params?.ok} error={params?.error} />
       <RecordsRealtimeListener />
     </>
   )

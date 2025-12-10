@@ -65,7 +65,7 @@ export function useSession(): UseSessionResult {
       setData(json)
       hasDataRef.current = true
       try {
-        sessionStorage.setItem('session-cache', JSON.stringify(json))
+        localStorage.setItem('edu-sync-session', JSON.stringify(json))
       } catch {}
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error('Unknown error')
@@ -79,9 +79,9 @@ export function useSession(): UseSessionResult {
   }, [])
 
   useEffect(() => {
-    // Hydrate from sessionStorage to avoid sidebar flash
+    // Hydrate from localStorage to avoid sidebar flash
     try {
-      const cached = sessionStorage.getItem('session-cache')
+      const cached = localStorage.getItem('edu-sync-session')
       if (cached) {
         const parsed = JSON.parse(cached) as SessionInfo
         setData(parsed)

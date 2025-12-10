@@ -21,7 +21,11 @@ const CACHE_NAMES = {
 const STATIC_ASSETS = [
   '/',
   '/offline',
-  '/_next/static/chunks/main.js',
+  '/login',
+  '/admin',
+  '/admin/leaderboard',
+  '/admin/violation-history',
+  '/client',
   '/manifest.json',
 ];
 
@@ -68,8 +72,13 @@ self.addEventListener('activate', (event) => {
 function getCacheStrategy(url) {
   const pathname = new URL(url).pathname;
   
+  // Cache session API for faster load (but revalidate on every request)
+  if (pathname.includes('/session')) {
+    return 'stale-while-revalidate';
+  }
+  
   // Never cache auth
-  if (pathname.includes('/auth/') || pathname.includes('/session')) {
+  if (pathname.includes('/auth/')) {
     return 'network-only';
   }
   

@@ -23,9 +23,31 @@ export function ServiceWorkerRegistration() {
     let updateAvailable = false;
 
     // Register service worker
-    registerServiceWorker().catch((error) => {
-      console.error('Failed to register service worker:', error);
-    });
+    registerServiceWorker()
+      .then((registration) => {
+        if (registration) {
+          // Precache critical admin pages after registration
+          const adminPages = [
+            '/admin',
+            '/admin/leaderboard', 
+            '/admin/violation-history',
+            '/admin/violation-entry',
+            '/client',
+          ];
+          
+          // Send message to service worker to cache these pages
+          registration.active?.postMessage({
+            type: 'CACHE_URLS',
+            payload: {
+              cacheName: 'pages-v1',
+              urls: adminPages,
+            },
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to register service worker:', error);
+      });
 
     // Request persistent storage for better cache behavior
     requestPersistentStorage().catch((error) => {

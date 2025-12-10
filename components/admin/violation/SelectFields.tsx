@@ -25,6 +25,32 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
 
   return (
     <>
+      <section>
+        <Label className="mb-2">Chọn lớp</Label>
+        {!currentClass && allowedClasses && allowedClasses.length > 0 ? (
+          <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+            <SelectTrigger data-class-trigger>
+              <SelectValue placeholder="-- Chọn lớp --" />
+            </SelectTrigger>
+            <SelectContent className="bg-white dark:bg-white">
+              {allowedClasses.map((cls) => (
+                <SelectItem key={cls.id} value={cls.id}>
+                  {cls.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : currentClass ? (
+          <div className="px-3 py-2 border rounded-md bg-muted">
+            <span className="font-medium">{currentClass.name}</span>
+            <span className="text-sm text-muted-foreground ml-2">(Lớp mặc định)</span>
+          </div>
+        ) : (
+          <div className="px-3 py-2 border rounded-md bg-muted text-sm text-muted-foreground">
+            Không có lớp nào để chọn
+          </div>
+        )}
+      </section>
 
       <section>
         <Label className="mb-2">Đối tượng ghi nhận</Label>
@@ -66,24 +92,6 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
             ))}
           </SelectContent>
         </Select>
-
-        {isClassMode && !currentClass && allowedClasses?.length ? (
-          <div className="mt-4">
-            <Label className="mb-2">Chọn lớp được cấp quyền</Label>
-            <Select value={fallbackClassId} onValueChange={setSelectedClassId}>
-              <SelectTrigger data-class-trigger>
-                <SelectValue placeholder="-- Chọn lớp --" />
-              </SelectTrigger>
-              <SelectContent className="bg-white dark:bg-white">
-                {allowedClasses.map((cls) => (
-                  <SelectItem key={cls.id} value={cls.id}>
-                    {cls.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
       </section>
 
       <section>

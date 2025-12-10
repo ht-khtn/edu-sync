@@ -37,6 +37,7 @@ export function useSession(): UseSessionResult {
 
   const fetchingRef = useRef(false)
   const lastFetchAtRef = useRef(0)
+  const hasDataRef = useRef(false)
 
   const fetchSession = useCallback(async (force = false) => {
     const now = Date.now()
@@ -47,7 +48,11 @@ export function useSession(): UseSessionResult {
 
     fetchingRef.current = true
     lastFetchAtRef.current = now
-    setIsLoading((prev) => (data ? prev : true))
+    
+    // Only show loading if we don't have data yet
+    if (!hasDataRef.current) {
+      setIsLoading(true)
+    }
     setIsError(false)
     setError(null)
 
@@ -58,6 +63,7 @@ export function useSession(): UseSessionResult {
       }
       const json = await res.json()
       setData(json)
+      hasDataRef.current = true
       try {
         sessionStorage.setItem('session-cache', JSON.stringify(json))
       } catch {}
@@ -70,7 +76,7 @@ export function useSession(): UseSessionResult {
       setIsLoading(false)
       fetchingRef.current = false
     }
-  }, [data])
+  }, [])
 
   useEffect(() => {
     // Hydrate from sessionStorage to avoid sidebar flash
@@ -79,6 +85,7 @@ export function useSession(): UseSessionResult {
       if (cached) {
         const parsed = JSON.parse(cached) as SessionInfo
         setData(parsed)
+        hasDataRef.current = true
         setIsLoading(false)
       }
     } catch {}

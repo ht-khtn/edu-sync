@@ -1,7 +1,7 @@
 "use client"
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from './AuthProvider'
 import getSupabase from '@/lib/supabase'
@@ -9,6 +9,19 @@ import getSupabase from '@/lib/supabase'
 export default function AuthNav() {
   const auth = useAuth()
   const [loading, setLoading] = useState(false)
+  const [hasSession, setHasSession] = useState(false)
+
+  // Quick client-side check for session (faster than waiting for AuthProvider)
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const supabase = await getSupabase()
+        const { data } = await supabase.auth.getSession()
+        setHasSession(!!data.session?.user.id)
+      } catch {}
+    }
+    checkSession()
+  }, [])
 
   async function signOut() {
     setLoading(true)
@@ -23,7 +36,8 @@ export default function AuthNav() {
     }
   }
 
-  if (!auth.userId) {
+  // Show logout if either auth context has userId OR session check found user
+  if (!auth.userId && !hasSession) {
     return <Link href="/login" className="inline-block">Đăng nhập</Link>
   }
 

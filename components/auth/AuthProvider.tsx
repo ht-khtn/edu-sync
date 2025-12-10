@@ -51,55 +51,88 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       try {
         const supabase = await getSupabase()
         const { data: session } = await supabase.auth.getSession()
-        const uid = session.session?.user.id ?? null
-        if (!uid) {
+        const authUid = session.session?.user.id ?? null
+        
+        if (!authUid) {
           if (mounted) setState((s) => ({ ...s, loading: false }))
         } else {
+          // Step 1: Get public.users.id from auth_uid
+          const { data: appUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('auth_uid', authUid)
+            .maybeSingle()
+          
+          if (!appUser?.id) {
+            // User not found in system
+            if (mounted) setState((s) => ({ ...s, loading: false }))
+            return
+          }
+          
+          const userId = appUser.id
+          
+          // Step 2: Fetch roles and classes (now with correct user_id)
           const [{ data: roles, error: rErr }, { data: classes, error: cErr }] = await Promise.all([
-            supabase.from('user_roles').select('role_id,target').eq('user_id', uid),
-            supabase.from('classes').select('id').eq('homeroom_teacher_id', uid),
+            supabase.from('user_roles').select('role_id,target').eq('user_id', userId),
+            supabase.from('classes').select('id').eq('homeroom_teacher_id', userId),
           ])
+          
           if (rErr) console.warn('user_roles error', rErr.message)
           if (cErr) console.warn('classes homeroom error', cErr.message)
+          
           const classTargets = (roles || [])
             .filter((r) => r.role_id === 'CC' && r.target)
             .map((r) => String(r.target))
           const homeroomOf = (classes || []).map((c) => String(c.id))
           const canComplaint = homeroomOf.length > 0
+          
           if (mounted)
             setState({
               loading: false,
-              userId: uid,
+              userId: userId,
               roles: (roles as Role[]) || [],
               classTargets,
               homeroomOf,
               canComplaint,
             })
         }
+        
         // subscribe to auth changes to keep client state and server components in sync
         try {
           const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
             if (!mounted) return
             try { router.refresh() } catch {}
 
-            const newUid = sess?.user?.id ?? null
-            if (!newUid) {
+            const newAuthUid = sess?.user?.id ?? null
+            if (!newAuthUid) {
               setState((s) => ({ ...s, userId: null, loading: false, roles: [], classTargets: [], homeroomOf: [], canComplaint: false }))
             }
-            if (newUid && newUid !== userIdRef.current) {
+            if (newAuthUid && newAuthUid !== userIdRef.current) {
               // refetch roles for new session
               ;(async () => {
                 try {
+                  // Step 1: Get public.users.id from auth_uid
+                  const { data: appUser } = await supabase
+                    .from('users')
+                    .select('id')
+                    .eq('auth_uid', newAuthUid)
+                    .maybeSingle()
+                  
+                  if (!appUser?.id) return
+                  
+                  const newUserId = appUser.id
+                  
+                  // Step 2: Fetch roles and classes
                   const [{ data: roles }, { data: classes }] = await Promise.all([
-                    supabase.from('user_roles').select('role_id,target').eq('user_id', newUid),
-                    supabase.from('classes').select('id').eq('homeroom_teacher_id', newUid),
+                    supabase.from('user_roles').select('role_id,target').eq('user_id', newUserId),
+                    supabase.from('classes').select('id').eq('homeroom_teacher_id', newUserId),
                   ])
                   const classTargets = (roles || [])
                     .filter((r) => r.role_id === 'CC' && r.target)
                     .map((r) => String(r.target))
                   const homeroomOf = (classes || []).map((c) => String(c.id))
                   const canComplaint = homeroomOf.length > 0
-                  if (mounted) setState({ loading: false, userId: newUid, roles: (roles as Role[]) || [], classTargets, homeroomOf, canComplaint })
+                  if (mounted) setState({ loading: false, userId: newUserId, roles: (roles as Role[]) || [], classTargets, homeroomOf, canComplaint })
                 } catch {}
               })()
             }

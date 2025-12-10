@@ -49,11 +49,17 @@ export async function GET() {
 
     const appUserId = appUser.id
 
-    // Fetch roles (parallel to user lookup)
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('role_id, target, permissions(scope), users!inner(id)')
-      .eq('users.auth_uid', authUid)
+    // Parallelize: fetch roles using user_id (more efficient than JOIN via auth_uid)
+    const [{ data: roles }, { data: classes }] = await Promise.all([
+      supabase
+        .from('user_roles')
+        .select('role_id, target, permissions(scope)')
+        .eq('user_id', appUserId),
+      supabase
+        .from('classes')
+        .select('id, name')
+        .eq('homeroom_teacher_id', appUserId)
+    ])
 
     const roleList = Array.isArray(roles) ? (roles as RoleRecord[]) : []
 
@@ -69,17 +75,18 @@ export async function GET() {
     // Calculate Olympia access
     const hasOlympiaAccess = roleIds.includes('OLYMPIA_ADMIN') || roleIds.includes('OLYMPIA_USER') || roleIds.includes('MOD')
 
-    // For CC role, get class ID if target is set (requires separate query due to no FK)
+    // For CC role, get class ID from already-fetched classes or target name lookup
     let ccClassId: string | null = null
     if (hasCC && !hasSchoolScope) {
       const ccRole = roleList.find((r) => r.role_id === 'CC' && r.target)
       if (ccRole?.target) {
-        const { data: cls } = await supabase
-          .from('classes')
-          .select('id')
-          .eq('name', ccRole.target)
-          .maybeSingle()
-        ccClassId = cls?.id ?? null
+        // First check if we already fetched this class in the parallel query
+        const classesArray = Array.isArray(classes) ? classes : []
+        const foundClass = classesArray.find((c: any) => c.name === ccRole.target)
+        if (foundClass) {
+          ccClassId = foundClass.id
+        }
+        // If not found in fetched results, the target may be invalid or user is not homeroom teacher
       }
     }
 

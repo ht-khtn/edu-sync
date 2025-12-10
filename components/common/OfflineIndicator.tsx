@@ -9,7 +9,17 @@ type DisplayMode = 'offline' | 'reconnected' | 'hidden'
 
 /**
  * Global offline indicator banner
- * Shows when user loses internet connection
+"use client"
+
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Wifi, WifiOff } from 'lucide-react'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+
+type DisplayMode = 'offline' | 'reconnected' | 'hidden'
+
+/**
+ * Global offline indicator banner (docked, non-overlapping)
  */
 export function OfflineIndicator() {
   const isOnline = useOnlineStatus()
@@ -22,8 +32,6 @@ export function OfflineIndicator() {
   useEffect(() => {
     const prevOnline = prevIsOnlineRef.current
     prevIsOnlineRef.current = isOnline
-
-    // Only update state when online status actually changes
     if (prevOnline === isOnline) return
 
     const scheduleMode = (next: DisplayMode) => {
@@ -31,9 +39,7 @@ export function OfflineIndicator() {
         setMode(next)
         return
       }
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = window.requestAnimationFrame(() => {
         setMode(next)
         rafRef.current = null
@@ -41,7 +47,6 @@ export function OfflineIndicator() {
     }
 
     if (!isOnline) {
-      // Going offline
       wasOfflineRef.current = true
       if (timerRef.current) {
         clearTimeout(timerRef.current)
@@ -49,7 +54,6 @@ export function OfflineIndicator() {
       }
       scheduleMode('offline')
     } else if (wasOfflineRef.current) {
-      // Just reconnected
       scheduleMode('reconnected')
       timerRef.current = setTimeout(() => {
         scheduleMode('hidden')
@@ -67,37 +71,36 @@ export function OfflineIndicator() {
   }, [isOnline])
 
   useEffect(() => {
+    const padding = mode === 'hidden' ? '' : '48px'
+    if (typeof document !== 'undefined') {
+      document.body.style.paddingTop = padding
+      document.documentElement.style.setProperty('--offline-bar-padding', padding)
+    }
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
+      if (typeof document !== 'undefined') {
+        document.body.style.paddingTop = ''
+        document.documentElement.style.setProperty('--offline-bar-padding', '')
       }
     }
-  }, [])
+  }, [mode])
 
-  if (mode === 'hidden') {
-    return null
-  }
+  if (mode === 'hidden') return null
+
+  const containerClass = 'fixed top-0 left-0 right-0 z-50 w-full'
 
   if (mode === 'reconnected') {
     return (
-      <div className="sticky top-0 z-50 w-full animate-in slide-in-from-top">
+      <div className={`${containerClass} animate-in slide-in-from-top`}>
         <Alert className="rounded-none border-x-0 border-t-0 bg-green-50 text-green-900 dark:bg-green-900/20 dark:text-green-100">
           <Wifi className="h-4 w-4" />
-          <AlertDescription>
-            Đã kết nối lại Internet
-          </AlertDescription>
+          <AlertDescription>Đã kết nối lại Internet</AlertDescription>
         </Alert>
       </div>
     )
   }
 
   return (
-    <div className="sticky top-0 z-50 w-full animate-in slide-in-from-top">
+    <div className={`${containerClass} animate-in slide-in-from-top`}>
       <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
         <WifiOff className="h-4 w-4" />
         <AlertDescription className="flex items-center gap-2">

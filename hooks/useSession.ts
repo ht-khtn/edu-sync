@@ -47,7 +47,7 @@ export function useSession(): UseSessionResult {
 
     fetchingRef.current = true
     lastFetchAtRef.current = now
-    setIsLoading(true)
+    setIsLoading((prev) => (data ? prev : true))
     setIsError(false)
     setError(null)
 
@@ -58,6 +58,9 @@ export function useSession(): UseSessionResult {
       }
       const json = await res.json()
       setData(json)
+      try {
+        sessionStorage.setItem('session-cache', JSON.stringify(json))
+      } catch {}
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error('Unknown error')
       setIsError(true)
@@ -67,9 +70,19 @@ export function useSession(): UseSessionResult {
       setIsLoading(false)
       fetchingRef.current = false
     }
-  }, [])
+  }, [data])
 
   useEffect(() => {
+    // Hydrate from sessionStorage to avoid sidebar flash
+    try {
+      const cached = sessionStorage.getItem('session-cache')
+      if (cached) {
+        const parsed = JSON.parse(cached) as SessionInfo
+        setData(parsed)
+        setIsLoading(false)
+      }
+    } catch {}
+
     fetchSession(true)
   }, [fetchSession])
 

@@ -1,5 +1,4 @@
 import type { Criteria, Student } from '@/lib/violations'
-import { filterStudentsByClass } from '@/lib/violations'
 import ViolationFormClient from './ViolationFormClient'
 
 type Props = {
@@ -10,13 +9,12 @@ type Props = {
 }
 
 export function ViolationForm({ students, criteria, allowedClasses, currentClass }: Props) {
-  // For now, we don't have server-side auth context; limit-by-class not applied here
-  const effectiveStudents = filterStudentsByClass(students, [])
-
+  // Students are already pre-filtered and populated by ViolationEntryPageContent
+  // No additional filtering needed here
   return (
     <section className="flex flex-col gap-6">
       <ViolationFormClient
-        students={effectiveStudents}
+        students={students}
         criteria={criteria}
         allowedClasses={allowedClasses}
         currentClass={currentClass}

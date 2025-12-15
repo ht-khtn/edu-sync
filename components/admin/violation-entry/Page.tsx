@@ -135,29 +135,35 @@ export default async function ViolationEntryPageContent() {
             class_name: classMap.get(s.class_id) ?? "",
           }));
         }
-      } catch {}
+      } catch (error) {
+        console.error('[violation-entry] Failed to fetch students for class filter:', error)
+      }
 
       if (!effectiveStudents?.length) {
-        const fetchedAllResult = await fetchStudentsFromDB(supabaseServer, undefined, null, 100, 0);
-        const fetchedAll = fetchedAllResult.students;
-        const studentsWithClass = fetchedAll.map((s) => ({
-          ...s,
-          class_name: classMap.get(s.class_id) ?? "",
-        }));
-        if (currentClass) {
-          effectiveStudents = studentsWithClass.filter(
-            (s) => s.class_id === currentClass?.id
-          );
-          allowedClasses = [
-            { id: currentClass.id, name: currentClass.name },
-          ];
-        } else if (allowedSet === null) {
-          effectiveStudents = studentsWithClass;
-        } else {
-          const allowedIds = new Set(Array.from(allowedSet || []));
-          effectiveStudents = studentsWithClass.filter((s) =>
-            allowedIds.has(s.class_id)
-          );
+        try {
+          const fetchedAllResult = await fetchStudentsFromDB(supabaseServer, undefined, null, 100, 0);
+          const fetchedAll = fetchedAllResult.students;
+          const studentsWithClass = fetchedAll.map((s) => ({
+            ...s,
+            class_name: classMap.get(s.class_id) ?? "",
+          }));
+          if (currentClass) {
+            effectiveStudents = studentsWithClass.filter(
+              (s) => s.class_id === currentClass?.id
+            );
+            allowedClasses = [
+              { id: currentClass.id, name: currentClass.name },
+            ];
+          } else if (allowedSet === null) {
+            effectiveStudents = studentsWithClass;
+          } else {
+            const allowedIds = new Set(Array.from(allowedSet || []));
+            effectiveStudents = studentsWithClass.filter((s) =>
+              allowedIds.has(s.class_id)
+            );
+          }
+        } catch (fallbackError) {
+          console.error('[violation-entry] Failed to fetch students in fallback:', fallbackError)
         }
       }
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   registerServiceWorker,
   listenOfflineStatus,
@@ -9,6 +9,7 @@ import {
   requestPersistentStorage,
   CACHE_NAMES,
 } from '@/lib/pwa-utils';
+import PrecacheOverlay from './PrecacheOverlay';
 
 /**
  * Service Worker Registration Component
@@ -137,6 +138,31 @@ export function ServiceWorkerRegistration() {
     };
   }, []);
 
+  // Precache progress state and message listener
+  const [precacheVisible, setPrecacheVisible] = useState(false);
+  const [precacheDone, setPrecacheDone] = useState(0);
+  const [precacheTotal, setPrecacheTotal] = useState(0);
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const msg = event.data || {};
+      if (msg.type === 'PRECACHE_PROGRESS') {
+        const { done, total } = msg.payload || {};
+        setPrecacheTotal(total ?? 0);
+        setPrecacheDone(done ?? 0);
+        setPrecacheVisible(true);
+      }
+
+      if (msg.type === 'PRECACHE_COMPLETE') {
+        setPrecacheDone((msg.payload && msg.payload.total) || 0);
+        setPrecacheVisible(false);
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
+  }, []);
+
   // Listen for beforeinstallprompt to show install button
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -171,6 +197,12 @@ export function ServiceWorkerRegistration() {
 
   return (
     <>
+      <PrecacheOverlay
+        visible={precacheVisible}
+        done={precacheDone}
+        total={precacheTotal}
+        onSkip={() => setPrecacheVisible(false)}
+      />
       {/* Install Prompt - shown when beforeinstallprompt fires */}
       <div
         id="install-prompt"

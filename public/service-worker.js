@@ -398,28 +398,45 @@ self.addEventListener('message', (event) => {
       break;
       
     case 'CACHE_URLS':
-      // Cache URLs individually to avoid one failure blocking others
+      // Cache URLs individually and report progress to clients
       event.waitUntil(
         (async () => {
           try {
             const cache = await caches.open(payload.cacheName);
-            
-            // Cache each URL individually
-            for (const url of payload.urls) {
+            const total = Array.isArray(payload.urls) ? payload.urls.length : 0;
+            let done = 0;
+
+            for (const url of payload.urls || []) {
               try {
                 const response = await fetch(url);
-                
-                // Only cache successful responses
-                if (response.ok || response.status === 0) {
+                if (response && (response.ok || response.status === 0)) {
                   await cache.put(url, response.clone());
                 }
               } catch (err) {
                 console.warn(`[SW] Failed to cache ${url}:`, err);
-                // Continue with next URL even if this fails
+              } finally {
+                done++;
+                // Broadcast progress to all clients
+                const clients = await self.clients.matchAll({ type: 'window' });
+                clients.forEach((client) => {
+                  client.postMessage({
+                    type: 'PRECACHE_PROGRESS',
+                    payload: { cacheName: payload.cacheName, done, total },
+                  });
+                });
               }
             }
-            
-            console.log(`[SW] Cached ${payload.urls.length} URLs in ${payload.cacheName}`);
+
+            // All done
+            const allClients = await self.clients.matchAll({ type: 'window' });
+            allClients.forEach((client) => {
+              client.postMessage({
+                type: 'PRECACHE_COMPLETE',
+                payload: { cacheName: payload.cacheName, total },
+              });
+            });
+
+            console.log(`[SW] Cached ${done}/${total} URLs in ${payload.cacheName}`);
             event.ports[0]?.postMessage({ type: 'URLS_CACHED' });
           } catch (err) {
             console.error(`[SW] Failed to open cache ${payload.cacheName}:`, err);

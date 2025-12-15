@@ -204,7 +204,7 @@ export default function LoginForm() {
                       id="identifier"
                       type="text"
                       autoComplete="username"
-                      placeholder="email@vidu.com hoặc tên đăng nhập"
+                      placeholder="email (edusync.edu.vn) hoặc tên đăng nhập"
                       disabled={loading}
                       {...field}
                     />

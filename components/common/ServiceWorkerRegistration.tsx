@@ -15,6 +15,7 @@ import {
  * 
  * Handles:
  * - Service worker registration
+ * - Aggressive full-app precaching (pages + images)
  * - Update detection and prompt
  * - Persistent storage request
  * - Offline status monitoring
@@ -27,34 +28,71 @@ export function ServiceWorkerRegistration() {
     registerServiceWorker()
       .then((registration) => {
         if (registration) {
-          // Precache ALL admin and client pages for full offline support
-          const allPages = [
+          // Aggressive full precache immediately after SW ready
+          // Send all pages + common image patterns to cache
+          const allPagesToCache = [
             '/admin',
-            '/admin/leaderboard', 
-            '/admin/violation-history',
             '/admin/violation-entry',
+            '/admin/violation-history',
             '/admin/violation-stats',
-            '/admin/accounts',
+            '/admin/leaderboard',
             '/admin/criteria',
+            '/admin/accounts',
             '/admin/roles',
             '/admin/classes',
-            '/admin/olympia-accounts',
-            '/olympia/admin',
-            '/olympia/admin/matches',
-            '/olympia/admin/rooms',
-            '/olympia/admin/question-bank',
-            '/olympia/admin/accounts',
             '/client',
+            '/client/violations',
+            '/client/leaderboard',
+            '/offline',
           ];
-          
-          // Send message to service worker to cache these pages
-          registration.active?.postMessage({
-            type: 'CACHE_URLS',
-            payload: {
-              cacheName: CACHE_NAMES.pages,
-              urls: allPages,
-            },
-          });
+
+          const imagePatterns = [
+            '/globe.svg',
+            '/file.svg',
+            '/window.svg',
+          ];
+
+          const urlsToCache = [...allPagesToCache, ...imagePatterns];
+
+          // Split into smaller chunks to avoid blocking
+          const chunkSize = 5;
+          let chunkIndex = 0;
+
+          const sendChunk = () => {
+            if (chunkIndex * chunkSize >= urlsToCache.length) {
+              console.log('[SW] Full precache completed');
+              return;
+            }
+
+            const chunk = urlsToCache.slice(
+              chunkIndex * chunkSize,
+              (chunkIndex + 1) * chunkSize
+            );
+
+            // Send message to SW to cache this chunk
+            registration.active?.postMessage({
+              type: 'CACHE_URLS',
+              payload: {
+                cacheName: CACHE_NAMES.pages,
+                urls: chunk,
+              },
+            });
+
+            console.log(`[SW] Sent chunk ${chunkIndex + 1}/${Math.ceil(urlsToCache.length / chunkSize)}`);
+            chunkIndex++;
+
+            // Send next chunk after 100ms (non-blocking)
+            setTimeout(sendChunk, 100);
+          };
+
+          // Start precaching immediately (after paint)
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+              setTimeout(sendChunk, 50);
+            });
+          } else {
+            setTimeout(sendChunk, 100);
+          }
         }
       })
       .catch((error) => {

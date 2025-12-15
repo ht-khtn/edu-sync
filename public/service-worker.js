@@ -29,26 +29,10 @@ function isHttpRequest(request) {
   }
 }
 
+// Keep pre-cache minimal to avoid heavy first-load work; pages are cached on-demand
 const STATIC_ASSETS = [
   '/',
   '/offline',
-  '/login',
-  '/admin',
-  '/admin/leaderboard',
-  '/admin/violation-history',
-  '/admin/violation-entry',
-  '/admin/violation-stats',
-  '/admin/accounts',
-  '/admin/criteria',
-  '/admin/roles',
-  '/admin/classes',
-  '/admin/olympia-accounts',
-  '/olympia/admin',
-  '/olympia/admin/matches',
-  '/olympia/admin/rooms',
-  '/olympia/admin/question-bank',
-  '/olympia/admin/accounts',
-  '/client',
   '/manifest.json',
 ];
 
@@ -414,13 +398,33 @@ self.addEventListener('message', (event) => {
       break;
       
     case 'CACHE_URLS':
-      // Cache specific URLs
+      // Cache URLs individually to avoid one failure blocking others
       event.waitUntil(
-        caches.open(payload.cacheName).then((cache) => {
-          return cache.addAll(payload.urls).then(() => {
+        (async () => {
+          try {
+            const cache = await caches.open(payload.cacheName);
+            
+            // Cache each URL individually
+            for (const url of payload.urls) {
+              try {
+                const response = await fetch(url);
+                
+                // Only cache successful responses
+                if (response.ok || response.status === 0) {
+                  await cache.put(url, response.clone());
+                }
+              } catch (err) {
+                console.warn(`[SW] Failed to cache ${url}:`, err);
+                // Continue with next URL even if this fails
+              }
+            }
+            
+            console.log(`[SW] Cached ${payload.urls.length} URLs in ${payload.cacheName}`);
             event.ports[0]?.postMessage({ type: 'URLS_CACHED' });
-          });
-        })
+          } catch (err) {
+            console.error(`[SW] Failed to open cache ${payload.cacheName}:`, err);
+          }
+        })()
       );
       break;
   }

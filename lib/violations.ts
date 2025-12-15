@@ -54,7 +54,8 @@ type StudentRow = {
   id: string
   class_id: string | null
   user_name: string | null
-  user_profiles: { full_name: string | null; email: string | null }[] | { full_name: string | null; email: string | null } | null
+  email: string | null
+  user_profiles: { full_name: string | null }[] | { full_name: string | null } | null
 }
 
 // Fetch criteria from Supabase `criteria` table and map to internal Criteria type
@@ -114,7 +115,7 @@ export async function fetchStudentsFromDB(
   offset: number = 0
 ): Promise<{ students: Student[]; total: number }> {
   try {
-    let q = supabase.from('users').select('id,class_id,user_name,user_profiles(full_name,email)', { count: 'exact' })
+    let q = supabase.from('users').select('id,class_id,user_name,email,user_profiles(full_name)', { count: 'exact' })
     if (classId) {
       q = q.eq('class_id', classId)
     } else if (classIdsSet && classIdsSet.size > 0) {
@@ -134,7 +135,7 @@ export async function fetchStudentsFromDB(
     const students = users.map((u) => {
       const prof = Array.isArray(u.user_profiles) ? u.user_profiles[0] : u.user_profiles
       const fullname = prof?.full_name ?? 'Chưa cập nhật'
-      const code = prof?.email ?? String(u.id).slice(0, 8)
+      const code = u.email ?? String(u.id).slice(0, 8)
       return {
         id: u.id,
         student_code: code,

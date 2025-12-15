@@ -18,17 +18,17 @@ import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 type LoginValues = {
-  email: string;
+  identifier: string;
   password: string;
   remember: boolean;
 };
 
 export default function LoginForm() {
   const form = useForm<LoginValues>({
-    defaultValues: { email: "", password: "", remember: false },
+    defaultValues: { identifier: "", password: "", remember: false },
   });
   const { control, watch } = form;
-  const watched = watch(["email", "password"]);
+  const watched = watch(["identifier", "password"]);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,16 +45,41 @@ export default function LoginForm() {
     setError(null);
     try {
       const supabase = await getSupabase();
+      // Helper: resolve login identifier to an email for Supabase Auth
+      const resolveEmail = async (identifierRaw: string): Promise<string | null> => {
+        const identifier = identifierRaw.trim();
+        if (!identifier) return null;
+        // If looks like an email, return as-is
+        if (identifier.includes("@")) return identifier.toLowerCase();
+        // Otherwise, try lookup by username from public.users
+        try {
+          const { data: userRow, error: userErr } = await supabase
+            .from("users")
+            .select("email")
+            .ilike("user_name", identifier)
+            .maybeSingle();
+          if (userErr) {
+            console.warn("Username lookup error:", userErr.message);
+          }
+          if (userRow?.email) return userRow.email.toLowerCase();
+        } catch (e) {
+          console.warn("Username lookup exception:", e);
+        }
+        // Fallback: common pattern username@edusync.edu.vn
+        return `${identifier.toLowerCase()}@edusync.edu.vn`;
+      };
+
+      const emailForAuth = await resolveEmail(values.identifier);
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: values.email.trim(),
+        email: emailForAuth || "",
         password: values.password,
       });
       console.log("Data:", data, "Error:", error);
       if (error) {
         const msg = error.message || "Đăng nhập thất bại";
         if (msg.toLowerCase().includes("invalid login credentials")) {
-          setError("Sai email hoặc mật khẩu. Vui lòng kiểm tra lại.");
-          toast.error("Sai email hoặc mật khẩu");
+          setError("Sai email/username hoặc mật khẩu. Vui lòng kiểm tra lại.");
+          toast.error("Sai email/username hoặc mật khẩu");
         } else if (msg.toLowerCase().includes("user not found")) {
           setError("Tài khoản không tồn tại. Vui lòng kiểm tra lại hoặc liên hệ quản trị viên.");
           toast.error("Tài khoản không tồn tại");
@@ -168,18 +193,18 @@ export default function LoginForm() {
           >
             <FormField
               control={control}
-              name="email"
+              name="identifier"
               render={({ field }) => (
                 <FormItem className="space-y-2">
-                  <FormLabel htmlFor="email" className="text-sm font-medium">
-                    Email
+                  <FormLabel htmlFor="identifier" className="text-sm font-medium">
+                    Email hoặc Tên đăng nhập
                   </FormLabel>
                   <FormControl>
                     <Input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="ten-ban@vidu.com"
+                      id="identifier"
+                      type="text"
+                      autoComplete="username"
+                      placeholder="email@vidu.com hoặc tên đăng nhập"
                       disabled={loading}
                       {...field}
                     />

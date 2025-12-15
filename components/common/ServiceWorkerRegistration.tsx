@@ -27,7 +27,7 @@ export function ServiceWorkerRegistration() {
 
     // Register service worker
     registerServiceWorker()
-      .then((registration) => {
+      .then(async (registration) => {
         if (registration) {
           // Aggressive full precache immediately after SW ready
           // Send all pages + common image patterns to cache
@@ -55,17 +55,35 @@ export function ServiceWorkerRegistration() {
 
           const urlsToCache = [...allPagesToCache, ...imagePatterns];
 
+          // Check which URLs are already cached to avoid re-caching
+          const cache = await caches.open(CACHE_NAMES.pages);
+          const cachedUrls = await Promise.all(
+            urlsToCache.map(async (url) => {
+              const cached = await cache.match(url);
+              return cached ? url : null;
+            })
+          );
+          const alreadyCached = new Set(cachedUrls.filter(Boolean));
+          const urlsToFetch = urlsToCache.filter((url) => !alreadyCached.has(url));
+
+          if (urlsToFetch.length === 0) {
+            console.log('[SW] All URLs already cached, skipping precache');
+            return;
+          }
+
+          console.log(`[SW] Precaching ${urlsToFetch.length}/${urlsToCache.length} new URLs`);
+
           // Split into smaller chunks to avoid blocking
           const chunkSize = 5;
           let chunkIndex = 0;
 
           const sendChunk = () => {
-            if (chunkIndex * chunkSize >= urlsToCache.length) {
+            if (chunkIndex * chunkSize >= urlsToFetch.length) {
               console.log('[SW] Full precache completed');
               return;
             }
 
-            const chunk = urlsToCache.slice(
+            const chunk = urlsToFetch.slice(
               chunkIndex * chunkSize,
               (chunkIndex + 1) * chunkSize
             );
@@ -79,7 +97,7 @@ export function ServiceWorkerRegistration() {
               },
             });
 
-            console.log(`[SW] Sent chunk ${chunkIndex + 1}/${Math.ceil(urlsToCache.length / chunkSize)}`);
+            console.log(`[SW] Sent chunk ${chunkIndex + 1}/${Math.ceil(urlsToFetch.length / chunkSize)}`);
             chunkIndex++;
 
             // Send next chunk after 100ms (non-blocking)

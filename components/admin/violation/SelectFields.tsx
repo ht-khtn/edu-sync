@@ -23,6 +23,15 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
   const fallbackClassId = selectedClassId || allowedClasses?.[0]?.id || ''
   const classIdForSubmit = currentClass?.id ?? fallbackClassId
 
+  // Effective class id used for filtering displayed students
+  const classIdForFilter = (currentClass?.id ?? selectedClassId) || ''
+
+  // When selected class changes, clear selected student to avoid stale IDs
+  function handleClassChange(val: string) {
+    setSelectedClassId(val)
+    setSelectedStudent('')
+  }
+
   console.log('[SelectFields] allowedClasses:', allowedClasses?.length || 0, 'currentClass:', currentClass?.name, 'canRecordForClass:', canRecordForClass)
 
   return (
@@ -30,7 +39,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
       <section>
         <Label className="mb-2">Chọn lớp</Label>
         {!currentClass && allowedClasses && allowedClasses.length > 0 ? (
-          <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+          <Select value={selectedClassId} onValueChange={handleClassChange}>
             <SelectTrigger data-class-trigger>
               <SelectValue placeholder="-- Chọn lớp --" />
             </SelectTrigger>
@@ -87,11 +96,18 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
             <SelectValue placeholder="-- Chọn học sinh --" />
           </SelectTrigger>
           <SelectContent className="bg-white dark:bg-white">
-            {students.map((s) => (
+            {/* Filter students by currently selected class (or show all when none selected) */}
+            {students.filter((s) => {
+              if (!classIdForFilter) return true
+              return s.class_id === classIdForFilter
+            }).map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.full_name && s.full_name !== 'Chưa cập nhật' ? s.full_name : s.user_name}
               </SelectItem>
             ))}
+            {students.filter((s) => (classIdForFilter ? s.class_id === classIdForFilter : true)).length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground">Không có học sinh cho lớp này</div>
+            )}
           </SelectContent>
         </Select>
       </section>

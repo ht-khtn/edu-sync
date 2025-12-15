@@ -168,8 +168,17 @@ export function ServiceWorkerRegistration() {
     const handleBeforeInstallPrompt = (event: Event) => {
       // Prevent the mini-infobar from appearing
       event.preventDefault();
+
+      // Do not show if already installed or dismissed in this session
+      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+      const dismissed = sessionStorage.getItem('edusync_install_dismissed') === '1';
+      if (isStandalone || dismissed) {
+        return;
+      }
+
       // Store the event for later use
       (window as unknown as Record<string, unknown>).deferredPrompt = event;
+
       // Show install prompt UI
       const installPrompt = document.getElementById('install-prompt');
       if (installPrompt) {
@@ -178,11 +187,12 @@ export function ServiceWorkerRegistration() {
     };
 
     const handleAppInstalled = () => {
-      // Hide install prompt
+      // Hide install prompt and mark installed
       const installPrompt = document.getElementById('install-prompt');
       if (installPrompt) {
         installPrompt.style.display = 'none';
       }
+      sessionStorage.setItem('edusync_install_dismissed', '1');
       console.log('App was installed');
     };
 
@@ -241,6 +251,8 @@ export function ServiceWorkerRegistration() {
                   if (installPrompt) {
                     installPrompt.style.display = 'none';
                   }
+                  // Do not re-show this session after interaction
+                  sessionStorage.setItem('edusync_install_dismissed', '1');
                 });
               }
             }}
@@ -263,6 +275,8 @@ export function ServiceWorkerRegistration() {
               if (installPrompt) {
                 installPrompt.style.display = 'none';
               }
+              // Do not re-show this session after dismiss
+              sessionStorage.setItem('edusync_install_dismissed', '1');
             }}
             style={{
               padding: '0.5rem 1rem',

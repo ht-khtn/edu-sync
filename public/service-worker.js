@@ -18,6 +18,15 @@ const CACHE_NAMES = {
   fonts: 'fonts-v1',
 };
 
+function isHttpRequest(request) {
+  try {
+    const url = typeof request === 'string' ? new URL(request) : new URL(request.url);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const STATIC_ASSETS = [
   '/',
   '/offline',
@@ -141,6 +150,7 @@ function getCacheName(strategy) {
  * Perfect for offline-first apps
  */
 async function cacheFirstFallback(request) {
+  if (!isHttpRequest(request)) return fetch(request);
   const cacheName = getCacheName('cache-first-fallback');
   
   // Try cache first
@@ -148,7 +158,7 @@ async function cacheFirstFallback(request) {
   if (cached) {
     // Update cache in background without blocking
     fetch(request).then((response) => {
-      if (response.ok) {
+      if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
         caches.open(cacheName).then((cache) => {
           cache.put(request, response.clone());
         });
@@ -165,7 +175,7 @@ async function cacheFirstFallback(request) {
     const response = await fetch(request);
     
     // Cache successful responses
-    if (response.ok) {
+    if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
@@ -192,6 +202,7 @@ async function cacheFirstFallback(request) {
  * Try network, fallback to cache, fallback to offline page
  */
 async function networkFirst(request) {
+  if (!isHttpRequest(request)) return fetch(request);
   const cacheName = getCacheName('network-first');
   
   try {
@@ -199,7 +210,7 @@ async function networkFirst(request) {
     const response = await fetch(request);
     
     // Cache successful responses
-    if (response.ok) {
+    if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
@@ -233,6 +244,7 @@ async function networkFirst(request) {
  * Try cache, fallback to network
  */
 async function cacheFirst(request) {
+  if (!isHttpRequest(request)) return fetch(request);
   const cacheName = getCacheName('cache-first');
   
   // Try cache first
@@ -246,7 +258,7 @@ async function cacheFirst(request) {
     const response = await fetch(request);
     
     // Cache successful responses
-    if (response.ok) {
+    if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
       const cache = await caches.open(cacheName);
       cache.put(request, response.clone());
     }
@@ -266,6 +278,7 @@ async function cacheFirst(request) {
  * Return cached immediately, update in background
  */
 async function staleWhileRevalidate(request) {
+  if (!isHttpRequest(request)) return fetch(request);
   const cacheName = getCacheName('stale-while-revalidate');
   
   // Check cache first
@@ -273,7 +286,7 @@ async function staleWhileRevalidate(request) {
   
   // Always fetch in background to update cache
   const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
+    if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
       const cache = caches.open(cacheName);
       cache.then((c) => c.put(request, response.clone()));
     }
@@ -289,6 +302,7 @@ async function staleWhileRevalidate(request) {
  * Never cache, always fetch from network
  */
 async function networkOnly(request) {
+  if (!isHttpRequest(request)) return fetch(request);
   try {
     return await fetch(request);
   } catch {
@@ -312,6 +326,10 @@ async function networkOnly(request) {
  */
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  if (!isHttpRequest(request)) {
+    return; // skip non-http(s) like chrome-extension
+  }
 
   // If this is a navigation (user visiting /), prefer network-first so
   // redirects and Set-Cookie from the server are applied (important after login).

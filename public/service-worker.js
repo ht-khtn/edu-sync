@@ -151,6 +151,8 @@ function getCacheName(strategy) {
  */
 async function cacheFirstFallback(request) {
   if (!isHttpRequest(request)) return fetch(request);
+  // Skip caching for non-GET requests
+  if (request.method !== 'GET') return fetch(request);
   const cacheName = getCacheName('cache-first-fallback');
   
   // Try cache first
@@ -203,6 +205,8 @@ async function cacheFirstFallback(request) {
  */
 async function networkFirst(request) {
   if (!isHttpRequest(request)) return fetch(request);
+  // Skip caching for non-GET requests
+  if (request.method !== 'GET') return fetch(request);
   const cacheName = getCacheName('network-first');
   
   try {
@@ -245,6 +249,8 @@ async function networkFirst(request) {
  */
 async function cacheFirst(request) {
   if (!isHttpRequest(request)) return fetch(request);
+  // Skip caching for non-GET requests
+  if (request.method !== 'GET') return fetch(request);
   const cacheName = getCacheName('cache-first');
   
   // Try cache first
@@ -279,6 +285,8 @@ async function cacheFirst(request) {
  */
 async function staleWhileRevalidate(request) {
   if (!isHttpRequest(request)) return fetch(request);
+  // Skip caching for non-GET requests
+  if (request.method !== 'GET') return fetch(request);
   const cacheName = getCacheName('stale-while-revalidate');
   
   // Check cache first
@@ -287,10 +295,19 @@ async function staleWhileRevalidate(request) {
   // Always fetch in background to update cache
   const fetchPromise = fetch(request).then((response) => {
     if (response && response.ok && !response.bodyUsed && response.type === 'basic') {
-      const cache = caches.open(cacheName);
-      cache.then((c) => c.put(request, response.clone()));
+      caches.open(cacheName).then((c) => {
+        // Clone before body is consumed
+        try {
+          c.put(request, response.clone());
+        } catch {
+          // Ignore clone errors
+        }
+      });
     }
     return response;
+  }).catch((err) => {
+    // Return cached on network error
+    return cached || Promise.reject(err);
   });
   
   // Return cached if available, otherwise wait for network

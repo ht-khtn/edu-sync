@@ -109,6 +109,30 @@ export default async function ViolationEntryPageContent() {
       }
 
       console.log('[violation-entry] Fetched students:', effectiveStudents.length);
+
+      // Fallback: if không có học sinh, thử bỏ filter lớp để kiểm tra dữ liệu
+      if (!effectiveStudents.length) {
+        try {
+          const fallback = await fetchStudentsFromDB(
+            supabaseServer,
+            undefined,
+            null,
+            100,
+            0
+          );
+          if (fallback.students?.length) {
+            effectiveStudents = fallback.students.map((s) => ({
+              ...s,
+              class_name: classMap.get(s.class_id) ?? "",
+            }));
+            console.log('[violation-entry] Fallback fetched students:', effectiveStudents.length);
+          } else {
+            console.warn('[violation-entry] Fallback also returned 0 students');
+          }
+        } catch (fallbackError) {
+          console.error('[violation-entry] Fallback fetch failed:', fallbackError);
+        }
+      }
     }
   } catch (error) {
     console.warn('[violation-entry] Setup error', error)

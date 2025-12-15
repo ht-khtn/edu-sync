@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -56,41 +55,16 @@ function naturalCompare(a: string | null | undefined, b: string | null | undefin
 export default async function ViolationEntryPageContent() {
   const { supabase: supabaseServer, appUserId } = await getServerAuthContext();
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
-  const students: Student[] = [];
-
-  let effectiveStudents = students;
-  let allowedClasses: { id: string; name: string }[] = [];
-  let currentClass: { id: string; name: string } | null = null;
+  let effectiveStudents: Student[] = [];
+  const allowedClasses: { id: string; name: string }[] = [];
   try {
     if (supabaseServer && appUserId) {
-      const [{ data: roles }, { data: classes }] = await Promise.all([
-        supabaseServer
-          .from("user_roles")
-          .select("role_id,target")
-          .eq("user_id", appUserId),
-        supabaseServer.from("classes").select("id,name"),
-      ]);
+      const { data: classes } = await supabaseServer
+        .from("classes")
+        .select("id,name");
 
       const classMap = new Map<string, string>();
       for (const c of classes || []) classMap.set(String(c.id), c.name);
-
-      const classTargets = (roles || [])
-        .filter((r) => r.role_id === "CC" && r.target)
-        .map((r) => String(r.target));
-
-      const managedClassIds = new Set<string>();
-      for (const t of classTargets) {
-        const match = (classes || []).find((c) => c.name === t);
-        if (match?.id) managedClassIds.add(String(match.id));
-      }
-
-      // Removed fallback query - if class not found by name, it doesn't exist
-
-      if (managedClassIds.size === 1) {
-        const onlyId = Array.from(managedClassIds)[0];
-        const match = (classes || []).find((c) => String(c.id) === onlyId);
-        if (match?.id) currentClass = { id: String(match.id), name: match.name };
-      }
 
       const allowedSet = await getAllowedClassIdsForWrite(
         supabaseServer,
@@ -111,64 +85,33 @@ export default async function ViolationEntryPageContent() {
       // Sort classes in a natural / numeric-aware order so that e.g. 10A9 comes before 10A10
       allowedClasses.sort((x, y) => naturalCompare(x?.name, y?.name));
 
-      console.log('[violation-entry] allowedClasses count:', allowedClasses.length, 'allowedSet:', allowedSet === null ? 'NULL (all)' : `Set(${allowedSet.size})`)
+      console.log('[violation-entry] allowedClasses count:', allowedClasses.length, 'allowedSet:', allowedSet === null ? 'NULL (all)' : `Set(${allowedSet.size})`);
 
+      // Fetch students directly by allowed class IDs (users.class_id)
+      const classFilterSet = allowedSet;
       try {
-        const classFilterSet = currentClass?.id
-          ? new Set<string>([currentClass.id])
-          : managedClassIds.size > 0
-          ? managedClassIds
-          : allowedSet && allowedSet.size > 0
-          ? allowedSet
-          : null;
         const result = await fetchStudentsFromDB(
           supabaseServer,
           undefined,
           classFilterSet === null ? null : classFilterSet || undefined,
-          100,  // limit
-          0     // offset
+          100,
+          0
         );
-        const fetched = result.students;
-        if (Array.isArray(fetched) && fetched.length) {
-          effectiveStudents = fetched.map((s) => ({
+
+        if (Array.isArray(result.students) && result.students.length > 0) {
+          effectiveStudents = result.students.map((s) => ({
             ...s,
             class_name: classMap.get(s.class_id) ?? "",
           }));
         }
       } catch (error) {
-        console.error('[violation-entry] Failed to fetch students for class filter:', error)
+        console.error('[violation-entry] Failed to fetch students:', error);
       }
 
-      if (!effectiveStudents?.length) {
-        try {
-          const fetchedAllResult = await fetchStudentsFromDB(supabaseServer, undefined, null, 100, 0);
-          const fetchedAll = fetchedAllResult.students;
-          const studentsWithClass = fetchedAll.map((s) => ({
-            ...s,
-            class_name: classMap.get(s.class_id) ?? "",
-          }));
-          if (currentClass) {
-            effectiveStudents = studentsWithClass.filter(
-              (s) => s.class_id === currentClass?.id
-            );
-            allowedClasses = [
-              { id: currentClass.id, name: currentClass.name },
-            ];
-          } else if (allowedSet === null) {
-            effectiveStudents = studentsWithClass;
-          } else {
-            const allowedIds = new Set(Array.from(allowedSet || []));
-            effectiveStudents = studentsWithClass.filter((s) =>
-              allowedIds.has(s.class_id)
-            );
-          }
-        } catch (fallbackError) {
-          console.error('[violation-entry] Failed to fetch students in fallback:', fallbackError)
-        }
-      }
+      console.log('[violation-entry] Fetched students:', effectiveStudents.length);
     }
   } catch (error) {
-    console.warn('violation-entry preload error', error)
+    console.warn('[violation-entry] Setup error', error)
   }
 
   return (
@@ -179,15 +122,6 @@ export default async function ViolationEntryPageContent() {
           Danh sách các lỗi vi phạm được ghi nhận trong ngày.
         </p>
       </div>
-
-      {currentClass && (
-        <Alert>
-          <AlertDescription>
-            Lớp đang ghi nhận hiện tại:{" "}
-            <span className="font-semibold">{currentClass.name}</span>
-          </AlertDescription>
-        </Alert>
-      )}
 
       <Card className="shadow-sm">
         <CardHeader className="border-b bg-muted/30">
@@ -218,7 +152,6 @@ export default async function ViolationEntryPageContent() {
                   students={effectiveStudents}
                   criteria={criteria}
                   allowedClasses={allowedClasses}
-                  currentClass={currentClass}
                 />
               </DialogContent>
             </Dialog>

@@ -72,7 +72,7 @@ export default async function ViolationEntryPageContent() {
       ]);
 
       const classMap = new Map<string, string>();
-      for (const c of classes || []) classMap.set(c.id, c.name);
+      for (const c of classes || []) classMap.set(String(c.id), c.name);
 
       const classTargets = (roles || [])
         .filter((r) => r.role_id === "CC" && r.target)
@@ -81,15 +81,15 @@ export default async function ViolationEntryPageContent() {
       const managedClassIds = new Set<string>();
       for (const t of classTargets) {
         const match = (classes || []).find((c) => c.name === t);
-        if (match?.id) managedClassIds.add(match.id);
+        if (match?.id) managedClassIds.add(String(match.id));
       }
 
       // Removed fallback query - if class not found by name, it doesn't exist
 
       if (managedClassIds.size === 1) {
         const onlyId = Array.from(managedClassIds)[0];
-        const match = (classes || []).find((c) => c.id === onlyId);
-        if (match?.id) currentClass = { id: match.id, name: match.name };
+        const match = (classes || []).find((c) => String(c.id) === onlyId);
+        if (match?.id) currentClass = { id: String(match.id), name: match.name };
       }
 
       const allowedSet = await getAllowedClassIdsForWrite(
@@ -100,7 +100,7 @@ export default async function ViolationEntryPageContent() {
       // allowedSet === null means user can access all classes
       if (allowedSet === null) {
         for (const c of classes || [])
-          allowedClasses.push({ id: c.id, name: c.name });
+          allowedClasses.push({ id: String(c.id), name: c.name });
       } else if (allowedSet.size > 0) {
         for (const id of Array.from(allowedSet)) {
           const name = classMap.get(id) ?? id;

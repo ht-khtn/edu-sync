@@ -7,6 +7,7 @@ import {
   checkForServiceWorkerUpdate,
   skipWaitingServiceWorker,
   requestPersistentStorage,
+  CACHE_NAMES,
 } from '@/lib/pwa-utils';
 
 /**
@@ -50,7 +51,7 @@ export function ServiceWorkerRegistration() {
           registration.active?.postMessage({
             type: 'CACHE_URLS',
             payload: {
-              cacheName: 'pages-v1',
+              cacheName: CACHE_NAMES.pages,
               urls: allPages,
             },
           });

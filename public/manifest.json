@@ -8,7 +8,11 @@
   "orientation": "portrait-primary",
   "theme_color": "#000000",
   "background_color": "#ffffff",
-  "categories": ["education", "productivity"],
+  "version": "0.1.0-20251215",
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "screenshots": [
     {
       "src": "/images/screenshot-1.png",
@@ -49,21 +53,39 @@
       "short_name": "Entry",
       "description": "Quick access to violation entry form",
       "url": "/admin/violation-entry",
-      "icons": [{ "src": "/globe.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [
+        {
+          "src": "/globe.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
     },
     {
       "name": "My Violations",
       "short_name": "Violations",
       "description": "View your violations",
       "url": "/client/my-violations",
-      "icons": [{ "src": "/globe.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [
+        {
+          "src": "/globe.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
     },
     {
       "name": "Leaderboard",
       "short_name": "Leaderboard",
       "description": "View leaderboard rankings",
       "url": "/client/leaderboard",
-      "icons": [{ "src": "/globe.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [
+        {
+          "src": "/globe.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
     }
   ],
   "share_target": {

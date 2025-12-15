@@ -53,12 +53,14 @@ export const CACHE_STRATEGY_MAP: Record<string, CacheStrategy> = {
 /**
  * Cache names for different types of content
  */
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? 'dev';
+
 export const CACHE_NAMES = {
-  static: 'static-v1',
-  pages: 'pages-v1',
-  api: 'api-v1',
-  images: 'images-v1',
-  fonts: 'fonts-v1',
+  static: `static-${APP_VERSION}`,
+  pages: `pages-${APP_VERSION}`,
+  api: `api-${APP_VERSION}`,
+  images: `images-${APP_VERSION}`,
+  fonts: `fonts-${APP_VERSION}`,
 } as const;
 
 /**

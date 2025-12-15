@@ -56,6 +56,8 @@ next-env.d.ts
 *.pid.lock
 *.orig
 Thumbs.db
+/configs/generated/
+/public/app-version.json
 # do not ignore supabase project sources; track SQL and functions
 # (remove the next line if present in history)
 # /supabase/

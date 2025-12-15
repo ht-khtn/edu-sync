@@ -10,8 +10,8 @@
  * Install: Copy to public/service-worker.js
  */
 
-// Bump APP_VERSION mỗi lần build để ép SW + cache mới
-const APP_VERSION = '2025-12-15';
+// APP_VERSION được inject khi build (xem scripts/inject-version.cjs)
+const APP_VERSION = '0.1.0-20251215';
 const CACHE_NAMES = {
   static: `static-${APP_VERSION}`,
   pages: `pages-${APP_VERSION}`,
@@ -52,16 +52,31 @@ const STATIC_ASSETS = [
   '/manifest.json',
 ];
 
+async function notifyCachePrimed() {
+  const clients = await self.clients.matchAll({ type: 'window' });
+  clients.forEach((client) => {
+    client.postMessage({ type: 'CACHE_PRIMED', version: APP_VERSION });
+  });
+}
+
 /**
  * Install event - cache static assets
  */
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAMES.static).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('Failed to cache some static assets:', err);
+    (async () => {
+      // Fallback timeout to avoid blocking if cache fails
+      const timeout = new Promise((resolve) => setTimeout(resolve, 6000));
+
+      const cacheJob = caches.open(CACHE_NAMES.static).then((cache) => {
+        return cache.addAll(STATIC_ASSETS).catch((err) => {
+          console.warn('Failed to cache some static assets:', err);
+        });
       });
-    })
+
+      await Promise.race([Promise.allSettled([cacheJob, timeout]), timeout]);
+      await notifyCachePrimed();
+    })()
   );
   
   // Skip waiting to activate immediately

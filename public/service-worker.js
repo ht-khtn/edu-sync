@@ -10,12 +10,14 @@
  * Install: Copy to public/service-worker.js
  */
 
+// Bump APP_VERSION mỗi lần build để ép SW + cache mới
+const APP_VERSION = '2025-12-15';
 const CACHE_NAMES = {
-  static: 'static-v1',
-  pages: 'pages-v1',
-  api: 'api-v1',
-  images: 'images-v1',
-  fonts: 'fonts-v1',
+  static: `static-${APP_VERSION}`,
+  pages: `pages-${APP_VERSION}`,
+  api: `api-${APP_VERSION}`,
+  images: `images-${APP_VERSION}`,
+  fonts: `fonts-${APP_VERSION}`,
 };
 
 function isHttpRequest(request) {
@@ -70,21 +72,25 @@ self.addEventListener('install', (event) => {
  * Activate event - cleanup old caches
  */
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          // Delete old cache versions
-          if (!Object.values(CACHE_NAMES).includes(cacheName)) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-  
-  // Take control of clients immediately
-  self.clients.claim?.();
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames.map((cacheName) => {
+        if (!Object.values(CACHE_NAMES).includes(cacheName)) {
+          return caches.delete(cacheName);
+        }
+      })
+    );
+
+    // Take control of clients immediately
+    await self.clients.claim?.();
+
+    // Notify clients about new SW version
+    const clients = await self.clients.matchAll({ type: 'window' });
+    clients.forEach((client) => {
+      client.postMessage({ type: 'SW_UPDATED', version: APP_VERSION });
+    });
+  })());
 });
 
 /**

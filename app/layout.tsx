@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { OfflineIndicator } from "@/components/common/OfflineIndicator";
 import { ServiceWorkerRegistration } from "@/components/common/ServiceWorkerRegistration";
+import AppVersionBadge from "@/components/common/AppVersionBadge";
 
 // Optimize fonts with font-display: swap for faster initial render
 // font-display: swap allows fallback font to display immediately
@@ -75,6 +76,7 @@ export default function RootLayout({
       >
         <ServiceWorkerRegistration />
         <OfflineIndicator />
+        <AppVersionBadge />
         {children}
         <Toaster position="top-right" richColors closeButton />
       </body>

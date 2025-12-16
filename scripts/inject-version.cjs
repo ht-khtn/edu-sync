@@ -24,14 +24,23 @@ function ensureDir(dirPath) {
 }
 
 function computeVersion() {
+  // Source of truth: public/app-version.json (base), fallback to package.json version
   const pkg = readJson(path.join(__dirname, '..', 'package.json'));
-  const pkgVersion = pkg.version || '0.0.0';
-  const date = new Date();
-  const yyyymmdd = date.toISOString().slice(0, 10).replace(/-/g, '');
+  let baseVersion = pkg.version || '0.0.0';
+
+  try {
+    const appVersionPath = path.join(__dirname, '..', 'public', 'app-version.json');
+    const av = readJson(appVersionPath);
+    if (av && typeof av === 'object') {
+      baseVersion = (av.base || av.version || baseVersion).toString();
+    }
+  } catch {
+    // ignore missing app-version.json; fall back to package.json version
+  }
+
   const shortSha = (process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT || '').slice(0, 7);
-  const parts = [pkgVersion, yyyymmdd];
-  if (shortSha) parts.push(shortSha);
-  return parts.join('-');
+  const version = shortSha ? `${baseVersion}-${shortSha}` : baseVersion;
+  return { baseVersion, version };
 }
 
 function updateServiceWorker(appVersion) {
@@ -48,19 +57,19 @@ function updateManifest(appVersion) {
   writeJson(manifestPath, manifest);
 }
 
-function writeGeneratedVersion(appVersion) {
+function writeGeneratedVersion(baseVersion, appVersion) {
   const outDir = path.join(__dirname, '..', 'configs', 'generated');
   ensureDir(outDir);
   const outPath = path.join(outDir, 'version.json');
   writeJson(outPath, { version: appVersion });
   const publicVersionPath = path.join(__dirname, '..', 'public', 'app-version.json');
-  writeJson(publicVersionPath, { version: appVersion });
+  writeJson(publicVersionPath, { base: baseVersion, version: appVersion });
 }
 
 (function run() {
-  const appVersion = computeVersion();
-  updateServiceWorker(appVersion);
-  updateManifest(appVersion);
-  writeGeneratedVersion(appVersion);
-  console.log(`[inject-version] version set to ${appVersion}`);
+  const { baseVersion, version } = computeVersion();
+  updateServiceWorker(version);
+  updateManifest(version);
+  writeGeneratedVersion(baseVersion, version);
+  console.log(`[inject-version] version set to ${version} (base=${baseVersion})`);
 })();

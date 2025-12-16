@@ -69,14 +69,14 @@ export const getAllowedClassIdsForWrite = cache(async (supabase: SupabaseClient,
   const allowed = new Set<string>()
   if (!roles.length) return allowed
   
-  // If user has target='ALL', return null to indicate "all classes"
-  if (roles.some(r => r.target === 'ALL')) {
+  // If user has target='ALL' (case-insensitive), return null to indicate "all classes"
+  if (roles.some(r => String(r.target ?? '').trim().toUpperCase() === 'ALL')) {
     console.log('[getAllowedClassIdsForWrite] Found target=ALL, returning null (all classes)')
     return null  // null means "all classes allowed"
   }
   
   // If user has school scope (regardless of target), allow all classes
-  if (roles.some(r => r.scope === 'school')) {
+  if (roles.some(r => (r.scope ?? '').toString() === 'school')) {
     console.log('[getAllowedClassIdsForWrite] Found scope=school, returning null (all classes)')
     return null  // null means "all classes allowed"
   }

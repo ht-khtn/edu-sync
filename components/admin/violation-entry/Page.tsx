@@ -57,6 +57,34 @@ export default async function ViolationEntryPageContent() {
   const criteria: Criteria[] = await fetchCriteriaFromDB(supabaseServer);
   let effectiveStudents: Student[] = [];
   const allowedClasses: { id: string; name: string }[] = [];
+
+  // Fetch all students in chunks to support large cohorts (e.g., 1,200+)
+  async function fetchAllStudents(classFilterSet: Set<string> | null, pageSize = 500) {
+    const aggregated: Student[] = [];
+    let total = 0;
+    let offset = 0;
+
+    while (true) {
+      const batch = await fetchStudentsFromDB(
+        supabaseServer,
+        undefined,
+        classFilterSet === null ? null : classFilterSet || undefined,
+        pageSize,
+        offset
+      );
+
+      total = batch.total ?? total;
+      aggregated.push(...batch.students.map((s) => ({
+        ...s,
+        class_name: '', // placeholder, will map after fetching classes
+      })));
+
+      offset += pageSize;
+      if (!batch.students.length || aggregated.length >= total) break;
+    }
+
+    return { students: aggregated, total };
+  }
   try {
     if (supabaseServer && appUserId) {
       const { data: classes } = await supabaseServer
@@ -87,16 +115,10 @@ export default async function ViolationEntryPageContent() {
 
       console.log('[violation-entry] allowedClasses count:', allowedClasses.length, 'allowedSet:', allowedSet === null ? 'NULL (all)' : `Set(${allowedSet.size})`);
 
-      // Fetch students directly by allowed class IDs (users.class_id)
+      // Fetch students directly by allowed class IDs (users.class_id), chunked
       const classFilterSet = allowedSet;
       try {
-        const result = await fetchStudentsFromDB(
-          supabaseServer,
-          undefined,
-          classFilterSet === null ? null : classFilterSet || undefined,
-          100,
-          0
-        );
+        const result = await fetchAllStudents(classFilterSet, 500);
 
         if (Array.isArray(result.students) && result.students.length > 0) {
           effectiveStudents = result.students.map((s) => ({
@@ -113,13 +135,8 @@ export default async function ViolationEntryPageContent() {
       // Fallback: if không có học sinh, thử bỏ filter lớp để kiểm tra dữ liệu
       if (!effectiveStudents.length) {
         try {
-          const fallback = await fetchStudentsFromDB(
-            supabaseServer,
-            undefined,
-            null,
-            100,
-            0
-          );
+          const fallback = await fetchAllStudents(null, 500);
+
           if (fallback.students?.length) {
             effectiveStudents = fallback.students.map((s) => ({
               ...s,

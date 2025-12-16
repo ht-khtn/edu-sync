@@ -17,7 +17,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
   const [selectedCriteria, setSelectedCriteria] = useState('')
   const [isClassMode, setIsClassMode] = useState(false)
   const [selectedClassId, setSelectedClassId] = useState(
-    currentClass?.id ?? allowedClasses?.[0]?.id ?? ''
+    currentClass?.id ?? (allowedClasses && allowedClasses.length > 1 ? '' : allowedClasses?.[0]?.id ?? '')
   )
   const canRecordForClass = Boolean(currentClass || allowedClasses?.length)
   const fallbackClassId = selectedClassId || allowedClasses?.[0]?.id || ''
@@ -44,6 +44,11 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
               <SelectValue placeholder="-- Chọn lớp --" />
             </SelectTrigger>
             <SelectContent className="bg-white dark:bg-white">
+              {allowedClasses.length > 1 && (
+                <SelectItem value="">
+                  Tất cả lớp
+                </SelectItem>
+              )}
               {allowedClasses.map((cls) => (
                 <SelectItem key={cls.id} value={cls.id}>
                   {cls.name}

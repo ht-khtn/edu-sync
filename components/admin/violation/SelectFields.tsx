@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { Criteria, Student } from '@/lib/violations'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { sortByGivenName } from '@/lib/utils'
 
 type Props = {
   students: Student[]
@@ -33,6 +34,17 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
   }
 
   console.log('[SelectFields] allowedClasses:', allowedClasses?.length || 0, 'currentClass:', currentClass?.name, 'canRecordForClass:', canRecordForClass)
+
+  // Build filtered + sorted students list and label with numbering
+  const filtered = students.filter((s) => {
+    if (!classIdForFilter) return true
+    return s.class_id === classIdForFilter
+  })
+
+  const getDisplayName = (s: Student) =>
+    s.full_name && s.full_name !== 'Chưa cập nhật' ? s.full_name : (s.user_name || '')
+
+  const sorted = sortByGivenName(filtered, getDisplayName)
 
   return (
     <>
@@ -101,16 +113,16 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
             <SelectValue placeholder="-- Chọn học sinh --" />
           </SelectTrigger>
           <SelectContent className="bg-white dark:bg-white">
-            {/* Filter students by currently selected class (or show all when none selected) */}
-            {students.filter((s) => {
-              if (!classIdForFilter) return true
-              return s.class_id === classIdForFilter
-            }).map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.full_name && s.full_name !== 'Chưa cập nhật' ? s.full_name : s.user_name}
-              </SelectItem>
-            ))}
-            {students.filter((s) => (classIdForFilter ? s.class_id === classIdForFilter : true)).length === 0 && (
+            {/* Sorted by given-name and numbered */}
+            {sorted.map((s, idx) => {
+              const label = getDisplayName(s)
+              return (
+                <SelectItem key={s.id} value={s.id}>
+                  {`${idx + 1}. ${label}`}
+                </SelectItem>
+              )
+            })}
+            {sorted.length === 0 && (
               <div className="p-3 text-sm text-muted-foreground">Không có học sinh cho lớp này</div>
             )}
           </SelectContent>

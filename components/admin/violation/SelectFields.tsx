@@ -14,18 +14,21 @@ type Props = {
 }
 
 export default function SelectFields({ students, criteria, allowedClasses, currentClass }: Props) {
+  const ALL_CLASSES = '__ALL_CLASSES__'
   const [selectedStudent, setSelectedStudent] = useState('')
   const [selectedCriteria, setSelectedCriteria] = useState('')
   const [isClassMode, setIsClassMode] = useState(false)
   const [selectedClassId, setSelectedClassId] = useState(
-    currentClass?.id ?? (allowedClasses && allowedClasses.length > 1 ? '' : allowedClasses?.[0]?.id ?? '')
+    currentClass?.id ?? (allowedClasses && allowedClasses.length > 1 ? ALL_CLASSES : allowedClasses?.[0]?.id ?? '')
   )
   const canRecordForClass = Boolean(currentClass || allowedClasses?.length)
-  const fallbackClassId = selectedClassId || allowedClasses?.[0]?.id || ''
+  const isAllClasses = selectedClassId === ALL_CLASSES
+  const selectedEffectiveClassId = isAllClasses ? '' : selectedClassId
+  const fallbackClassId = selectedEffectiveClassId || allowedClasses?.[0]?.id || ''
   const classIdForSubmit = currentClass?.id ?? fallbackClassId
 
   // Effective class id used for filtering displayed students
-  const classIdForFilter = (currentClass?.id ?? selectedClassId) || ''
+  const classIdForFilter = (currentClass?.id ?? selectedEffectiveClassId) || ''
 
   // When selected class changes, clear selected student to avoid stale IDs
   function handleClassChange(val: string) {
@@ -57,7 +60,7 @@ export default function SelectFields({ students, criteria, allowedClasses, curre
             </SelectTrigger>
             <SelectContent className="bg-white dark:bg-white">
               {allowedClasses.length > 1 && (
-                <SelectItem value="">
+                <SelectItem value={ALL_CLASSES}>
                   Tất cả lớp
                 </SelectItem>
               )}

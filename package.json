@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
+    "predev": "node scripts/inject-version.cjs",
     "dev": "next dev",
     "prebuild": "node scripts/inject-version.cjs",
     "build": "npm run prebuild && next build",

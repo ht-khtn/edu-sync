@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   title: "EduSync",
   description:
     "Hệ thống hỗ trợ quản lý phong trào và thi đua dành cho học sinh THPT",
-  manifest: "/manifest.json",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

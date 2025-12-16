@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
+import { BUILD_INFO } from '@/configs/generated/build-info'
 
 export default function AppVersionBadge() {
-  const version = process.env.NEXT_PUBLIC_APP_VERSION ?? 'dev';
+  const version = BUILD_INFO?.version ?? 'dev';
   return (
     <div
       aria-label="App version"

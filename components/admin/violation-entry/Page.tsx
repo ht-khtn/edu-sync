@@ -64,6 +64,8 @@ export default async function ViolationEntryPageContent() {
     let total = 0;
     let offset = 0;
 
+    console.log('[violation-entry] fetchAllStudents: classFilterSet=', classFilterSet === null ? 'NULL (all)' : `Set(${classFilterSet?.size ?? 0})`);
+
     while (true) {
       const batch = await fetchStudentsFromDB(
         supabaseServer,
@@ -72,6 +74,8 @@ export default async function ViolationEntryPageContent() {
         pageSize,
         offset
       );
+
+      console.log('[violation-entry] fetchAllStudents chunk offset=', offset, 'batch.students=', batch.students.length, 'batch.total=', batch.total);
 
       total = batch.total ?? total;
       aggregated.push(...batch.students.map((s) => ({
@@ -83,6 +87,7 @@ export default async function ViolationEntryPageContent() {
       if (!batch.students.length || aggregated.length >= total) break;
     }
 
+    console.log('[violation-entry] fetchAllStudents complete: aggregated=', aggregated.length, 'total=', total);
     return { students: aggregated, total };
   }
   try {

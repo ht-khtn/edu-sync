@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
@@ -89,13 +88,6 @@ export default async function OlympiaMatchesAdminPage() {
   const tournamentLookup = new Map(tournaments.map((t) => [t.id, t]))
   const liveSessionLookup = new Map(liveSessions.map((session) => [session.match_id, session]))
 
-  const summary = {
-    totalTournaments: tournaments.length,
-    totalMatches: matches.length,
-    draft: matches.filter((m) => m.status === 'draft').length,
-    scheduled: matches.filter((m) => m.status === 'scheduled').length,
-    live: matches.filter((m) => m.status === 'live').length,
-  }
 
   return (
     <section className="space-y-6">
@@ -151,40 +143,6 @@ export default async function OlympiaMatchesAdminPage() {
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Tổng giải</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary.totalTournaments}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Tổng trận</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary.totalMatches}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Đang nháp</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary.draft}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Đã lên lịch</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary.scheduled}</p>
-          </CardContent>
-        </Card>
-      </div>
 
       {matches.length === 0 ? (
         <Alert>

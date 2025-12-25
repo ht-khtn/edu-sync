@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useFormState } from 'react-dom'
+import { useActionState, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,22 +18,20 @@ type Props = {
 
 export function CreateMatchDialog({ tournaments }: Props) {
   const [open, setOpen] = useState(false)
-  const handleAction = useCallback(
-    async (prevState: ActionState, formData: FormData) => {
-      const result = await createMatchAction(prevState, formData)
-      if (result.success) {
-        setOpen(false)
-      }
-      return result
-    },
-    [setOpen]
-  )
-  const [state, formAction] = useFormState(handleAction, initialState)
+  const [state, formAction] = useActionState(createMatchAction, initialState)
 
   const hasMessage = state.error || state.success
 
+  const handleOpenChange = (value: boolean) => {
+    if (hasMessage && state.success) {
+      setOpen(false)
+    } else {
+      setOpen(value)
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(value) => setOpen(value)}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button size="sm">Tạo trận mới</Button>
       </DialogTrigger>

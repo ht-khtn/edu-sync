@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useFormState } from 'react-dom'
+import { useActionState, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,20 +20,18 @@ type DeleteParticipantButtonProps = {
 
 export function DeleteParticipantButton({ userId }: DeleteParticipantButtonProps) {
   const [open, setOpen] = useState(false)
-  const handleAction = useCallback(
-    async (prevState: ActionState, formData: FormData) => {
-      const result = await deleteParticipantAction(prevState, formData)
-      if (result.success) {
-        setOpen(false)
-      }
-      return result
-    },
-    [setOpen]
-  )
-  const [state, formAction] = useFormState(handleAction, initialState)
+  const [state, formAction] = useActionState(deleteParticipantAction, initialState)
+
+  const handleOpenChange = (value: boolean) => {
+    if (state.success) {
+      setOpen(false)
+    } else {
+      setOpen(value)
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => setOpen(value)}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="text-destructive">
           Xóa

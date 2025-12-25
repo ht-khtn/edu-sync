@@ -16,12 +16,6 @@ const formatter = new Intl.DateTimeFormat('vi-VN', {
   timeStyle: 'short',
 })
 
-const statusColors: Record<string, { badge: string; bg: string }> = {
-  running: { badge: 'default', bg: 'bg-green-50' },
-  pending: { badge: 'secondary', bg: 'bg-blue-50' },
-  ended: { badge: 'outline', bg: 'bg-slate-50' },
-}
-
 const questionStateLabel: Record<string, string> = {
   hidden: 'Ẩn',
   showing: 'Hiển thị',

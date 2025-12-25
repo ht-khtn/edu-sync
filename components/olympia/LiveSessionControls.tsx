@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Copy, Eye, EyeOff } from 'lucide-react'
@@ -9,7 +9,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { openLiveSessionAction, endLiveSessionAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { cn } from '@/utils/cn'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -81,17 +80,23 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
   const [openState, openAction] = useActionState(openLiveSessionAction, initialState)
   const [endState, endAction] = useActionState(endLiveSessionAction, initialState)
 
-  const message = openState.error ?? openState.success ?? endState.error ?? endState.success
-  const isError = Boolean(openState.error ?? endState.error)
+  // Show toast for open session errors/success
+  useEffect(() => {
+    if (openState.error) {
+      toast.error(openState.error)
+    } else if (openState.success) {
+      toast.success(openState.success)
+    }
+  }, [openState.error, openState.success])
 
-  // Show toasts for messages
-  if (message && isError) {
-    toast.error(message)
-  } else if (message && openState.success) {
-    toast.success(message)
-  } else if (message && endState.success) {
-    toast.success(message)
-  }
+  // Show toast for end session errors/success
+  useEffect(() => {
+    if (endState.error) {
+      toast.error(endState.error)
+    } else if (endState.success) {
+      toast.success(endState.success)
+    }
+  }, [endState.error, endState.success])
 
   // Extract passwords from success message if available
   const extractPasswords = (msg: string | null | undefined) => {
@@ -146,10 +151,6 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
           {disableEnd ? 'Chưa thể kết thúc' : 'Kết thúc phòng'}
         </SubmitButton>
       </form>
-
-      {message && !playerPassword ? (
-        <p className={cn('text-xs', isError ? 'text-destructive' : 'text-green-600')}>{message}</p>
-      ) : null}
     </div>
   )
 }

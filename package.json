@@ -5,6 +5,8 @@
   "scripts": {
     "predev": "node scripts/inject-version.cjs",
     "dev": "next dev",
+    "dev:nosourcemaps": "next dev --disable-source-maps",
+    "dev:webpack": "next dev --webpack",
     "prebuild": "node scripts/inject-version.cjs",
     "build": "npm run prebuild && next build",
     "start": "next start",

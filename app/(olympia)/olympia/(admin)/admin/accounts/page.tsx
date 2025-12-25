@@ -105,7 +105,9 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
   const adminCount = participantRows.filter((row) => row.role === 'AD').length
   const contestantCount = participantRows.filter((row) => row.role !== 'AD' && row.contestant_code).length
 
-  const filterValue = filterOptions.find((option) => option.id === searchParams?.role)?.id ?? 'all'
+  const roleParam = searchParams ? searchParams.role : undefined
+  const filterValue: FilterOption =
+    roleParam && filterOptions.some((option) => option.id === roleParam) ? (roleParam as FilterOption) : 'all'
 
   const rowsWithCategory = participantRows.map((row) => ({
     ...row,

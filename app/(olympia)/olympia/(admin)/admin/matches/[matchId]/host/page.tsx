@@ -43,7 +43,7 @@ async function fetchHostData(matchId: string) {
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('match_id, status, join_code, question_state, current_round_type')
+      .select('id, match_id, status, join_code, question_state, current_round_type, requires_player_password')
       .eq('match_id', matchId)
       .maybeSingle(),
     olympia

@@ -60,18 +60,20 @@ async function fetchMatchesData() {
   if (matchError) throw matchError
 
   let liveSessions: Array<{
+    id: string
     match_id: string
     status: string | null
     join_code: string | null
     question_state: string | null
     current_round_type: string | null
+    requires_player_password?: boolean
   }> = []
 
   if (matches && matches.length > 0) {
     const matchIds = matches.map((match) => match.id)
     const { data: sessions, error: sessionsError } = await olympia
       .from('live_sessions')
-      .select('match_id, status, join_code, question_state, current_round_type')
+      .select('id, match_id, status, join_code, question_state, current_round_type, requires_player_password')
       .in('match_id', matchIds)
 
     if (sessionsError) throw sessionsError

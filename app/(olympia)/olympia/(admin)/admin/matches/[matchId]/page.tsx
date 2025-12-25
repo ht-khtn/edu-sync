@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
+import { MatchQuestionSetSelector } from '@/components/olympia/MatchQuestionSetSelector'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements
@@ -62,10 +63,17 @@ async function fetchMatchDetail(matchId: string) {
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
-  const [liveSessionResult, playersResult, roundsResult, tournamentResult] = await Promise.all([
+  const [
+    liveSessionResult,
+    playersResult,
+    roundsResult,
+    tournamentResult,
+    matchQuestionSetsResult,
+    questionSetsResult,
+  ] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('match_id, status, join_code, question_state, current_round_type, timer_deadline')
+      .select('id, match_id, status, join_code, question_state, current_round_type, timer_deadline, requires_player_password')
       .eq('match_id', matchId)
       .maybeSingle(),
     olympia
@@ -79,6 +87,15 @@ async function fetchMatchDetail(matchId: string) {
       .eq('match_id', matchId)
       .order('order_index', { ascending: true }),
     tournamentPromise,
+    olympia
+      .from('match_question_sets')
+      .select('question_set_id')
+      .eq('match_id', matchId),
+    olympia
+      .from('question_sets')
+      .select('id, name, item_count, original_filename, created_at')
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   if (liveSessionResult.error) throw liveSessionResult.error
@@ -87,6 +104,8 @@ async function fetchMatchDetail(matchId: string) {
   }
   if (roundsResult.error) throw roundsResult.error
   if (tournamentResult && tournamentResult.error) throw tournamentResult.error
+  if (matchQuestionSetsResult.error) throw matchQuestionSetsResult.error
+  if (questionSetsResult.error) throw questionSetsResult.error
 
   let participantLookup = new Map<string, { contestant_code: string | null; role: string | null }>()
   const playerParticipantIds = (playersResult.data ?? [])
@@ -114,6 +133,8 @@ async function fetchMatchDetail(matchId: string) {
     liveSession: liveSessionResult.data,
     players: playersResult.data ?? [],
     rounds: roundsResult.data ?? [],
+    questionSets: questionSetsResult.data ?? [],
+    selectedQuestionSetIds: (matchQuestionSetsResult.data ?? []).map((row) => row.question_set_id),
     participantLookup,
   }
 }
@@ -134,7 +155,7 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, tournament, liveSession, players, rounds, participantLookup } = details
+  const { match, tournament, liveSession, players, rounds, participantLookup, questionSets, selectedQuestionSetIds } = details
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
 
   return (
@@ -239,6 +260,20 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bộ đề cho trận</CardTitle>
+          <CardDescription>Chọn một hoặc nhiều bộ đề đã tải lên. Thay đổi sẽ áp dụng ngay cho trận này.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MatchQuestionSetSelector
+            matchId={match.id}
+            questionSets={questionSets}
+            selectedIds={selectedQuestionSetIds}
+          />
         </CardContent>
       </Card>
 

@@ -23,7 +23,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
   const { data: session, error: sessionError } = await olympia
     .from('live_sessions')
     .select(
-      'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline'
+      'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password'
     )
     .eq('id', sessionId)
     .maybeSingle()
@@ -101,12 +101,27 @@ export default async function OlympiaGamePage({ params }: PageProps) {
     notFound()
   }
 
+  // Check if user has already verified this session (cross-device persistence)
+  let userAlreadyVerified = false
+  if (authUid && data.session.requires_player_password) {
+    const olympia = supabase.schema('olympia')
+    const { data: verification } = await olympia
+      .from('session_verifications')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('user_id', authUid)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+    
+    userAlreadyVerified = !!verification
+  }
+
   const viewerId = appUserId ?? null
   const sessionStatus = data.session.status
   const sessionIsRunning = sessionStatus === 'running'
 
   return (
-    <PlayerPasswordGate session={data.session}>
+    <PlayerPasswordGate session={data.session} userAlreadyVerified={userAlreadyVerified}>
       <div className="min-h-screen">
         {!authUid ? (
           <div className="mx-auto max-w-7xl px-4 py-4">

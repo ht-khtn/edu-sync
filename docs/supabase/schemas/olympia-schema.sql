@@ -158,6 +158,42 @@ CREATE TABLE olympia.questions (
   CONSTRAINT questions_pkey PRIMARY KEY (id),
   CONSTRAINT questions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
 );
+CREATE TABLE olympia.question_sets (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  original_filename text,
+  item_count integer NOT NULL DEFAULT 0,
+  uploaded_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT question_sets_pkey PRIMARY KEY (id),
+  CONSTRAINT question_sets_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id)
+);
+CREATE TABLE olympia.question_set_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  question_set_id uuid NOT NULL,
+  order_index integer NOT NULL,
+  code text NOT NULL,
+  category text,
+  question_text text NOT NULL,
+  answer_text text NOT NULL,
+  note text,
+  submitted_by text,
+  source text,
+  image_url text,
+  audio_url text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT question_set_items_pkey PRIMARY KEY (id),
+  CONSTRAINT question_set_items_question_set_id_fkey FOREIGN KEY (question_set_id) REFERENCES olympia.question_sets(id) ON DELETE CASCADE,
+  CONSTRAINT question_set_items_question_set_id_code_key UNIQUE (question_set_id, code)
+);
+CREATE TABLE olympia.match_question_sets (
+  match_id uuid NOT NULL,
+  question_set_id uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT match_question_sets_pkey PRIMARY KEY (match_id, question_set_id),
+  CONSTRAINT match_question_sets_match_id_fkey FOREIGN KEY (match_id) REFERENCES olympia.matches(id) ON DELETE CASCADE,
+  CONSTRAINT match_question_sets_question_set_id_fkey FOREIGN KEY (question_set_id) REFERENCES olympia.question_sets(id) ON DELETE CASCADE
+);
 CREATE TABLE olympia.round_questions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   match_round_id uuid NOT NULL,

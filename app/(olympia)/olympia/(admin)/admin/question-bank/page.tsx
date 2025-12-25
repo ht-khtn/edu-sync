@@ -1,4 +1,5 @@
 import { CreateQuestionDialog } from '@/components/olympia/CreateQuestionDialog'
+import { UploadQuestionSetDialog } from '@/components/olympia/UploadQuestionSetDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +13,14 @@ type QuestionRow = {
   question_text: string
   answer_text: string
   note: string | null
+  created_at: string
+}
+
+type QuestionSetRow = {
+  id: string
+  name: string
+  item_count: number
+  original_filename: string | null
   created_at: string
 }
 
@@ -33,6 +42,20 @@ async function fetchQuestionBank() {
     total: count ?? data?.length ?? 0,
     questions: data ?? [],
   }
+}
+
+async function fetchQuestionSets() {
+  const { supabase } = await getServerAuthContext()
+  const olympia = supabase.schema('olympia')
+  const { data, error } = await olympia
+    .from('question_sets')
+    .select('id, name, item_count, original_filename, created_at')
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  if (error) throw error
+
+  return data ?? []
 }
 
 function CategoryBadges({ questions }: { questions: QuestionRow[] }) {
@@ -57,7 +80,7 @@ function CategoryBadges({ questions }: { questions: QuestionRow[] }) {
 }
 
 export default async function OlympiaQuestionBankPage() {
-  const { total, questions } = await fetchQuestionBank()
+  const [{ total, questions }, questionSets] = await Promise.all([fetchQuestionBank(), fetchQuestionSets()])
 
   return (
     <section className="space-y-6">
@@ -67,6 +90,7 @@ export default async function OlympiaQuestionBankPage() {
           <p className="text-sm text-muted-foreground">Hiển thị tối đa 50 câu mới nhất cho mục đích kiểm tra nhanh.</p>
         </div>
         <div className="flex gap-2">
+          <UploadQuestionSetDialog />
           <CreateQuestionDialog />
         </div>
       </div>
@@ -84,6 +108,42 @@ export default async function OlympiaQuestionBankPage() {
             điều kiện.
           </p>
           <CategoryBadges questions={questions} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bộ đề đã tải lên</CardTitle>
+          <CardDescription>Danh sách tối đa 30 bộ đề mới nhất.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {questionSets.length === 0 ? (
+            <Alert>
+              <AlertTitle>Chưa có bộ đề</AlertTitle>
+              <AlertDescription>Tải file .xlsx để tạo bộ đề cố định, không chỉnh sửa trực tiếp.</AlertDescription>
+            </Alert>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tên bộ đề</TableHead>
+                  <TableHead>Số câu</TableHead>
+                  <TableHead>File gốc</TableHead>
+                  <TableHead>Thời gian</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {questionSets.map((set: QuestionSetRow) => (
+                  <TableRow key={set.id}>
+                    <TableCell className="font-medium">{set.name}</TableCell>
+                    <TableCell>{set.item_count}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{set.original_filename ?? '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(set.created_at)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

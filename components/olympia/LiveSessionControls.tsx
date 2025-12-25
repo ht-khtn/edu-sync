@@ -9,6 +9,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { openLiveSessionAction, endLiveSessionAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { ViewPasswordDialog } from '@/components/olympia/RegeneratePasswordDialog'
+import type { LiveSessionRow } from '@/types/olympia/game'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -19,10 +21,12 @@ const statusLabel: Record<string, string> = {
 }
 
 type LiveSessionInfo = {
+  id?: string
   status: string | null
   join_code: string | null
   question_state: string | null
   current_round_type: string | null
+  requires_player_password?: boolean
 }
 
 type Props = {
@@ -137,7 +141,7 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
         </SubmitButton>
       </form>
 
-      {playerPassword && mcPassword && (
+      {playerPassword && mcPassword && liveSession?.status !== 'ended' && (
         <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
           <p className="text-xs font-semibold text-green-900">Phòng đã mở thành công!</p>
           <PasswordDisplay label="Mật khẩu thí sinh" value={playerPassword} />
@@ -145,12 +149,24 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
         </div>
       )}
 
-      <form action={endAction} className="space-y-2">
-        <input type="hidden" name="matchId" value={matchId} />
-        <SubmitButton disabled={disableEnd} variant="secondary">
-          {disableEnd ? 'Chưa thể kết thúc' : 'Kết thúc phòng'}
-        </SubmitButton>
-      </form>
+      {liveSession?.status === 'running' && liveSession?.requires_player_password && liveSession?.id && (
+        <ViewPasswordDialog
+          session={{
+            id: liveSession.id,
+            join_code: liveSession.join_code ?? '',
+            requires_player_password: true,
+          } as LiveSessionRow}
+        />
+      )}
+
+      {liveSession?.status !== 'ended' && (
+        <form action={endAction} className="space-y-2">
+          <input type="hidden" name="matchId" value={matchId} />
+          <SubmitButton disabled={disableEnd} variant="secondary">
+            {disableEnd ? 'Chưa thể kết thúc' : 'Kết thúc phòng'}
+          </SubmitButton>
+        </form>
+      )}
     </div>
   )
 }

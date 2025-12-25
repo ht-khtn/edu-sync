@@ -822,3 +822,66 @@ export async function updateMatchAction(_: ActionState, formData: FormData): Pro
     return { error: err instanceof Error ? err.message : 'Không thể cập nhật trận.' }
   }
 }
+const createMatchRoundsSchema = z.object({
+  matchId: z.string().uuid('Mã trận không hợp lệ.'),
+})
+
+export async function createMatchRoundsAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = createMatchRoundsSchema.safeParse({ matchId: formData.get('matchId') })
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+    }
+
+    const matchId = parsed.data.matchId
+
+    // Check if match exists
+    const { data: match, error: matchError } = await olympia
+      .from('matches')
+      .select('id')
+      .eq('id', matchId)
+      .maybeSingle()
+    if (matchError) return { error: matchError.message }
+    if (!match) return { error: 'Không tìm thấy trận.' }
+
+    // Check if rounds already exist
+    const { data: existingRounds, error: checkError } = await olympia
+      .from('match_rounds')
+      .select('id')
+      .eq('match_id', matchId)
+    if (checkError) return { error: checkError.message }
+
+    if (existingRounds && existingRounds.length > 0) {
+      return { error: 'Trận này đã có các vòng thi.' }
+    }
+
+    // Create default rounds
+    const roundTypes = [
+      { roundType: 'khoi_dong', orderIndex: 0 },
+      { roundType: 'vcnv', orderIndex: 1 },
+      { roundType: 'tang_toc', orderIndex: 2 },
+      { roundType: 've_dich', orderIndex: 3 },
+    ]
+
+    const { error: insertError } = await olympia.from('match_rounds').insert(
+      roundTypes.map((round) => ({
+        match_id: matchId,
+        round_type: round.roundType,
+        order_index: round.orderIndex,
+        config: {},
+      }))
+    )
+
+    if (insertError) return { error: insertError.message }
+
+    revalidatePath(`/olympia/admin/matches/${matchId}`)
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
+    return { success: 'Đã tạo 4 vòng thi mặc định (Khởi động, Vượt chướng, Tăng tốc, Về đích).' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể tạo vòng thi.' }
+  }
+}

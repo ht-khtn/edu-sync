@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
+import { useEffect } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { setLiveSessionRoundAction, setQuestionStateAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -54,6 +56,23 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
   const roundMessage = roundState.error ?? roundState.success
   const questionMessage = questionState.error ?? questionState.success
 
+  // Show toasts for messages
+  useEffect(() => {
+    if (roundState.error) {
+      toast.error(roundState.error)
+    } else if (roundState.success) {
+      toast.success(roundState.success)
+    }
+  }, [roundState.error, roundState.success])
+
+  useEffect(() => {
+    if (questionState.error) {
+      toast.error(questionState.error)
+    } else if (questionState.success) {
+      toast.success(questionState.success)
+    }
+  }, [questionState.error, questionState.success])
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <form action={roundAction} className="space-y-3 rounded-lg border border-slate-200 p-4">
@@ -75,8 +94,8 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
           ))}
         </select>
         <SubmitButton disabled={rounds.length === 0}>Đặt vòng hiện tại</SubmitButton>
-        {roundMessage ? (
-          <p className={cn('text-xs', roundState.error ? 'text-destructive' : 'text-green-600')}>{roundMessage}</p>
+        {roundMessage && !roundState.error ? (
+          <p className="text-xs text-green-600">{roundMessage}</p>
         ) : null}
       </form>
 
@@ -99,8 +118,8 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
           ))}
         </select>
         <SubmitButton disabled={!currentRoundType}>Cập nhật trạng thái</SubmitButton>
-        {questionMessage ? (
-          <p className={cn('text-xs', questionState.error ? 'text-destructive' : 'text-green-600')}>{questionMessage}</p>
+        {questionMessage && !questionState.error ? (
+          <p className="text-xs text-green-600">{questionMessage}</p>
         ) : null}
       </form>
     </div>

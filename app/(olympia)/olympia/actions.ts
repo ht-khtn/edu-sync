@@ -9,6 +9,7 @@ import { getServerAuthContext, getServerSupabase } from '@/lib/server-auth'
 export type ActionState = {
   error?: string | null
   success?: string | null
+  data?: Record<string, any> | null
 }
 
 function generateRoomPassword() {
@@ -205,6 +206,7 @@ export async function lookupJoinCodeAction(_: ActionState, formData: FormData): 
 
     return {
       success: `Phòng đang chạy (round: ${data.current_round_type ?? 'N/A'}, trạng thái: ${data.question_state}).` as const,
+      data: { sessionId: data.id }
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Không thể kiểm tra mã tham gia.' }

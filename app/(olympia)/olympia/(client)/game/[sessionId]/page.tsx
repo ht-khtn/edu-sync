@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { OlympiaGameClient } from '@/components/olympia/game'
+import { SessionInfoSidebar } from '@/components/olympia/SessionInfoSidebar'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
@@ -122,29 +123,23 @@ export default async function OlympiaGamePage({ params }: PageProps) {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-lg">
-            <span>{data.match.name}</span>
-            <Badge variant={sessionIsRunning ? 'default' : 'secondary'}>
-              {statusLabel[sessionStatus] ?? sessionStatus}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          <p>Mã tham gia: <span className="font-mono text-base text-slate-900">{data.session.join_code}</span></p>
-          <p>
-            Vòng hiện tại: <strong>{data.session.current_round_type ?? '—'}</strong> · Trạng thái câu hỏi:{' '}
-            <strong>{data.session.question_state ?? '—'}</strong>
-          </p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-4">
+        <div className="lg:col-span-3">
+          <OlympiaGameClient
+            initialData={{ ...data, viewerUserId: viewerId }}
+            sessionId={sessionId}
+            allowGuestFallback={!authUid}
+          />
+        </div>
 
-      <OlympiaGameClient
-        initialData={{ ...data, viewerUserId: viewerId }}
-        sessionId={sessionId}
-        allowGuestFallback={!authUid}
-      />
+        <aside>
+          <SessionInfoSidebar
+            session={data.session}
+            match={data.match}
+            playerCount={data.players.length}
+          />
+        </aside>
+      </div>
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { JoinSessionForm } from '@/components/olympia/JoinSessionForm'
 import { LiveScheduleAutoRefresh } from '@/components/olympia/LiveScheduleAutoRefresh'
 import { OlympiaRealtimeListener } from '@/components/olympia/OlympiaRealtimeListener'
@@ -7,15 +8,24 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { cache } from 'react'
+import { Clock, Radio, Calendar } from 'lucide-react'
+import { cn } from '@/utils/cn'
 
 // ISR: Match schedule updates every 30s. Real-time listener handles live updates.
 export const revalidate = 30
 
-const formatter = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'full', timeStyle: 'short' })
+const formatter = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'long', timeStyle: 'short' })
 const matchStatusLabel: Record<string, string> = {
-  scheduled: 'Đã lên lịch',
+  scheduled: 'Chưa diễn ra',
   live: 'Đang diễn ra',
   finished: 'Đã kết thúc',
+}
+
+const roundLabelMap: Record<string, string> = {
+  khoi_dong: 'Khởi động',
+  vcnv: 'Vượt chướng ngại vật',
+  tang_toc: 'Tăng tốc',
+  ve_dich: 'Về đích',
 }
 
 type UpcomingMatchesPayload = {
@@ -74,13 +84,22 @@ export default async function OlympiaClientHomePage() {
   return (
     <section className="space-y-6">
       <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">Lịch thi Olympia</h1>
-        <p className="text-sm text-muted-foreground">
-          Nhập mã tham gia do ban tổ chức cung cấp hoặc chọn trận đang mở để tham gia khán phòng trực tuyến.
-        </p>
-        <div className="flex flex-col gap-2 rounded-lg border bg-white p-4 shadow-sm">
-          <JoinSessionForm />
+        <div>
+          <h1 className="text-4xl font-bold tracking-tight">🎮 Olympia Quiz Live</h1>
+          <p className="text-lg text-muted-foreground mt-2">
+            Thi trắc nghiệm trực tuyến theo hình thức game show
+          </p>
         </div>
+
+        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Tham gia phòng thi</CardTitle>
+            <CardDescription>Nhập mã tham gia do ban tổ chức cung cấp</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <JoinSessionForm />
+          </CardContent>
+        </Card>
       </div>
 
       {error ? (
@@ -90,53 +109,96 @@ export default async function OlympiaClientHomePage() {
         </Alert>
       ) : null}
 
-      {matches.length === 0 ? (
-        <Alert>
-          <AlertTitle>Chưa có lịch thi</AlertTitle>
-          <AlertDescription>
-            Khi ban tổ chức chuyển trận sang trạng thái scheduled hoặc live, lịch thi sẽ hiển thị tại đây.
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {matches.map((match) => {
-            const session = sessionByMatch.get(match.id)
-            return (
-              <Card key={match.id} className="border border-slate-200">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between gap-3 text-lg">
-                    <span>{match.name}</span>
-                    <Badge variant={match.status === 'live' ? 'default' : 'secondary'}>
-                      {matchStatusLabel[match.status] ?? match.status}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {match.scheduled_at ? formatter.format(new Date(match.scheduled_at)) : 'Đang cập nhật lịch'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  {match.status === 'live' && session ? (
-                    <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-                      <p className="text-xs font-semibold uppercase text-green-700">Đang mở phòng</p>
-                      <p className="text-2xl font-mono tracking-wider text-green-800">{session.join_code}</p>
-                      <p className="text-xs text-green-700">
-                        Vòng hiện tại: {session.current_round_type ?? 'Đang cập nhật'} · Trạng thái: {session.question_state}
-                      </p>
+      <div>
+        <h2 className="text-2xl font-bold mb-3 flex items-center gap-2">
+          <Calendar className="h-6 w-6" />
+          Lịch thi sắp tới
+        </h2>
+
+        {matches.length === 0 ? (
+          <Alert>
+            <AlertTitle>Chưa có lịch thi</AlertTitle>
+            <AlertDescription>
+              Khi ban tổ chức chuyển trận sang trạng thái scheduled hoặc live, lịch thi sẽ hiển thị tại đây.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {matches.map((match) => {
+              const session = sessionByMatch.get(match.id)
+              const isLive = match.status === 'live' && session?.status === 'running'
+              const scheduledDate = match.scheduled_at ? new Date(match.scheduled_at) : null
+
+              return (
+                <Card key={match.id} className={cn('border-2 transition-all', isLive && 'border-green-400 bg-green-50')}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg truncate">{match.name}</CardTitle>
+                        <CardDescription className="flex items-center gap-1 mt-1">
+                          <Clock className="h-4 w-4" />
+                          {scheduledDate ? formatter.format(scheduledDate) : 'Chưa xác định lịch'}
+                        </CardDescription>
+                      </div>
+                      <Badge
+                        variant={isLive ? 'default' : match.status === 'finished' ? 'secondary' : 'outline'}
+                        className={cn(isLive && 'animate-pulse')}
+                      >
+                        {isLive && <Radio className="h-3 w-3 mr-1" />}
+                        {matchStatusLabel[match.status] ?? match.status}
+                      </Badge>
                     </div>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      Ban tổ chức sẽ gửi mã tham gia khi trận chuyển sang trạng thái live.
-                    </p>
-                  )}
-                  <Button variant="outline" size="sm" disabled>
-                    Đăng ký tham gia (sắp ra mắt)
-                  </Button>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    {isLive && session ? (
+                      <div className="space-y-3">
+                        <div className="rounded-lg border-2 border-green-300 bg-white p-3">
+                          <p className="text-xs font-semibold text-green-700 uppercase mb-1">📱 Mã tham gia</p>
+                          <p className="text-2xl font-mono font-bold text-green-900 tracking-widest">{session.join_code}</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-md bg-slate-50 p-2">
+                            <p className="text-xs text-muted-foreground">Vòng hiện tại</p>
+                            <p className="font-semibold text-sm">
+                              {session.current_round_type ? roundLabelMap[session.current_round_type] : '—'}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-slate-50 p-2">
+                            <p className="text-xs text-muted-foreground">Trạng thái câu</p>
+                            <p className="font-semibold text-sm">{session.question_state ?? '—'}</p>
+                          </div>
+                        </div>
+
+                        <Button asChild className="w-full gap-2 bg-green-600 hover:bg-green-700">
+                          <Link href={`/olympia/client/game/${session.id}`}>
+                            <Radio className="h-4 w-4" />
+                            Xem trực tiếp
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-muted-foreground">
+                          {match.status === 'scheduled'
+                            ? 'Chờ thời gian diễn ra'
+                            : 'Phòng thi này đã kết thúc'}
+                        </p>
+                        {match.status === 'scheduled' && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Hãy quay lại trang này vào thời gian trận diễn ra để tham gia
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <OlympiaRealtimeListener debounceMs={1000} />
       <LiveScheduleAutoRefresh intervalMs={90000} />

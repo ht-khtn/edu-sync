@@ -27,14 +27,29 @@ export function PlayerPasswordGate({ session, children }: PlayerPasswordGateProp
 
   // Check if session requires password
   const requiresPassword = session.requires_player_password ?? true
+  const storageKey = `olympia_verified_${session.id}`
 
-  // Handle success - allow access
+  // Initialize verified state from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedVerified = localStorage.getItem(storageKey)
+      if (savedVerified === 'true') {
+        setIsVerified(true)
+      }
+    }
+  }, [session.id, storageKey])
+
+  // Handle success - allow access and save to localStorage
   useEffect(() => {
     if (state.success && state.data?.sessionId) {
       toast.success('Xác thực thành công')
       // Use requestAnimationFrame to avoid cascading renders
       const timer = requestAnimationFrame(() => {
         setIsVerified(true)
+        // Save verified state to localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(storageKey, 'true')
+        }
       })
       return () => cancelAnimationFrame(timer)
     } else if (state.error) {
@@ -45,7 +60,7 @@ export function PlayerPasswordGate({ session, children }: PlayerPasswordGateProp
       })
       return () => cancelAnimationFrame(timer)
     }
-  }, [state.success, state.error, state.data])
+  }, [state.success, state.error, state.data, storageKey])
 
   // If no password required or already verified, show children
   if (!requiresPassword || isVerified) {

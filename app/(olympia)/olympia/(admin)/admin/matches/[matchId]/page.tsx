@@ -87,15 +87,27 @@ async function fetchMatchDetail(matchId: string) {
       .eq('match_id', matchId)
       .order('order_index', { ascending: true }),
     tournamentPromise,
-    olympia
-      .from('match_question_sets')
-      .select('question_set_id')
-      .eq('match_id', matchId),
-    olympia
-      .from('question_sets')
-      .select('id, name, item_count, original_filename, created_at')
-      .order('created_at', { ascending: false })
-      .limit(50),
+    (async () => {
+      try {
+        return await olympia
+          .from('match_question_sets')
+          .select('question_set_id')
+          .eq('match_id', matchId)
+      } catch {
+        return { data: [], error: null }
+      }
+    })(),
+    (async () => {
+      try {
+        return await olympia
+          .from('question_sets')
+          .select('id, name, item_count, original_filename, created_at')
+          .order('created_at', { ascending: false })
+          .limit(50)
+      } catch {
+        return { data: [], error: null }
+      }
+    })(),
   ])
 
   if (liveSessionResult.error) throw liveSessionResult.error
@@ -104,8 +116,6 @@ async function fetchMatchDetail(matchId: string) {
   }
   if (roundsResult.error) throw roundsResult.error
   if (tournamentResult && tournamentResult.error) throw tournamentResult.error
-  if (matchQuestionSetsResult.error) throw matchQuestionSetsResult.error
-  if (questionSetsResult.error) throw questionSetsResult.error
 
   let participantLookup = new Map<string, { contestant_code: string | null; role: string | null }>()
   const playerParticipantIds = (playersResult.data ?? [])

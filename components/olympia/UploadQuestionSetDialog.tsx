@@ -27,7 +27,7 @@ export function UploadQuestionSetDialog() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">Tải bộ đề (.xlsx)</Button>
+        <Button size="sm">Tạo bộ đề (.xlsx)</Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -36,7 +36,7 @@ export function UploadQuestionSetDialog() {
             File .xlsx không có hàng tiêu đề, thứ tự cột: CODE · LĨNH VỰC/VỊ TRÍ · CÂU HỎI · ĐÁP ÁN · GHI CHÚ · NGƯỜI GỬI · NGUỒN · LINK ẢNH/VIDEO · LINK ÂM THANH.
           </DialogDescription>
         </DialogHeader>
-        <form action={formAction} className="space-y-4" encType="multipart/form-data">
+        <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Tên bộ đề</Label>
             <Input id="name" name="name" placeholder="Ví dụ: Tuần 05 - Bảng A" required />

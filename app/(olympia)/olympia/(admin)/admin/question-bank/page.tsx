@@ -1,4 +1,3 @@
-import { CreateQuestionDialog } from '@/components/olympia/CreateQuestionDialog'
 import { UploadQuestionSetDialog } from '@/components/olympia/UploadQuestionSetDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -45,17 +44,25 @@ async function fetchQuestionBank() {
 }
 
 async function fetchQuestionSets() {
-  const { supabase } = await getServerAuthContext()
-  const olympia = supabase.schema('olympia')
-  const { data, error } = await olympia
-    .from('question_sets')
-    .select('id, name, item_count, original_filename, created_at')
-    .order('created_at', { ascending: false })
-    .limit(30)
+  try {
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+    const { data, error } = await olympia
+      .from('question_sets')
+      .select('id, name, item_count, original_filename, created_at')
+      .order('created_at', { ascending: false })
+      .limit(30)
 
-  if (error) throw error
+    if (error) {
+      console.warn('[QuestionBank] Failed to fetch question sets:', error.message)
+      return []
+    }
 
-  return data ?? []
+    return data ?? []
+  } catch (err) {
+    console.warn('[QuestionBank] Question sets table may not exist yet:', err)
+    return []
+  }
 }
 
 function CategoryBadges({ questions }: { questions: QuestionRow[] }) {
@@ -91,7 +98,6 @@ export default async function OlympiaQuestionBankPage() {
         </div>
         <div className="flex gap-2">
           <UploadQuestionSetDialog />
-          <CreateQuestionDialog />
         </div>
       </div>
 

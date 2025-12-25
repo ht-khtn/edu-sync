@@ -26,7 +26,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
-  SidebarFooter,
 } from "@/components/ui/sidebar";
 import { useAdminPermissions } from "@/hooks/domain/useAdminPermissions";
 import { getPrefetchConfig } from "@/lib/link-optimizer";
@@ -154,9 +153,6 @@ function AdminSidebarComponent() {
             <Skeleton className="h-8 w-full bg-muted/70" />
           </div>
         </SidebarContent>
-        <SidebarFooter className="border-t border-sidebar-border bg-sidebar">
-          <div className="p-4 text-xs text-muted-foreground">EduSync v1.0</div>
-        </SidebarFooter>
       </Sidebar>
     );
   }
@@ -238,9 +234,6 @@ function AdminSidebarComponent() {
           </SidebarGroup>
         )}
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border bg-sidebar">
-        <div className="p-4 text-xs text-muted-foreground">EduSync v1.0</div>
-      </SidebarFooter>
     </Sidebar>
   );
 }

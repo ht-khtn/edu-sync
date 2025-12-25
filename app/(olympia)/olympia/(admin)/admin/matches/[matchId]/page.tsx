@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
+// Force dynamic to avoid timing issues with Turbopack performance measurements
+export const dynamic = 'force-dynamic'
 // ISR: Match detail page. Real-time handled by LiveSessionControls component.
 export const revalidate = 30
 
@@ -116,9 +118,19 @@ async function fetchMatchDetail(matchId: string) {
   }
 }
 
-export default async function OlympiaMatchDetailPage({ params }: { params: { matchId: string } }) {
-  const details = await fetchMatchDetail(params.matchId)
+export default async function OlympiaMatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
+  const { matchId } = await params
+  
+  // Validate matchId is a valid UUID before querying
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuidRegex.test(matchId)) {
+    console.error('[OlympiaMatchDetailPage] Invalid UUID format:', matchId)
+    notFound()
+  }
+
+  const details = await fetchMatchDetail(matchId)
   if (!details) {
+    console.error('[OlympiaMatchDetailPage] Match not found in database:', matchId)
     notFound()
   }
 

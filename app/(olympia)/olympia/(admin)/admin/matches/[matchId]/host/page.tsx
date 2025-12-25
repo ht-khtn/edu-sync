@@ -83,8 +83,16 @@ async function fetchHostData(matchId: string) {
   }
 }
 
-export default async function OlympiaHostConsolePage({ params }: { params: { matchId: string } }) {
-  const data = await fetchHostData(params.matchId)
+export default async function OlympiaHostConsolePage({ params }: { params: Promise<{ matchId: string }> }) {
+  const { matchId } = await params
+  
+  // Validate matchId is a valid UUID before querying
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuidRegex.test(matchId)) {
+    notFound()
+  }
+
+  const data = await fetchHostData(matchId)
   if (!data) {
     notFound()
   }

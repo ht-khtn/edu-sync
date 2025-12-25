@@ -98,17 +98,17 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
   const buzzerFeedback = buzzerState.error ?? buzzerState.success
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
-      <div className="flex-1 space-y-6">
+    <div className="grid gap-4 lg:gap-6 lg:grid-cols-4 auto-rows-max lg:auto-rows-auto">
+      <div className="lg:col-span-3 space-y-4 lg:space-y-6">
         <Card className="overflow-hidden border border-slate-200">
-          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle className="text-xl">{questionTitle}</CardTitle>
-              <p className="text-sm text-muted-foreground">Trận: {match.name}</p>
+          <CardHeader className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6">
+            <div className="min-w-0">
+              <CardTitle className="text-lg sm:text-xl truncate">{questionTitle}</CardTitle>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">Trận: {match.name}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="outline">{questionStateText}</Badge>
-              <div className={cn('rounded-md border px-3 py-1 font-mono text-lg', session.timer_deadline ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              <Badge variant="outline" className="text-xs">{questionStateText}</Badge>
+              <div className={cn('rounded-md border px-2 sm:px-3 py-1 font-mono text-sm sm:text-lg whitespace-nowrap', session.timer_deadline ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
                 {timerLabel}
               </div>
             </div>

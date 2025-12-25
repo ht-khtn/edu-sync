@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { OlympiaGameClient } from '@/components/olympia/game'
 import { SessionInfoSidebar } from '@/components/olympia/SessionInfoSidebar'
+import { PlayerPasswordGate } from '@/components/olympia/PlayerPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
@@ -105,41 +106,49 @@ export default async function OlympiaGamePage({ params }: PageProps) {
   const sessionIsRunning = sessionStatus === 'running'
 
   return (
-    <div className="space-y-6">
-      {!authUid ? (
-        <Alert>
-          <AlertTitle>Yêu cầu đăng nhập</AlertTitle>
-          <AlertDescription>Vui lòng đăng nhập để đồng bộ tiến trình thi và gửi đáp án.</AlertDescription>
-        </Alert>
-      ) : null}
+    <PlayerPasswordGate session={data.session}>
+      <div className="min-h-screen">
+        {!authUid ? (
+          <div className="mx-auto max-w-7xl px-4 py-4">
+            <Alert>
+              <AlertTitle>Yêu cầu đăng nhập</AlertTitle>
+              <AlertDescription>Vui lòng đăng nhập để đồng bộ tiến trình thi và gửi đáp án.</AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
 
-      {!sessionIsRunning ? (
-        <Alert className="border-amber-200 bg-amber-50">
-          <AlertTitle>Phòng chưa mở</AlertTitle>
-          <AlertDescription>
-            Trạng thái hiện tại: {statusLabel[sessionStatus] ?? sessionStatus}. Bạn có thể ở lại trang này, hệ thống sẽ cập nhật ngay khi host mở
-            câu hỏi.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+        {!sessionIsRunning ? (
+          <div className="mx-auto max-w-7xl px-4 py-4">
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTitle>Phòng chưa mở</AlertTitle>
+              <AlertDescription>
+                Trạng thái hiện tại: {statusLabel[sessionStatus] ?? sessionStatus}. Bạn có thể ở lại trang này, hệ thống sẽ cập nhật ngay khi host mở
+                câu hỏi.
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-4">
-        <div className="lg:col-span-3">
-          <OlympiaGameClient
-            initialData={{ ...data, viewerUserId: viewerId }}
-            sessionId={sessionId}
-            allowGuestFallback={!authUid}
-          />
+        <div className="mx-auto max-w-7xl px-4 py-6">
+          <div className="grid gap-6 lg:grid-cols-4">
+            <div className="lg:col-span-3">
+              <OlympiaGameClient
+                initialData={{ ...data, viewerUserId: viewerId }}
+                sessionId={sessionId}
+                allowGuestFallback={!authUid}
+              />
+            </div>
+
+            <aside className="lg:sticky lg:top-6 lg:h-fit">
+              <SessionInfoSidebar
+                session={data.session}
+                match={data.match}
+                playerCount={data.players.length}
+              />
+            </aside>
+          </div>
         </div>
-
-        <aside>
-          <SessionInfoSidebar
-            session={data.session}
-            match={data.match}
-            playerCount={data.players.length}
-          />
-        </aside>
       </div>
-    </div>
+    </PlayerPasswordGate>
   )
 }

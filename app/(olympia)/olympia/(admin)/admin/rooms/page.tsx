@@ -204,12 +204,23 @@ export default async function OlympiaAdminRoomsPage() {
                         <TableCell className="text-right space-x-2">
                           <Button
                             asChild
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                          >
+                            <Link href={`/olympia/client/game/${session.id}`}>
+                              <Eye className="h-4 w-4" />
+                              Xem
+                            </Link>
+                          </Button>
+                          <Button
+                            asChild
                             variant="outline"
                             size="sm"
                             className="gap-1"
                           >
                             <Link href={`/olympia/admin/matches/${session.match_id}/host`}>
-                              <Eye className="h-4 w-4" />
+                              <Radio className="h-4 w-4" />
                               Host
                             </Link>
                           </Button>
@@ -259,7 +270,18 @@ export default async function OlympiaAdminRoomsPage() {
                         <TableCell className="text-sm text-muted-foreground">
                           {session.created_at ? formatter.format(new Date(session.created_at)) : '—'}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                          >
+                            <Link href={`/olympia/client/game/${session.id}`}>
+                              <Eye className="h-4 w-4" />
+                              Xem
+                            </Link>
+                          </Button>
                           <Button
                             asChild
                             variant="outline"
@@ -314,7 +336,18 @@ export default async function OlympiaAdminRoomsPage() {
                         <TableCell className="text-sm text-muted-foreground">
                           {session.ended_at ? formatter.format(new Date(session.ended_at)) : '—'}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                          >
+                            <Link href={`/olympia/client/game/${session.id}`}>
+                              <Eye className="h-4 w-4" />
+                              Xem
+                            </Link>
+                          </Button>
                           <Button
                             asChild
                             variant="ghost"
@@ -323,7 +356,7 @@ export default async function OlympiaAdminRoomsPage() {
                           >
                             <Link href={`/olympia/admin/matches/${session.match_id}`}>
                               <Eye className="h-4 w-4" />
-                              Xem kết quả
+                              Kết quả
                             </Link>
                           </Button>
                         </TableCell>

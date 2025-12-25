@@ -80,7 +80,9 @@ async function fetchMatchDetail(matchId: string) {
   ])
 
   if (liveSessionResult.error) throw liveSessionResult.error
-  if (playersResult.error) throw playersResult.error
+  if (playersResult.error) {
+    console.warn('[Olympia] Failed to load match players:', playersResult.error.message)
+  }
   if (roundsResult.error) throw roundsResult.error
   if (tournamentResult && tournamentResult.error) throw tournamentResult.error
 
@@ -95,10 +97,13 @@ async function fetchMatchDetail(matchId: string) {
       .select('user_id, contestant_code, role')
       .in('user_id', playerParticipantIds)
 
-    if (participantError) throw participantError
-    participantLookup = new Map(
-      (participants ?? []).map((participant) => [participant.user_id, participant])
-    )
+    if (participantError) {
+      console.warn('[Olympia] Failed to load participants:', participantError.message)
+    } else {
+      participantLookup = new Map(
+        (participants ?? []).map((participant) => [participant.user_id, participant])
+      )
+    }
   }
 
   return {

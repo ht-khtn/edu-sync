@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
+import { CreateTournamentDialog } from '@/components/olympia/CreateTournamentDialog'
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
@@ -108,13 +109,48 @@ export default async function OlympiaMatchesAdminPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            Xuất CSV
-          </Button>
+          <CreateTournamentDialog />
           <CreateMatchDialog tournaments={tournaments} />
         </div>
       </div>
-
+      {tournaments.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Danh sách giải đấu</CardTitle>
+            <p className="text-xs text-muted-foreground">Tổng số: {tournaments.length} giải</p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tên giải</TableHead>
+                  <TableHead>Trạng thái</TableHead>
+                  <TableHead>Ngày bắt đầu</TableHead>
+                  <TableHead>Ngày kết thúc</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tournaments.map((tournament) => (
+                  <TableRow key={tournament.id}>
+                    <TableCell className="font-medium">{tournament.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {tournamentStatusLabel[tournament.status] ?? tournament.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(tournament.starts_at)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(tournament.ends_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>

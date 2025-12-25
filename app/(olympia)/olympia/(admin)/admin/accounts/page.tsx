@@ -7,6 +7,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
+import { CreateParticipantDialog } from '@/components/olympia/CreateParticipantDialog'
+import { EditParticipantDialog } from '@/components/olympia/EditParticipantDialog'
+import { DeleteParticipantButton } from '@/components/olympia/DeleteParticipantButton'
 import { cn } from '@/utils/cn'
 
 // ISR: Participant list. Revalidate every 30s.
@@ -116,15 +119,16 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase text-muted-foreground">Olympia</p>
           <h1 className="text-3xl font-semibold tracking-tight">Quản lý admin &amp; tài khoản thi</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Hiển thị tối đa 200 bản ghi gần nhất từ bảng <code className="rounded bg-slate-100 px-1">olympia.participants</code>.
-        </p>
+        <CreateParticipantDialog />
       </div>
+      <p className="text-sm text-muted-foreground">
+        Hiển thị tối đa 200 bản ghi gần nhất từ bảng <code className="rounded bg-slate-100 px-1">olympia.participants</code>.
+      </p>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -211,6 +215,7 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
                   <TableHead>Mã thí sinh</TableHead>
                   <TableHead>Vai trò</TableHead>
                   <TableHead>Ngày thêm</TableHead>
+                  <TableHead>Hành động</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -229,6 +234,14 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {row.created_at ? dateFormatter.format(new Date(row.created_at)) : '—'}
+                      </TableCell>
+                      <TableCell className="flex gap-2">
+                        <EditParticipantDialog 
+                          userId={row.user_id}
+                          currentContestantCode={row.contestant_code}
+                          currentRole={row.role}
+                        />
+                        <DeleteParticipantButton userId={row.user_id} />
                       </TableCell>
                     </TableRow>
                   )

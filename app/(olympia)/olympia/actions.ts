@@ -559,3 +559,174 @@ export async function triggerBuzzerAction(_: ActionState, formData: FormData): P
     return { error: err instanceof Error ? err.message : 'Không thể gửi tín hiệu buzzer.' }
   }
 }
+
+const participantSchema = z.object({
+  userId: z.string().uuid('User ID không hợp lệ.'),
+  role: z.enum(['contestant', 'AD', 'MOD']).optional().transform((val) => (val === 'contestant' ? null : val)),
+  contestantCode: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
+})
+
+const updateParticipantSchema = z.object({
+  userId: z.string().uuid('User ID không hợp lệ.'),
+  role: z.enum(['contestant', 'AD', 'MOD']).optional().transform((val) => (val === 'contestant' ? null : val)),
+  contestantCode: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
+})
+
+const tournamentSchema = z.object({
+  name: z.string().min(3, 'Tên giải tối thiểu 3 ký tự'),
+  startsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
+  endsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
+  status: z.enum(['planned', 'active', 'archived']).optional().transform((val) => val ?? 'planned'),
+})
+
+export async function createParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = participantSchema.safeParse({
+      userId: formData.get('userId'),
+      role: formData.get('role'),
+      contestantCode: formData.get('contestantCode'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const { userId, role, contestantCode } = parsed.data
+
+    // Check if user exists
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (userError) return { error: userError.message }
+    if (!user) return { error: 'User ID không tồn tại trong hệ thống.' }
+
+    // Check if already exists
+    const { data: existing } = await olympia
+      .from('participants')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (existing) return { error: 'Tài khoản này đã được đăng ký Olympia.' }
+
+    const { error } = await olympia.from('participants').insert({
+      user_id: userId,
+      role: role,
+      contestant_code: contestantCode,
+    })
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/accounts')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã thêm tài khoản Olympia thành công.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể tạo tài khoản.' }
+  }
+}
+
+export async function updateParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = updateParticipantSchema.safeParse({
+      userId: formData.get('userId'),
+      role: formData.get('role'),
+      contestantCode: formData.get('contestantCode'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const { userId, role, contestantCode } = parsed.data
+
+    const { error } = await olympia
+      .from('participants')
+      .update({
+        role: role,
+        contestant_code: contestantCode,
+      })
+      .eq('user_id', userId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/accounts')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã cập nhật tài khoản thành công.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể cập nhật tài khoản.' }
+  }
+}
+
+export async function deleteParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const userId = formData.get('userId') as string
+
+    if (!userId || !userId.match(/^[0-9a-f\-]+$/i)) {
+      return { error: 'User ID không hợp lệ.' }
+    }
+
+    const { error } = await olympia
+      .from('participants')
+      .delete()
+      .eq('user_id', userId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/accounts')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã xóa tài khoản thành công.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể xóa tài khoản.' }
+  }
+}
+
+export async function createTournamentAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = tournamentSchema.safeParse({
+      name: formData.get('name'),
+      startsAt: formData.get('startsAt'),
+      endsAt: formData.get('endsAt'),
+      status: formData.get('status'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const { name, startsAt, endsAt, status } = parsed.data
+
+    const { error } = await olympia.from('tournaments').insert({
+      name: name,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      status: status,
+    })
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã tạo giải đấu mới.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể tạo giải đấu.' }
+  }
+}

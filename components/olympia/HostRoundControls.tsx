@@ -1,7 +1,8 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useFormState, useFormStatus } from 'react-dom'
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { setLiveSessionRoundAction, setQuestionStateAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -47,8 +48,8 @@ function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: 
 }
 
 export function HostRoundControls({ matchId, rounds, currentQuestionState, currentRoundType }: Props) {
-  const [roundState, roundAction] = useFormState(setLiveSessionRoundAction, initialState)
-  const [questionState, questionAction] = useFormState(setQuestionStateAction, initialState)
+  const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
+  const [questionState, questionAction] = useActionState(setQuestionStateAction, initialState)
 
   const roundMessage = roundState.error ?? roundState.success
   const questionMessage = questionState.error ?? questionState.success

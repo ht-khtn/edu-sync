@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useFormState } from 'react-dom'
+import { useState } from 'react'
+import { useActionState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { lookupJoinCodeAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -12,18 +12,7 @@ const initialState: ActionState = { error: null, success: null }
 export function JoinSessionForm() {
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
-  const handleAction = useCallback(
-    async (prevState: ActionState, formData: FormData) => {
-      const result = await lookupJoinCodeAction(prevState, formData)
-      if (result.success) {
-        setCode('')
-        setPassword('')
-      }
-      return result
-    },
-    [setCode, setPassword]
-  )
-  const [state, formAction] = useFormState(handleAction, initialState)
+  const [state, formAction] = useActionState(lookupJoinCodeAction, initialState)
 
   const hasMessage = state.error || state.success
 

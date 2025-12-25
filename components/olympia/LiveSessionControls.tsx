@@ -1,7 +1,8 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useFormState, useFormStatus } from 'react-dom'
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { openLiveSessionAction, endLiveSessionAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -37,8 +38,8 @@ function SubmitButton({ children, disabled, variant }: { children: ReactNode; di
 }
 
 export function LiveSessionControls({ matchId, liveSession }: Props) {
-  const [openState, openAction] = useFormState(openLiveSessionAction, initialState)
-  const [endState, endAction] = useFormState(endLiveSessionAction, initialState)
+  const [openState, openAction] = useActionState(openLiveSessionAction, initialState)
+  const [endState, endAction] = useActionState(endLiveSessionAction, initialState)
 
   const message = openState.error ?? openState.success ?? endState.error ?? endState.success
   const isError = Boolean(openState.error ?? endState.error)

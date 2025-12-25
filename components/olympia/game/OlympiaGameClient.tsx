@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
-import { useFormState, useFormStatus } from 'react-dom'
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -62,8 +63,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     isRealtimeReady,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
-  const [answerState, answerAction] = useFormState(submitAnswerAction, actionInitialState)
-  const [buzzerState, buzzerAction] = useFormState(triggerBuzzerAction, actionInitialState)
+  const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
+  const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
 
   const scoreboard = useMemo(() => {
     const totals = new Map<string, number>()

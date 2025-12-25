@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useFormState } from 'react-dom'
+import { useState } from 'react'
+import { useActionState } from 'react'
 import { verifyMcPasswordAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,14 +15,16 @@ type McPasswordGateProps = {
 
 export function McPasswordGate({ matchId }: McPasswordGateProps) {
   const [unlocked, setUnlocked] = useState(false)
-  const handler = useCallback(async (prev: ActionState, formData: FormData) => {
-    const result = await verifyMcPasswordAction(prev, formData)
-    if (result.success) {
-      setUnlocked(true)
-    }
-    return result
-  }, [])
-  const [state, formAction] = useFormState(handler, initialState)
+  const [state, formAction] = useActionState(
+    async (prev: ActionState, formData: FormData) => {
+      const result = await verifyMcPasswordAction(prev, formData)
+      if (result.success) {
+        setUnlocked(true)
+      }
+      return result
+    },
+    initialState
+  )
   const hasMessage = state.error || state.success
 
   if (unlocked) {

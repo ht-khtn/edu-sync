@@ -730,3 +730,95 @@ export async function createTournamentAction(_: ActionState, formData: FormData)
     return { error: err instanceof Error ? err.message : 'Không thể tạo giải đấu.' }
   }
 }
+
+export async function updateTournamentAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = z.object({
+      tournamentId: z.string().uuid('ID giải không hợp lệ.'),
+      name: z.string().min(3, 'Tên giải tối thiểu 3 ký tự'),
+      startsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
+      endsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
+      status: z.enum(['planned', 'active', 'archived']).optional(),
+    }).safeParse({
+      tournamentId: formData.get('tournamentId'),
+      name: formData.get('name'),
+      startsAt: formData.get('startsAt'),
+      endsAt: formData.get('endsAt'),
+      status: formData.get('status'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const { tournamentId, name, startsAt, endsAt, status } = parsed.data
+
+    const { error } = await olympia
+      .from('tournaments')
+      .update({
+        name: name,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        status: status,
+      })
+      .eq('id', tournamentId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã cập nhật giải đấu thành công.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể cập nhật giải đấu.' }
+  }
+}
+
+export async function updateMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess()
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+
+    const parsed = z.object({
+      matchId: z.string().uuid('ID trận không hợp lệ.'),
+      name: z.string().min(3, 'Tên trận tối thiểu 3 ký tự'),
+      tournamentId: z.string().uuid().optional().or(z.literal('')).transform((val) => (val ? val : null)),
+      scheduledAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
+      status: z.enum(['draft', 'scheduled', 'live', 'finished', 'cancelled']).optional(),
+    }).safeParse({
+      matchId: formData.get('matchId'),
+      name: formData.get('name'),
+      tournamentId: formData.get('tournamentId'),
+      scheduledAt: formData.get('scheduledAt'),
+      status: formData.get('status'),
+    })
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+    }
+
+    const { matchId, name, tournamentId, scheduledAt, status } = parsed.data
+
+    const { error } = await olympia
+      .from('matches')
+      .update({
+        name: name,
+        tournament_id: tournamentId,
+        scheduled_at: scheduledAt,
+        status: status,
+      })
+      .eq('id', matchId)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/olympia/admin/matches')
+    revalidatePath('/olympia/admin')
+    return { success: 'Đã cập nhật trận thành công.' }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Không thể cập nhật trận.' }
+  }
+}

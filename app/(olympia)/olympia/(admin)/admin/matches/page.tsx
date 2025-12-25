@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CreateMatchDialog } from '@/components/olympia/CreateMatchDialog'
 import { CreateTournamentDialog } from '@/components/olympia/CreateTournamentDialog'
+import { EditTournamentDialog } from '@/components/olympia/EditTournamentDialog'
+import { EditMatchDialog } from '@/components/olympia/EditMatchDialog'
 import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
@@ -119,6 +121,7 @@ export default async function OlympiaMatchesAdminPage() {
                   <TableHead>Trạng thái</TableHead>
                   <TableHead>Ngày bắt đầu</TableHead>
                   <TableHead>Ngày kết thúc</TableHead>
+                  <TableHead>Hành động</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -135,6 +138,15 @@ export default async function OlympiaMatchesAdminPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(tournament.ends_at)}
+                    </TableCell>
+                    <TableCell>
+                      <EditTournamentDialog 
+                        tournamentId={tournament.id}
+                        currentName={tournament.name}
+                        currentStatus={tournament.status}
+                        currentStartsAt={tournament.starts_at}
+                        currentEndsAt={tournament.ends_at}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -165,6 +177,7 @@ export default async function OlympiaMatchesAdminPage() {
                   <TableHead>Lịch</TableHead>
                   <TableHead>Trạng thái</TableHead>
                   <TableHead>Live session</TableHead>
+                  <TableHead>Hành động</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -202,6 +215,16 @@ export default async function OlympiaMatchesAdminPage() {
                       </TableCell>
                       <TableCell>
                         <LiveSessionControls matchId={match.id} liveSession={session} />
+                      </TableCell>
+                      <TableCell>
+                        <EditMatchDialog
+                          matchId={match.id}
+                          currentName={match.name}
+                          currentTournamentId={match.tournament_id}
+                          currentStatus={match.status}
+                          currentScheduledAt={match.scheduled_at}
+                          tournaments={tournaments}
+                        />
                       </TableCell>
                     </TableRow>
                   )

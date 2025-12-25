@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Edit } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { updateParticipantAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -33,8 +34,9 @@ export function EditParticipantDialog({ userId, currentContestantCode, currentRo
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          Chỉnh sửa
+        <Button variant="ghost" size="sm" aria-label="Chỉnh sửa">
+          <Edit className="h-4 w-4" />
+          <span className="sr-only">Chỉnh sửa</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">

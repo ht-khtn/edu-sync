@@ -39,7 +39,11 @@ export function PlayerPasswordGate({ session, children }: PlayerPasswordGateProp
       return () => cancelAnimationFrame(timer)
     } else if (state.error) {
       toast.error(state.error)
-      setPassword('')
+      // Use requestAnimationFrame to clear password field
+      const timer = requestAnimationFrame(() => {
+        setPassword('')
+      })
+      return () => cancelAnimationFrame(timer)
     }
   }, [state.success, state.error, state.data])
 

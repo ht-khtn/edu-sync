@@ -5,12 +5,20 @@ import { AdminHeader } from "@/components/admin/layout/AdminHeader";
 import { AdminMainContent } from "@/components/admin/layout/AdminMainContent";
 import { OlympiaAdminSidebar } from "@/components/olympia/admin/layout/OlympiaAdminSidebar";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
+import { getServerAuthContext } from "@/lib/server-auth";
 
 export default async function OlympiaAdminLayout({ children }: { children: ReactNode }) {
   try {
     await ensureOlympiaAdminAccess();
   } catch {
-    redirect("/client");
+    // Check if user is authenticated
+    const { appUserId } = await getServerAuthContext();
+    if (!appUserId) {
+      // Not authenticated - redirect to login
+      return redirect('/login?redirect=/olympia/admin');
+    }
+    // Authenticated but no admin role - redirect to olympia client
+    return redirect("/olympia/client");
   }
 
   return (

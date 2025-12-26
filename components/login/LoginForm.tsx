@@ -129,28 +129,28 @@ export default function LoginForm() {
         }
 
         let profileJson = await profileRes.json();
-        
+
         // Retry logic: if user not found, it may be due to DB trigger delay
         if (!profileJson?.user || !profileJson.user.id) {
           // Retry up to 3 times with delays
           let retries = 0;
           const maxRetries = 3;
-          
+
           while ((!profileJson?.user || !profileJson.user.id) && retries < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 300));
-            
+
             const retryRes = await fetch("/api/session", {
               method: "GET",
               credentials: "include",
               cache: "no-store",
             });
-            
+
             if (retryRes.ok) {
               profileJson = await retryRes.json();
             }
             retries++;
           }
-          
+
           // If still not found after retries
           if (!profileJson?.user || !profileJson.user.id) {
             await supabase.auth.signOut();

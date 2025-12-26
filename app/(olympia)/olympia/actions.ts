@@ -165,9 +165,8 @@ const joinSchema = z.object({
     .transform((val) => val.trim().toUpperCase()),
   playerPassword: z
     .string()
-    .min(4, "Mật khẩu tối thiểu 4 ký tự")
-    .max(64, "Mật khẩu quá dài")
-    .transform((val) => val.trim().toUpperCase()),
+    .optional()
+    .transform((val) => val?.trim().toUpperCase() ?? ""),
 });
 
 const mcPasswordSchema = z.object({
@@ -393,11 +392,11 @@ export async function lookupJoinCodeAction(
 
     if (error) return { error: error.message };
     if (!data) return { error: "Không tìm thấy phòng với mã này." };
-    if (data.status !== "running") return { error: "Phòng chưa mở cho khán giả." };
+    if (data.status === "ended") return { error: "Phòng thi đã kết thúc." };
 
     const requiresPassword = data.requires_player_password !== false;
     if (requiresPassword) {
-      if (!parsed.data.playerPassword) {
+      if (!parsed.data.playerPassword || parsed.data.playerPassword.length === 0) {
         return { error: "Phòng yêu cầu mật khẩu thí sinh." };
       }
       if (!isPasswordMatch(data.player_password, parsed.data.playerPassword)) {

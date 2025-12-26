@@ -31,7 +31,15 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         return null
     }
 
-    if (!session) return null
+    if (!session) {
+        console.error(`[Olympia] Session not found: ${sessionId}`)
+        return null
+    }
+
+    if (!session.match_id) {
+        console.error(`[Olympia] Session has no match_id: ${sessionId}`)
+        return null
+    }
 
     const [{ data: match, error: matchError }, { data: players, error: playersError }] = await Promise.all([
         olympia
@@ -51,7 +59,10 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         return null
     }
 
-    if (!match) return null
+    if (!match) {
+        console.error(`[Olympia] Match not found for match_id: ${session.match_id}`)
+        return null
+    }
 
     if (playersError) {
         console.warn('[Olympia] load players failed', playersError.message)
@@ -89,7 +100,7 @@ const statusLabel: Record<string, string> = {
 
 export default async function OlympiaGamePage({ params }: PageProps) {
     const { supabase, authUid, appUserId } = await getServerAuthContext()
-    const sessionId = params.sessionId
+    const { sessionId } = await params
     if (!sessionId) {
         notFound()
     }

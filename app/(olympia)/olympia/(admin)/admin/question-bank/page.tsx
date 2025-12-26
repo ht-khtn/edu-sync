@@ -1,5 +1,5 @@
 import { UploadQuestionSetDialog } from '@/components/olympia/admin/question-bank/UploadQuestionSetDialog'
-import { ViewQuestionSetDialog } from '@/components/olympia/shared/ViewQuestionSetDialog'
+import { ViewQuestionSetDialog } from '@/components/olympia/admin/question-bank/ViewQuestionSetDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'

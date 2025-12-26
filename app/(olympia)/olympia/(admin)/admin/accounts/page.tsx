@@ -101,6 +101,18 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
     }
   }
 
+  // Load classes and all users for the "Add account" selector (limit to 2000)
+  const { data: classesData } = await authContext.supabase
+    .from('classes')
+    .select('id, name')
+    .order('name')
+
+  const { data: allUsersData } = await authContext.supabase
+    .from('users')
+    .select('id, user_name, email, class_id, user_profiles(full_name)')
+    .order('user_name')
+    .limit(2000)
+
   const totalAccounts = participantRows.length
   const adminCount = participantRows.filter((row) => row.role === 'AD').length
   const contestantCount = participantRows.filter((row) => row.role !== 'AD' && row.contestant_code).length
@@ -125,7 +137,7 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
           <p className="text-xs uppercase text-muted-foreground">Olympia</p>
           <h1 className="text-3xl font-semibold tracking-tight">Quản lý admin &amp; tài khoản thi</h1>
         </div>
-        <CreateParticipantDialog />
+        <CreateParticipantDialog classes={classesData ?? []} users={allUsersData ?? []} />
       </div>
       <p className="text-sm text-muted-foreground">
         Hiển thị tối đa 200 bản ghi gần nhất từ bảng <code className="rounded bg-slate-100 px-1">olympia.participants</code>.

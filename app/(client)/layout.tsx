@@ -18,12 +18,7 @@ export default async function ClientLayout({ children }: { children: React.React
   ])
   
   if (!appUserId) {
-    return (
-      <>
-        <ClientHeader user={null} />
-        {children}
-      </>
-    )
+    return redirect('/login?redirect=/client')
   }
 
   const { isStudentOnly } = summarizeRoles(roles)

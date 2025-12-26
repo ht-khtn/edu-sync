@@ -9,7 +9,7 @@ export default async function RootPage() {
     getServerRoles()
   ])
   
-  if (!appUserId) return redirect('/client')
+  if (!appUserId) return redirect('/login?redirect=/')
 
   const { isStudentOnly } = summarizeRoles(roles)
   return redirect(isStudentOnly ? '/client' : '/admin')

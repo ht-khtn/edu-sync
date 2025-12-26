@@ -162,7 +162,10 @@ export default function LoginForm() {
 
         // Use window.location for hard redirect to ensure cookies are read by server-side middleware
         // This ensures proxy.ts can detect the authenticated user immediately
-        window.location.href = "/";
+        // Check if there's a redirect parameter in the URL
+        const params = new URLSearchParams(window.location.search)
+        const redirectUrl = params.get('redirect') || '/'
+        window.location.href = redirectUrl
         toast.success("Đăng nhập thành công");
       }
     } catch (err) {

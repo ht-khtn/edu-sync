@@ -113,6 +113,11 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
     .order('user_name')
     .limit(2000)
 
+  const classesMap = new Map<string, string>()
+  for (const c of classesData ?? []) {
+    classesMap.set(c.id, c.name)
+  }
+
   const totalAccounts = participantRows.length
   const adminCount = participantRows.filter((row) => row.role === 'AD').length
   const contestantCount = participantRows.filter((row) => row.role !== 'AD' && row.contestant_code).length
@@ -126,6 +131,7 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
     ...row,
     category: resolveRoleCategory(row),
     user: usersMap.get(row.user_id),
+    userClassName: classesMap.get(usersMap.get(row.user_id)?.class_id ?? '') ?? null,
   }))
 
   const visibleRows = rowsWithCategory.filter((row) => (filterValue === 'all' ? true : row.category === filterValue))
@@ -253,6 +259,8 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
                           userId={row.user_id}
                           currentContestantCode={row.contestant_code}
                           currentRole={row.role}
+                          userName={resolveProfileName(row.user)}
+                          userClassName={row.userClassName}
                         />
                         <DeleteParticipantButton userId={row.user_id} />
                       </TableCell>

@@ -15,9 +15,11 @@ type EditParticipantDialogProps = {
   userId: string
   currentContestantCode: string | null
   currentRole: string | null
+  userName?: string | null
+  userClassName?: string | null
 }
 
-export function EditParticipantDialog({ userId, currentContestantCode, currentRole }: EditParticipantDialogProps) {
+export function EditParticipantDialog({ userId, currentContestantCode, currentRole, userName, userClassName }: EditParticipantDialogProps) {
   const [open, setOpen] = useState(false)
   const [state, formAction] = useActionState(updateParticipantAction, initialState)
 
@@ -51,6 +53,21 @@ export function EditParticipantDialog({ userId, currentContestantCode, currentRo
             <Label>User ID</Label>
             <p className="text-sm font-mono text-muted-foreground">{userId}</p>
           </div>
+
+          {/* Read-only display: user name and class (cannot edit) */}
+          {userName ? (
+            <div className="space-y-2">
+              <Label>Tên</Label>
+              <p className="text-sm">{userName}</p>
+            </div>
+          ) : null}
+
+          {userClassName ? (
+            <div className="space-y-2">
+              <Label>Lớp</Label>
+              <p className="text-sm">{userClassName}</p>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="role">Vai trò</Label>

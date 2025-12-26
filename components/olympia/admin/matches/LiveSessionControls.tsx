@@ -115,6 +115,16 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
 
   const { playerPassword, mcPassword } = extractPasswords(openState.success)
 
+  // Save passwords to localStorage when newly extracted
+  if (typeof window !== 'undefined' && playerPassword && mcPassword) {
+    try {
+      const passwords = { playerPassword, mcPassword }
+      localStorage.setItem(`olympia-passwords-${matchId}`, JSON.stringify(passwords))
+    } catch (e) {
+      console.error('Failed to save passwords to localStorage:', e)
+    }
+  }
+
   const disableOpen = liveSession?.status === 'running'
   const disableEnd = !liveSession || liveSession.status !== 'running'
 
@@ -141,23 +151,38 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
         </SubmitButton>
       </form>
 
-      {playerPassword && mcPassword && liveSession?.status !== 'ended' && (
-        <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
-          <p className="text-xs font-semibold text-green-900">Phòng đã mở thành công!</p>
-          <PasswordDisplay label="Mật khẩu thí sinh" value={playerPassword} />
-          <PasswordDisplay label="Mật khẩu MC/Người dẫn" value={mcPassword} />
-        </div>
-      )}
+      {liveSession?.status !== 'ended' && (() => {
+        let persisted: { playerPassword: string | null; mcPassword: string | null } | null = null
+        if (typeof window !== 'undefined') {
+          try {
+            const saved = localStorage.getItem(`olympia-passwords-${matchId}`)
+            persisted = saved ? JSON.parse(saved) : null
+          } catch {
+            // ignore parse errors
+          }
+        }
+        const pPlayer = playerPassword || persisted?.playerPassword
+        const pMc = mcPassword || persisted?.mcPassword
+        return pPlayer && pMc ? (
+          <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
+            <p className="text-xs font-semibold text-green-900">Phòng đã mở thành công!</p>
+            <PasswordDisplay label="Mật khẩu thí sinh" value={pPlayer} />
+            <PasswordDisplay label="Mật khẩu MC/Người dẫn" value={pMc} />
+          </div>
+        ) : (
+          (liveSession?.status === 'running' && liveSession?.requires_player_password && liveSession?.id && (
+            <ViewPasswordDialog
+              session={{
+                id: liveSession.id,
+                join_code: liveSession.join_code ?? '',
+                requires_player_password: true,
+              } as LiveSessionRow}
+            />
+          ))
+        )
+      })()}
 
-      {liveSession?.status === 'running' && liveSession?.requires_player_password && liveSession?.id && (
-        <ViewPasswordDialog
-          session={{
-            id: liveSession.id,
-            join_code: liveSession.join_code ?? '',
-            requires_player_password: true,
-          } as LiveSessionRow}
-        />
-      )}
+      {/* ViewPasswordDialog only shown when no persisted passwords exist - handled above */}
 
       {liveSession?.status !== 'ended' && (
         <form action={endAction} className="space-y-2">

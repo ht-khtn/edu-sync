@@ -1,108 +1,144 @@
-'use server'
+"use server";
 
-import { createHash, randomBytes } from 'crypto'
-import { revalidatePath } from 'next/cache'
-import ExcelJS from 'exceljs'
-import { z } from 'zod'
-import { ensureOlympiaAdminAccess } from '@/lib/olympia-access'
-import { getServerAuthContext, getServerSupabase } from '@/lib/server-auth'
+import { createHash, randomBytes } from "crypto";
+import { revalidatePath } from "next/cache";
+import ExcelJS from "exceljs";
+import { z } from "zod";
+import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
+import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
 
 export type ActionState = {
-  error?: string | null
-  success?: string | null
-  data?: Record<string, unknown> | null
-}
+  error?: string | null;
+  success?: string | null;
+  data?: Record<string, unknown> | null;
+};
 
 function generateRoomPassword() {
-  return randomBytes(3).toString('hex').toUpperCase()
+  return randomBytes(3).toString("hex").toUpperCase();
 }
 
 function hashPassword(raw: string) {
-  return createHash('sha256').update(raw).digest('hex')
+  return createHash("sha256").update(raw.toUpperCase()).digest("hex");
 }
 
 function isPasswordMatch(stored: string | null | undefined, provided: string) {
-  if (!stored) return false
-  const hashed = hashPassword(provided)
-  return stored === hashed || stored === provided
+  if (!stored) return false;
+  const hashed = hashPassword(provided);
+  return stored === hashed;
 }
 
 const matchSchema = z.object({
-  name: z.string().min(3, 'Tên trận tối thiểu 3 ký tự'),
-  tournamentId: z.string().uuid().optional().or(z.literal('')).transform((val) => (val ? val : null)),
-  scheduledAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-})
+  name: z.string().min(3, "Tên trận tối thiểu 3 ký tự"),
+  tournamentId: z
+    .string()
+    .uuid()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? val : null)),
+  scheduledAt: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val).toISOString() : null)),
+});
 
 const questionSchema = z.object({
-  code: z.string().min(3, 'Mã câu hỏi tối thiểu 3 ký tự').max(16),
-  category: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val : null)),
-  questionText: z.string().min(10, 'Nội dung câu hỏi quá ngắn'),
-  answerText: z.string().min(1, 'Cần có đáp án'),
-  note: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val : null)),
-})
+  code: z.string().min(3, "Mã câu hỏi tối thiểu 3 ký tự").max(16),
+  category: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val : null)),
+  questionText: z.string().min(10, "Nội dung câu hỏi quá ngắn"),
+  answerText: z.string().min(1, "Cần có đáp án"),
+  note: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val : null)),
+});
 
 const questionSetUploadSchema = z.object({
-  name: z.string().min(3, 'Tên bộ đề tối thiểu 3 ký tự'),
-})
+  name: z.string().min(3, "Tên bộ đề tối thiểu 3 ký tự"),
+});
 
 const updateMatchQuestionSetsSchema = z.object({
-  matchId: z.string().uuid('ID trận không hợp lệ.'),
+  matchId: z.string().uuid("ID trận không hợp lệ."),
   questionSetIds: z.array(z.string().uuid()).default([]),
-})
+});
 
-const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024 // 5MB safety limit
+const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 type ParsedQuestionSetItem = {
-  code: string
-  category: string | null
-  question_text: string
-  answer_text: string
-  note: string | null
-  submitted_by: string | null
-  source: string | null
-  image_url: string | null
-  audio_url: string | null
-  order_index: number
-}
+  code: string;
+  category: string | null;
+  question_text: string;
+  answer_text: string;
+  note: string | null;
+  submitted_by: string | null;
+  source: string | null;
+  image_url: string | null;
+  audio_url: string | null;
+  order_index: number;
+};
 
-async function parseQuestionSetWorkbook(buffer: Buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
-  const sheet = workbook.worksheets[0]
+async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array) {
+  const workbook = new ExcelJS.Workbook();
+  // ExcelJS expects a Node Buffer; ensure we pass a Buffer instance
+  let nodeBuffer: Buffer;
+  if (Buffer.isBuffer(buffer)) {
+    nodeBuffer = buffer;
+  } else if (buffer instanceof ArrayBuffer) {
+    nodeBuffer = Buffer.from(new Uint8Array(buffer));
+  } else {
+    // Uint8Array or similar
+    nodeBuffer = Buffer.from(buffer as Uint8Array);
+  }
+  await workbook.xlsx.load(nodeBuffer);
+  const sheet = workbook.worksheets[0];
   if (!sheet) {
-    throw new Error('File không có sheet hợp lệ.')
+    throw new Error("File không có sheet hợp lệ.");
   }
 
-  const items: ParsedQuestionSetItem[] = []
-  const codeSet = new Set<string>()
-  let skipped = 0
+  const items: ParsedQuestionSetItem[] = [];
+  const codeSet = new Set<string>();
+  let skipped = 0;
 
   sheet.eachRow((row) => {
-    const cells = Array.from({ length: 9 }, (_, index) => row.getCell(index + 1))
-    const values = cells.map((cell) => (typeof cell.text === 'string' ? cell.text.trim() : String(cell.text || '').trim()))
+    const cells = Array.from({ length: 9 }, (_, index) => row.getCell(index + 1));
+    const values = cells.map((cell) =>
+      typeof cell.text === "string" ? cell.text.trim() : String(cell.text || "").trim()
+    );
 
-    const [rawCode, rawCategory, rawQuestion, rawAnswer, rawNote, rawSender, rawSource, rawImage, rawAudio] = values
+    const [
+      rawCode,
+      rawCategory,
+      rawQuestion,
+      rawAnswer,
+      rawNote,
+      rawSender,
+      rawSource,
+      rawImage,
+      rawAudio,
+    ] = values;
 
-    const isEmptyRow = values.every((value) => !value || value.length === 0)
-    if (isEmptyRow) return
+    const isEmptyRow = values.every((value) => !value || value.length === 0);
+    if (isEmptyRow) return;
 
     if (!rawCode || !rawQuestion || !rawAnswer) {
-      skipped += 1
-      return
+      skipped += 1;
+      return;
     }
 
-    const normalizedCode = rawCode.toUpperCase()
+    const normalizedCode = rawCode.toUpperCase();
     if (normalizedCode.length < 3 || normalizedCode.length > 32) {
-      skipped += 1
-      return
+      skipped += 1;
+      return;
     }
 
     if (codeSet.has(normalizedCode)) {
-      skipped += 1
-      return
+      skipped += 1;
+      return;
     }
 
-    codeSet.add(normalizedCode)
+    codeSet.add(normalizedCode);
     items.push({
       code: normalizedCode,
       category: rawCategory?.length ? rawCategory : null,
@@ -114,363 +150,383 @@ async function parseQuestionSetWorkbook(buffer: Buffer) {
       image_url: rawImage?.length ? rawImage : null,
       audio_url: rawAudio?.length ? rawAudio : null,
       order_index: items.length,
-    })
-  })
+    });
+  });
 
-  return { items, skipped }
+  return { items, skipped };
 }
 
 const joinSchema = z.object({
   joinCode: z
     .string()
-    .min(4, 'Mã tối thiểu 4 ký tự')
-    .max(32, 'Mã tối đa 32 ký tự')
+    .min(4, "Mã tối thiểu 4 ký tự")
+    .max(32, "Mã tối đa 32 ký tự")
     .transform((val) => val.trim().toUpperCase()),
   playerPassword: z
     .string()
-    .min(4, 'Mật khẩu tối thiểu 4 ký tự')
-    .max(64, 'Mật khẩu quá dài')
-    .transform((val) => val.trim()),
-})
+    .min(4, "Mật khẩu tối thiểu 4 ký tự")
+    .max(64, "Mật khẩu quá dài")
+    .transform((val) => val.trim().toUpperCase()),
+});
 
 const mcPasswordSchema = z.object({
-  matchId: z.string().uuid('Trận không hợp lệ.'),
+  matchId: z.string().uuid("Trận không hợp lệ."),
   mcPassword: z
     .string()
-    .min(4, 'Mật khẩu tối thiểu 4 ký tự')
-    .max(64, 'Mật khẩu quá dài')
+    .min(4, "Mật khẩu tối thiểu 4 ký tự")
+    .max(64, "Mật khẩu quá dài")
     .transform((val) => val.trim()),
-})
+});
 
 const matchIdSchema = z.object({
-  matchId: z.string().uuid('Trận không hợp lệ.'),
-})
+  matchId: z.string().uuid("Trận không hợp lệ."),
+});
 
 const roundControlSchema = z.object({
-  matchId: z.string().uuid('Trận không hợp lệ.'),
-  roundType: z.enum(['khoi_dong', 'vcnv', 'tang_toc', 've_dich']),
-})
+  matchId: z.string().uuid("Trận không hợp lệ."),
+  roundType: z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]),
+});
 
 const questionStateSchema = z.object({
-  matchId: z.string().uuid('Trận không hợp lệ.'),
-  questionState: z.enum(['hidden', 'showing', 'answer_revealed', 'completed']),
-})
+  matchId: z.string().uuid("Trận không hợp lệ."),
+  questionState: z.enum(["hidden", "showing", "answer_revealed", "completed"]),
+});
 
 const submitAnswerSchema = z.object({
-  sessionId: z.string().uuid('Phòng thi không hợp lệ.'),
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
   answer: z
     .string()
     .transform((value) => value.trim())
-    .refine((value) => value.length > 0, 'Vui lòng nhập đáp án.'),
+    .refine((value) => value.length > 0, "Vui lòng nhập đáp án."),
   notes: z
     .string()
     .optional()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : null)),
-})
+});
 
 const buzzerSchema = z.object({
-  sessionId: z.string().uuid('Phòng thi không hợp lệ.'),
-})
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+});
 
 function generateJoinCode() {
-  return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+  return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
 export async function createMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
-    if (!appUserId) return { error: 'Không tìm thấy thông tin người dùng.' }
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+    if (!appUserId) return { error: "Không tìm thấy thông tin người dùng." };
 
     const parsed = matchSchema.safeParse({
-      name: formData.get('name'),
-      tournamentId: formData.get('tournamentId'),
-      scheduledAt: formData.get('scheduledAt'),
-    })
+      name: formData.get("name"),
+      tournamentId: formData.get("tournamentId"),
+      scheduledAt: formData.get("scheduledAt"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const payload = parsed.data
-    const { error } = await olympia.from('matches').insert({
+    const payload = parsed.data;
+    const { error } = await olympia.from("matches").insert({
       name: payload.name,
       tournament_id: payload.tournamentId,
       scheduled_at: payload.scheduledAt,
-      status: 'draft',
+      status: "draft",
       host_user_id: appUserId,
-    })
+    });
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã tạo trận mới.' }
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã tạo trận mới." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tạo trận.' }
+    return { error: err instanceof Error ? err.message : "Không thể tạo trận." };
   }
 }
 
-export async function createQuestionAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function createQuestionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
     const parsed = questionSchema.safeParse({
-      code: formData.get('code'),
-      category: formData.get('category'),
-      questionText: formData.get('questionText'),
-      answerText: formData.get('answerText'),
-      note: formData.get('note'),
-    })
+      code: formData.get("code"),
+      category: formData.get("category"),
+      questionText: formData.get("questionText"),
+      answerText: formData.get("answerText"),
+      note: formData.get("note"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu câu hỏi không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu câu hỏi không hợp lệ." };
     }
 
-    const payload = parsed.data
-    const { error } = await olympia.from('questions').insert({
+    const payload = parsed.data;
+    const { error } = await olympia.from("questions").insert({
       code: payload.code.toUpperCase(),
       category: payload.category,
       question_text: payload.questionText,
       answer_text: payload.answerText,
       note: payload.note,
       created_by: appUserId,
-      submitted_by: appUserId ?? 'unknown',
-    })
+      submitted_by: appUserId ?? "unknown",
+    });
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/question-bank')
-    return { success: 'Đã thêm câu hỏi.' }
+    revalidatePath("/olympia/admin/question-bank");
+    return { success: "Đã thêm câu hỏi." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tạo câu hỏi.' }
+    return { error: err instanceof Error ? err.message : "Không thể tạo câu hỏi." };
   }
 }
 
-export async function uploadQuestionSetAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function uploadQuestionSetAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const parsedName = questionSetUploadSchema.safeParse({ name: formData.get('name') })
+    const parsedName = questionSetUploadSchema.safeParse({ name: formData.get("name") });
     if (!parsedName.success) {
-      return { error: parsedName.error.issues[0]?.message ?? 'Tên bộ đề không hợp lệ.' }
+      return { error: parsedName.error.issues[0]?.message ?? "Tên bộ đề không hợp lệ." };
     }
 
-    const file = formData.get('file')
+    const file = formData.get("file");
     if (!file || !(file instanceof File)) {
-      return { error: 'Cần tải lên file .xlsx theo mẫu.' }
+      return { error: "Cần tải lên file .xlsx theo mẫu." };
     }
 
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      return { error: 'Chỉ hỗ trợ tập tin .xlsx không có hàng tiêu đề.' }
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      return { error: "Chỉ hỗ trợ tập tin .xlsx không có hàng tiêu đề." };
     }
 
     if (file.size <= 0) {
-      return { error: 'File trống, vui lòng kiểm tra lại.' }
+      return { error: "File trống, vui lòng kiểm tra lại." };
     }
 
     if (file.size > MAX_QUESTION_SET_FILE_SIZE) {
-      return { error: 'File vượt quá giới hạn 5MB, vui lòng tách nhỏ bộ đề.' }
+      return { error: "File vượt quá giới hạn 5MB, vui lòng tách nhỏ bộ đề." };
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const { items, skipped } = await parseQuestionSetWorkbook(buffer)
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const { items, skipped } = await parseQuestionSetWorkbook(buffer);
 
     if (items.length === 0) {
-      return { error: 'Không có câu hỏi hợp lệ trong file đã tải lên.' }
+      return { error: "Không có câu hỏi hợp lệ trong file đã tải lên." };
     }
 
     const { data: createdSet, error: insertSetError } = await olympia
-      .from('question_sets')
+      .from("question_sets")
       .insert({
         name: parsedName.data.name,
         original_filename: file.name,
         item_count: items.length,
         uploaded_by: appUserId ?? null,
       })
-      .select('id')
-      .maybeSingle()
+      .select("id")
+      .maybeSingle();
 
-    if (insertSetError) return { error: insertSetError.message }
-    if (!createdSet) return { error: 'Không thể lưu bộ đề.' }
+    if (insertSetError) return { error: insertSetError.message };
+    if (!createdSet) return { error: "Không thể lưu bộ đề." };
 
-    const batchSize = 500
+    const batchSize = 500;
     for (let i = 0; i < items.length; i += batchSize) {
       const slice = items.slice(i, i + batchSize).map((item) => ({
         question_set_id: createdSet.id,
         ...item,
-      }))
+      }));
 
-      const { error } = await olympia.from('question_set_items').insert(slice)
-      if (error) return { error: error.message }
+      const { error } = await olympia.from("question_set_items").insert(slice);
+      if (error) return { error: error.message };
     }
 
-    revalidatePath('/olympia/admin/question-bank')
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
+    revalidatePath("/olympia/admin/question-bank");
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
 
-    const skippedMsg = skipped > 0 ? `, bỏ qua ${skipped} dòng không hợp lệ/trùng mã` : ''
-    return { success: `Đã tạo bộ đề "${parsedName.data.name}" với ${items.length} câu${skippedMsg}.` }
+    const skippedMsg = skipped > 0 ? `, bỏ qua ${skipped} dòng không hợp lệ/trùng mã` : "";
+    return {
+      success: `Đã tạo bộ đề "${parsedName.data.name}" với ${items.length} câu${skippedMsg}.`,
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tải bộ đề.' }
+    return { error: err instanceof Error ? err.message : "Không thể tải bộ đề." };
   }
 }
 
-export async function lookupJoinCodeAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function lookupJoinCodeAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    const { authUid } = await getServerAuthContext()
-    if (!authUid) return { error: 'Bạn cần đăng nhập để tham gia phòng.' }
+    const { authUid } = await getServerAuthContext();
+    if (!authUid) return { error: "Bạn cần đăng nhập để tham gia phòng." };
 
     const parsed = joinSchema.safeParse({
-      joinCode: formData.get('joinCode'),
-      playerPassword: formData.get('playerPassword'),
-    })
+      joinCode: formData.get("joinCode"),
+      playerPassword: formData.get("playerPassword"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Mã tham gia không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Mã tham gia không hợp lệ." };
     }
 
-    const supabase = await getServerSupabase()
-    const olympia = supabase.schema('olympia')
+    const supabase = await getServerSupabase();
+    const olympia = supabase.schema("olympia");
     const { data, error } = await olympia
-      .from('live_sessions')
-      .select('id, status, match_id, question_state, current_round_type, player_password, requires_player_password')
-      .eq('join_code', parsed.data.joinCode)
-      .maybeSingle()
+      .from("live_sessions")
+      .select(
+        "id, status, match_id, question_state, current_round_type, player_password, requires_player_password"
+      )
+      .eq("join_code", parsed.data.joinCode)
+      .maybeSingle();
 
-    if (error) return { error: error.message }
-    if (!data) return { error: 'Không tìm thấy phòng với mã này.' }
-    if (data.status !== 'running') return { error: 'Phòng chưa mở cho khán giả.' }
+    if (error) return { error: error.message };
+    if (!data) return { error: "Không tìm thấy phòng với mã này." };
+    if (data.status !== "running") return { error: "Phòng chưa mở cho khán giả." };
 
-    const requiresPassword = data.requires_player_password !== false
+    const requiresPassword = data.requires_player_password !== false;
     if (requiresPassword) {
       if (!parsed.data.playerPassword) {
-        return { error: 'Phòng yêu cầu mật khẩu thí sinh.' }
+        return { error: "Phòng yêu cầu mật khẩu thí sinh." };
       }
       if (!isPasswordMatch(data.player_password, parsed.data.playerPassword)) {
-        return { error: 'Sai mật khẩu thí sinh.' }
+        return { error: "Sai mật khẩu thí sinh." };
       }
     }
 
     // Record verification on server for cross-device persistence
-    const { error: verifyError } = await olympia
-      .from('session_verifications')
-      .upsert(
-        {
-          session_id: data.id,
-          user_id: authUid,
-          verified_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        },
-        { onConflict: 'session_id,user_id' }
-      )
+    const { error: verifyError } = await olympia.from("session_verifications").upsert(
+      {
+        session_id: data.id,
+        user_id: authUid,
+        verified_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+      { onConflict: "session_id,user_id" }
+    );
 
     if (verifyError) {
-      console.error('[Olympia] Failed to record session verification:', verifyError)
+      console.error("[Olympia] Failed to record session verification:", verifyError);
       // Continue anyway - verification is secondary
     }
 
     return {
-      success: `Phòng đang chạy (round: ${data.current_round_type ?? 'N/A'}, trạng thái: ${data.question_state}).` as const,
-      data: { sessionId: data.id }
-    }
+      success:
+        `Phòng đang chạy (round: ${data.current_round_type ?? "N/A"}, trạng thái: ${data.question_state}).` as const,
+      data: { sessionId: data.id },
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể kiểm tra mã tham gia.' }
+    return { error: err instanceof Error ? err.message : "Không thể kiểm tra mã tham gia." };
   }
 }
 
-export async function verifyMcPasswordAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function verifyMcPasswordAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
     const parsed = mcPasswordSchema.safeParse({
-      matchId: formData.get('matchId'),
-      mcPassword: formData.get('mcPassword'),
-    })
+      matchId: formData.get("matchId"),
+      mcPassword: formData.get("mcPassword"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Mật khẩu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Mật khẩu không hợp lệ." };
     }
 
-    const supabase = await getServerSupabase()
-    const olympia = supabase.schema('olympia')
+    const supabase = await getServerSupabase();
+    const olympia = supabase.schema("olympia");
     const { data: session, error } = await olympia
-      .from('live_sessions')
-      .select('mc_view_password, status')
-      .eq('match_id', parsed.data.matchId)
-      .maybeSingle()
+      .from("live_sessions")
+      .select("mc_view_password, status")
+      .eq("match_id", parsed.data.matchId)
+      .maybeSingle();
 
-    if (error) return { error: error.message }
-    if (!session) return { error: 'Trận này chưa có phòng live.' }
+    if (error) return { error: error.message };
+    if (!session) return { error: "Trận này chưa có phòng live." };
 
     if (!session.mc_view_password) {
-      return { error: 'Phòng chưa cấu hình mật khẩu MC.' }
+      return { error: "Phòng chưa cấu hình mật khẩu MC." };
     }
 
     if (!isPasswordMatch(session.mc_view_password, parsed.data.mcPassword)) {
-      return { error: 'Sai mật khẩu MC.' }
+      return { error: "Sai mật khẩu MC." };
     }
 
-    if (session.status !== 'running') {
-      return { success: 'Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.' }
+    if (session.status !== "running") {
+      return {
+        success: "Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.",
+      };
     }
 
-    return { success: 'Đã mở khóa chế độ xem MC.' }
+    return { success: "Đã mở khóa chế độ xem MC." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể xác thực mật khẩu MC.' }
+    return { error: err instanceof Error ? err.message : "Không thể xác thực mật khẩu MC." };
   }
 }
 
-export async function openLiveSessionAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function openLiveSessionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
-    const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+    const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trận." };
     }
 
-    const matchId = parsed.data.matchId
+    const matchId = parsed.data.matchId;
     const { data: match, error: matchError } = await olympia
-      .from('matches')
-      .select('id, status')
-      .eq('id', matchId)
-      .maybeSingle()
-    if (matchError) return { error: matchError.message }
-    if (!match) return { error: 'Không tìm thấy trận.' }
+      .from("matches")
+      .select("id, status")
+      .eq("id", matchId)
+      .maybeSingle();
+    if (matchError) return { error: matchError.message };
+    if (!match) return { error: "Không tìm thấy trận." };
 
     const { data: session, error: sessionError } = await olympia
-      .from('live_sessions')
-      .select('id, join_code, status')
-      .eq('match_id', matchId)
-      .maybeSingle()
-    if (sessionError) return { error: sessionError.message }
+      .from("live_sessions")
+      .select("id, join_code, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
 
-    const joinCode = session?.join_code ?? generateJoinCode()
-    const playerPasswordPlain = generateRoomPassword()
-    const mcPasswordPlain = generateRoomPassword()
-    const hashedPlayerPassword = hashPassword(playerPasswordPlain)
-    const hashedMcPassword = hashPassword(mcPasswordPlain)
+    const joinCode = session?.join_code ?? generateJoinCode();
+    const playerPasswordPlain = generateRoomPassword();
+    const mcPasswordPlain = generateRoomPassword();
+    const hashedPlayerPassword = hashPassword(playerPasswordPlain);
+    const hashedMcPassword = hashPassword(mcPasswordPlain);
 
     if (!session) {
-      const { error } = await olympia.from('live_sessions').insert({
+      const { error } = await olympia.from("live_sessions").insert({
         match_id: matchId,
         join_code: joinCode,
-        status: 'running',
+        status: "running",
         created_by: appUserId,
         player_password: hashedPlayerPassword,
         mc_view_password: hashedMcPassword,
         requires_player_password: true,
-      })
-      if (error) return { error: error.message }
+      });
+      if (error) return { error: error.message };
     } else {
       const { error } = await olympia
-        .from('live_sessions')
+        .from("live_sessions")
         .update({
-          status: 'running',
+          status: "running",
           join_code: joinCode,
-          question_state: 'hidden',
+          question_state: "hidden",
           current_round_id: null,
           current_round_question_id: null,
           timer_deadline: null,
@@ -479,763 +535,840 @@ export async function openLiveSessionAction(_: ActionState, formData: FormData):
           mc_view_password: hashedMcPassword,
           requires_player_password: true,
         })
-        .eq('id', session.id)
-      if (error) return { error: error.message }
+        .eq("id", session.id);
+      if (error) return { error: error.message };
     }
 
-    if (match.status !== 'live') {
-      const { error } = await olympia.from('matches').update({ status: 'live' }).eq('id', matchId)
-      if (error) return { error: error.message }
+    if (match.status !== "live") {
+      const { error } = await olympia.from("matches").update({ status: "live" }).eq("id", matchId);
+      if (error) return { error: error.message };
     }
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    revalidatePath('/olympia/client')
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    revalidatePath("/olympia/client");
 
     // Record password generation in history
-    const { error: historyError } = await olympia
-      .from('session_password_history')
-      .insert({
-        session_id: session ? session.id : (await olympia.from('live_sessions').select('id').eq('match_id', matchId).maybeSingle()).data?.id,
-        player_password_hash: hashedPlayerPassword,
-        mc_view_password_hash: hashedMcPassword,
-        player_password_plain: playerPasswordPlain,
-        mc_password_plain: mcPasswordPlain,
-        generated_by: appUserId,
-        is_current: true,
-      })
+    const { error: historyError } = await olympia.from("session_password_history").insert({
+      session_id: session
+        ? session.id
+        : (await olympia.from("live_sessions").select("id").eq("match_id", matchId).maybeSingle())
+            .data?.id,
+      player_password_hash: hashedPlayerPassword,
+      mc_view_password_hash: hashedMcPassword,
+      player_password_plain: playerPasswordPlain,
+      mc_password_plain: mcPasswordPlain,
+      generated_by: appUserId,
+      is_current: true,
+    });
 
     if (historyError) {
-      console.error('[Olympia] Failed to record password history:', historyError)
+      console.error("[Olympia] Failed to record password history:", historyError);
     }
 
     return {
-      success: `Đã mở phòng. Mã tham gia: ${joinCode}. Mật khẩu thí sinh: ${playerPasswordPlain}. Mật khẩu MC: ${mcPasswordPlain}.`,
-    }
+      success: `Đã mở phòng. Mã tham gia: ${joinCode}. Mật khẩu thí sinh: ${playerPasswordPlain} Mật khẩu MC: ${mcPasswordPlain}`,
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể mở phòng thi.' }
+    return { error: err instanceof Error ? err.message : "Không thể mở phòng thi." };
   }
 }
 
 const regeneratePasswordSchema = z.object({
-  sessionId: z.string().uuid('Session ID không hợp lệ'),
-})
+  sessionId: z.string().uuid("Session ID không hợp lệ"),
+});
 
-export async function getSessionPasswordAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function getSessionPasswordAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
     const parsed = regeneratePasswordSchema.safeParse({
-      sessionId: formData.get('sessionId'),
-    })
+      sessionId: formData.get("sessionId"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Session ID không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Session ID không hợp lệ." };
     }
 
     const { data: passwordHistory, error: historyError } = await olympia
-      .from('session_password_history')
-      .select('player_password_plain, mc_password_plain')
-      .eq('session_id', parsed.data.sessionId)
-      .eq('is_current', true)
-      .order('generated_at', { ascending: false })
+      .from("session_password_history")
+      .select("player_password_plain, mc_password_plain")
+      .eq("session_id", parsed.data.sessionId)
+      .eq("is_current", true)
+      .order("generated_at", { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle();
 
-    if (historyError) return { error: historyError.message }
-    if (!passwordHistory) return { error: 'Không tìm thấy mật khẩu. Vui lòng mở phòng trước.' }
+    if (historyError) return { error: historyError.message };
+    if (!passwordHistory) return { error: "Không tìm thấy mật khẩu. Vui lòng mở phòng trước." };
 
     return {
-      success: `Mật khẩu thí sinh: ${passwordHistory.player_password_plain}. Mật khẩu MC: ${passwordHistory.mc_password_plain}.`,
-    }
+      success: `Mật khẩu thí sinh: ${passwordHistory.player_password_plain} Mật khẩu MC: ${passwordHistory.mc_password_plain}`,
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể lấy mật khẩu.' }
+    return { error: err instanceof Error ? err.message : "Không thể lấy mật khẩu." };
   }
 }
 
-export async function regenerateSessionPasswordAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function regenerateSessionPasswordAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
     const parsed = regeneratePasswordSchema.safeParse({
-      sessionId: formData.get('sessionId'),
-    })
+      sessionId: formData.get("sessionId"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Session ID không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Session ID không hợp lệ." };
     }
 
     const { data: session, error: sessionError } = await olympia
-      .from('live_sessions')
-      .select('id, status')
-      .eq('id', parsed.data.sessionId)
-      .maybeSingle()
+      .from("live_sessions")
+      .select("id, status")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
 
-    if (sessionError) return { error: sessionError.message }
-    if (!session) return { error: 'Không tìm thấy phòng.' }
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng." };
 
     // Generate new passwords
-    const playerPasswordPlain = generateRoomPassword()
-    const mcPasswordPlain = generateRoomPassword()
-    const hashedPlayerPassword = hashPassword(playerPasswordPlain)
-    const hashedMcPassword = hashPassword(mcPasswordPlain)
+    const playerPasswordPlain = generateRoomPassword();
+    const mcPasswordPlain = generateRoomPassword();
+    const hashedPlayerPassword = hashPassword(playerPasswordPlain);
+    const hashedMcPassword = hashPassword(mcPasswordPlain);
 
     // Update session with new passwords
     const { error: updateError } = await olympia
-      .from('live_sessions')
+      .from("live_sessions")
       .update({
         player_password: hashedPlayerPassword,
         mc_view_password: hashedMcPassword,
       })
-      .eq('id', parsed.data.sessionId)
+      .eq("id", parsed.data.sessionId);
 
-    if (updateError) return { error: updateError.message }
+    if (updateError) return { error: updateError.message };
 
     // Record old passwords as inactive in history
     const { error: historyError } = await olympia
-      .from('session_password_history')
+      .from("session_password_history")
       .update({ is_current: false })
-      .eq('session_id', parsed.data.sessionId)
-      .eq('is_current', true)
+      .eq("session_id", parsed.data.sessionId)
+      .eq("is_current", true);
 
     if (historyError) {
-      console.error('[Olympia] Failed to update password history:', historyError)
+      console.error("[Olympia] Failed to update password history:", historyError);
     }
 
     // Record new passwords in history
-    const { error: newHistoryError } = await olympia
-      .from('session_password_history')
-      .insert({
-        session_id: parsed.data.sessionId,
-        player_password_hash: hashedPlayerPassword,
-        mc_view_password_hash: hashedMcPassword,
-        player_password_plain: playerPasswordPlain,
-        mc_password_plain: mcPasswordPlain,
-        generated_by: appUserId,
-        is_current: true,
-      })
+    const { error: newHistoryError } = await olympia.from("session_password_history").insert({
+      session_id: parsed.data.sessionId,
+      player_password_hash: hashedPlayerPassword,
+      mc_view_password_hash: hashedMcPassword,
+      player_password_plain: playerPasswordPlain,
+      mc_password_plain: mcPasswordPlain,
+      generated_by: appUserId,
+      is_current: true,
+    });
 
     if (newHistoryError) {
-      console.error('[Olympia] Failed to record new password history:', newHistoryError)
+      console.error("[Olympia] Failed to record new password history:", newHistoryError);
     }
 
-    revalidatePath('/olympia/admin/matches')
+    revalidatePath("/olympia/admin/matches");
 
     return {
-      success: `Đã sinh lại mật khẩu. Mật khẩu thí sinh: ${playerPasswordPlain}. Mật khẩu MC: ${mcPasswordPlain}.`,
-    }
+      success: `Đã sinh lại mật khẩu. Mật khẩu thí sinh: ${playerPasswordPlain} Mật khẩu MC: ${mcPasswordPlain}`,
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể sinh lại mật khẩu.' }
+    return { error: err instanceof Error ? err.message : "Không thể sinh lại mật khẩu." };
   }
 }
 
-export async function endLiveSessionAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function endLiveSessionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
-    const parsed = matchIdSchema.safeParse({ matchId: formData.get('matchId') })
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+    const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trận." };
     }
 
-    const matchId = parsed.data.matchId
+    const matchId = parsed.data.matchId;
     const { data: session, error: sessionError } = await olympia
-      .from('live_sessions')
-      .select('id, status')
-      .eq('match_id', matchId)
-      .maybeSingle()
-    if (sessionError) return { error: sessionError.message }
-    if (!session) return { error: 'Trận này chưa có phòng live.' }
-    if (session.status === 'ended') {
-      return { error: 'Phòng đã kết thúc trước đó.' }
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận này chưa có phòng live." };
+    if (session.status === "ended") {
+      return { error: "Phòng đã kết thúc trước đó." };
     }
 
-    const endedAt = new Date().toISOString()
+    const endedAt = new Date().toISOString();
 
     const [{ error: liveError }, { error: matchError }] = await Promise.all([
       olympia
-        .from('live_sessions')
-        .update({ status: 'ended', ended_at: endedAt })
-        .eq('id', session.id),
-      olympia
-        .from('matches')
-        .update({ status: 'finished' })
-        .eq('id', matchId),
-    ])
+        .from("live_sessions")
+        .update({ status: "ended", ended_at: endedAt })
+        .eq("id", session.id),
+      olympia.from("matches").update({ status: "finished" }).eq("id", matchId),
+    ]);
 
-    if (liveError) return { error: liveError.message }
-    if (matchError) return { error: matchError.message }
+    if (liveError) return { error: liveError.message };
+    if (matchError) return { error: matchError.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    revalidatePath('/olympia/client')
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    revalidatePath("/olympia/client");
 
-    return { success: 'Đã kết thúc phòng thi.' }
+    return { success: "Đã kết thúc phòng thi." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể kết thúc phòng thi.' }
+    return { error: err instanceof Error ? err.message : "Không thể kết thúc phòng thi." };
   }
 }
 
-export async function setLiveSessionRoundAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function setLiveSessionRoundAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
     const parsed = roundControlSchema.safeParse({
-      matchId: formData.get('matchId'),
-      roundType: formData.get('roundType'),
-    })
+      matchId: formData.get("matchId"),
+      roundType: formData.get("roundType"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin vòng.' }
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin vòng." };
     }
 
-    const { matchId, roundType } = parsed.data
+    const { matchId, roundType } = parsed.data;
     const { data: session, error: sessionError } = await olympia
-      .from('live_sessions')
-      .select('id, status')
-      .eq('match_id', matchId)
-      .maybeSingle()
-    if (sessionError) return { error: sessionError.message }
-    if (!session) return { error: 'Trận chưa mở phòng live.' }
-    if (session.status !== 'running') {
-      return { error: 'Phòng chưa ở trạng thái running.' }
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") {
+      return { error: "Phòng chưa ở trạng thái running." };
     }
 
     const { data: roundRow, error: roundError } = await olympia
-      .from('match_rounds')
-      .select('id')
-      .eq('match_id', matchId)
-      .eq('round_type', roundType)
-      .maybeSingle()
-    if (roundError) return { error: roundError.message }
-    if (!roundRow) return { error: 'Trận chưa cấu hình vòng này.' }
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("round_type", roundType)
+      .maybeSingle();
+    if (roundError) return { error: roundError.message };
+    if (!roundRow) return { error: "Trận chưa cấu hình vòng này." };
 
     const { error } = await olympia
-      .from('live_sessions')
+      .from("live_sessions")
       .update({
         current_round_id: roundRow.id,
         current_round_type: roundType,
-        question_state: 'hidden',
+        question_state: "hidden",
       })
-      .eq('id', session.id)
+      .eq("id", session.id);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath(`/olympia/admin/matches/${matchId}`)
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
-    revalidatePath('/olympia/client')
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/client");
 
-    return { success: `Đã chuyển sang vòng ${roundType}.` }
+    return { success: `Đã chuyển sang vòng ${roundType}.` };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể đổi vòng.' }
+    return { error: err instanceof Error ? err.message : "Không thể đổi vòng." };
   }
 }
 
-export async function setQuestionStateAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function setQuestionStateAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
     const parsed = questionStateSchema.safeParse({
-      matchId: formData.get('matchId'),
-      questionState: formData.get('questionState'),
-    })
+      matchId: formData.get("matchId"),
+      questionState: formData.get("questionState"),
+    });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trạng thái.' }
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trạng thái." };
     }
 
-    const { matchId, questionState } = parsed.data
+    const { matchId, questionState } = parsed.data;
     const { data: session, error: sessionError } = await olympia
-      .from('live_sessions')
-      .select('id, status')
-      .eq('match_id', matchId)
-      .maybeSingle()
-    if (sessionError) return { error: sessionError.message }
-    if (!session) return { error: 'Trận chưa mở phòng live.' }
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
 
     const { error } = await olympia
-      .from('live_sessions')
+      .from("live_sessions")
       .update({ question_state: questionState })
-      .eq('id', session.id)
+      .eq("id", session.id);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath(`/olympia/admin/matches/${matchId}`)
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
-    revalidatePath('/olympia/client')
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/client");
 
-    return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` }
+    return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể cập nhật trạng thái.' }
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái." };
   }
 }
 
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    const { supabase, authUid, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    const { supabase, authUid, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
     if (!authUid || !appUserId) {
-      return { error: 'Bạn cần đăng nhập để gửi đáp án.' }
+      return { error: "Bạn cần đăng nhập để gửi đáp án." };
     }
 
     const parsed = submitAnswerSchema.safeParse({
-      sessionId: formData.get('sessionId'),
-      answer: formData.get('answer'),
-      notes: formData.get('notes'),
-    })
+      sessionId: formData.get("sessionId"),
+      answer: formData.get("answer"),
+      notes: formData.get("notes"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const sessionId = parsed.data.sessionId
+    const sessionId = parsed.data.sessionId;
     const { data: session, error } = await olympia
-      .from('live_sessions')
-      .select('id, status')
-      .eq('id', sessionId)
-      .maybeSingle()
+      .from("live_sessions")
+      .select("id, status")
+      .eq("id", sessionId)
+      .maybeSingle();
 
-    if (error) return { error: error.message }
-    if (!session) return { error: 'Không tìm thấy phòng thi.' }
-    if (session.status !== 'running') {
-      return { error: 'Phòng chưa mở nhận đáp án.' }
+    if (error) return { error: error.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") {
+      return { error: "Phòng chưa mở nhận đáp án." };
     }
 
     // TODO: persist payload vào `olympia.answers` và kích hoạt service chấm điểm.
-    console.info('[Olympia] submitAnswerAction stub', {
+    console.info("[Olympia] submitAnswerAction stub", {
       responder: appUserId,
       sessionId,
       answer: parsed.data.answer,
       notes: parsed.data.notes,
-    })
+    });
 
     return {
-      success: 'Hệ thống đã nhận được đáp án (stub). Tính năng chấm điểm sẽ bật trong bản cập nhật kế tiếp.',
-    }
+      success:
+        "Hệ thống đã nhận được đáp án (stub). Tính năng chấm điểm sẽ bật trong bản cập nhật kế tiếp.",
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể gửi đáp án ngay lúc này.' }
+    return { error: err instanceof Error ? err.message : "Không thể gửi đáp án ngay lúc này." };
   }
 }
 
-export async function triggerBuzzerAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function triggerBuzzerAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    const { supabase, authUid, appUserId } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    const { supabase, authUid, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
     if (!authUid || !appUserId) {
-      return { error: 'Bạn cần đăng nhập để bấm chuông.' }
+      return { error: "Bạn cần đăng nhập để bấm chuông." };
     }
 
-    const parsed = buzzerSchema.safeParse({ sessionId: formData.get('sessionId') })
+    const parsed = buzzerSchema.safeParse({ sessionId: formData.get("sessionId") });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Mã phòng không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Mã phòng không hợp lệ." };
     }
 
     const { data: session, error } = await olympia
-      .from('live_sessions')
-      .select('id, status, match_id')
-      .eq('id', parsed.data.sessionId)
-      .maybeSingle()
+      .from("live_sessions")
+      .select("id, status, match_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
 
-    if (error) return { error: error.message }
-    if (!session) return { error: 'Không tìm thấy phòng thi.' }
-    if (session.status !== 'running') {
-      return { error: 'Phòng chưa sẵn sàng nhận tín hiệu buzzer.' }
+    if (error) return { error: error.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") {
+      return { error: "Phòng chưa sẵn sàng nhận tín hiệu buzzer." };
     }
 
     // TODO: ghi nhận buzzer event (ưu tiên Supabase Realtime cho vòng VCNV).
-    console.info('[Olympia] triggerBuzzerAction stub', {
+    console.info("[Olympia] triggerBuzzerAction stub", {
       responder: appUserId,
       sessionId: parsed.data.sessionId,
       matchId: session.match_id,
-    })
+    });
 
     return {
-      success: 'Đã gửi tín hiệu buzzer (stub). Host sẽ xác nhận khi tính năng hoàn tất.',
-    }
+      success: "Đã gửi tín hiệu buzzer (stub). Host sẽ xác nhận khi tính năng hoàn tất.",
+    };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể gửi tín hiệu buzzer.' }
+    return { error: err instanceof Error ? err.message : "Không thể gửi tín hiệu buzzer." };
   }
 }
 
 const participantSchema = z.object({
-  userId: z.string().uuid('User ID không hợp lệ.'),
-  role: z.enum(['contestant', 'AD', 'MOD']).optional().transform((val) => (val === 'contestant' ? null : val)),
-  contestantCode: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
-})
+  userId: z.string().uuid("User ID không hợp lệ."),
+  role: z
+    .enum(["contestant", "AD", "MOD"])
+    .optional()
+    .transform((val) => (val === "contestant" ? null : val)),
+  contestantCode: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
+});
 
 const updateParticipantSchema = z.object({
-  userId: z.string().uuid('User ID không hợp lệ.'),
-  role: z.enum(['contestant', 'AD', 'MOD']).optional().transform((val) => (val === 'contestant' ? null : val)),
-  contestantCode: z.string().optional().transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
-})
+  userId: z.string().uuid("User ID không hợp lệ."),
+  role: z
+    .enum(["contestant", "AD", "MOD"])
+    .optional()
+    .transform((val) => (val === "contestant" ? null : val)),
+  contestantCode: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val.trim().toUpperCase() : null)),
+});
 
 const tournamentSchema = z.object({
-  name: z.string().min(3, 'Tên giải tối thiểu 3 ký tự'),
-  startsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-  endsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-  status: z.enum(['planned', 'active', 'archived']).optional().transform((val) => val ?? 'planned'),
-})
+  name: z.string().min(3, "Tên giải tối thiểu 3 ký tự"),
+  startsAt: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val).toISOString() : null)),
+  endsAt: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val).toISOString() : null)),
+  status: z
+    .enum(["planned", "active", "archived"])
+    .optional()
+    .transform((val) => val ?? "planned"),
+});
 
-export async function createParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function createParticipantAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
     const parsed = participantSchema.safeParse({
-      userId: formData.get('userId'),
-      role: formData.get('role'),
-      contestantCode: formData.get('contestantCode'),
-    })
+      userId: formData.get("userId"),
+      role: formData.get("role"),
+      contestantCode: formData.get("contestantCode"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const { userId, role, contestantCode } = parsed.data
+    const { userId, role, contestantCode } = parsed.data;
 
     // Check if user exists
     const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle()
+      .from("users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
 
-    if (userError) return { error: userError.message }
-    if (!user) return { error: 'User ID không tồn tại trong hệ thống.' }
+    if (userError) return { error: userError.message };
+    if (!user) return { error: "User ID không tồn tại trong hệ thống." };
 
     // Check if already exists
     const { data: existing } = await olympia
-      .from('participants')
-      .select('user_id')
-      .eq('user_id', userId)
-      .maybeSingle()
+      .from("participants")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-    if (existing) return { error: 'Tài khoản này đã được đăng ký Olympia.' }
+    if (existing) return { error: "Tài khoản này đã được đăng ký Olympia." };
 
-    const { error } = await olympia.from('participants').insert({
+    const { error } = await olympia.from("participants").insert({
       user_id: userId,
       role: role,
       contestant_code: contestantCode,
-    })
+    });
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/accounts')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã thêm tài khoản Olympia thành công.' }
+    revalidatePath("/olympia/admin/accounts");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã thêm tài khoản Olympia thành công." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tạo tài khoản.' }
+    return { error: err instanceof Error ? err.message : "Không thể tạo tài khoản." };
   }
 }
 
-export async function updateParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function updateParticipantAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
     const parsed = updateParticipantSchema.safeParse({
-      userId: formData.get('userId'),
-      role: formData.get('role'),
-      contestantCode: formData.get('contestantCode'),
-    })
+      userId: formData.get("userId"),
+      role: formData.get("role"),
+      contestantCode: formData.get("contestantCode"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const { userId, role, contestantCode } = parsed.data
+    const { userId, role, contestantCode } = parsed.data;
 
     const { error } = await olympia
-      .from('participants')
+      .from("participants")
       .update({
         role: role,
         contestant_code: contestantCode,
       })
-      .eq('user_id', userId)
+      .eq("user_id", userId);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/accounts')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã cập nhật tài khoản thành công.' }
+    revalidatePath("/olympia/admin/accounts");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã cập nhật tài khoản thành công." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể cập nhật tài khoản.' }
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật tài khoản." };
   }
 }
 
-export async function deleteParticipantAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function deleteParticipantAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const userId = formData.get('userId') as string
+    const userId = formData.get("userId") as string;
 
     if (!userId || !userId.match(/^[0-9a-f\-]+$/i)) {
-      return { error: 'User ID không hợp lệ.' }
+      return { error: "User ID không hợp lệ." };
     }
 
-    const { error } = await olympia
-      .from('participants')
-      .delete()
-      .eq('user_id', userId)
+    const { error } = await olympia.from("participants").delete().eq("user_id", userId);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/accounts')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã xóa tài khoản thành công.' }
+    revalidatePath("/olympia/admin/accounts");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã xóa tài khoản thành công." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể xóa tài khoản.' }
+    return { error: err instanceof Error ? err.message : "Không thể xóa tài khoản." };
   }
 }
 
-export async function createTournamentAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function createTournamentAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
     const parsed = tournamentSchema.safeParse({
-      name: formData.get('name'),
-      startsAt: formData.get('startsAt'),
-      endsAt: formData.get('endsAt'),
-      status: formData.get('status'),
-    })
+      name: formData.get("name"),
+      startsAt: formData.get("startsAt"),
+      endsAt: formData.get("endsAt"),
+      status: formData.get("status"),
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const { name, startsAt, endsAt, status } = parsed.data
+    const { name, startsAt, endsAt, status } = parsed.data;
 
-    const { error } = await olympia.from('tournaments').insert({
+    const { error } = await olympia.from("tournaments").insert({
       name: name,
       starts_at: startsAt,
       ends_at: endsAt,
       status: status,
-    })
+    });
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã tạo giải đấu mới.' }
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã tạo giải đấu mới." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tạo giải đấu.' }
+    return { error: err instanceof Error ? err.message : "Không thể tạo giải đấu." };
   }
 }
 
-export async function updateTournamentAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function updateTournamentAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const parsed = z.object({
-      tournamentId: z.string().uuid('ID giải không hợp lệ.'),
-      name: z.string().min(3, 'Tên giải tối thiểu 3 ký tự'),
-      startsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-      endsAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-      status: z.enum(['planned', 'active', 'archived']).optional(),
-    }).safeParse({
-      tournamentId: formData.get('tournamentId'),
-      name: formData.get('name'),
-      startsAt: formData.get('startsAt'),
-      endsAt: formData.get('endsAt'),
-      status: formData.get('status'),
-    })
+    const parsed = z
+      .object({
+        tournamentId: z.string().uuid("ID giải không hợp lệ."),
+        name: z.string().min(3, "Tên giải tối thiểu 3 ký tự"),
+        startsAt: z
+          .string()
+          .optional()
+          .transform((val) => (val ? new Date(val).toISOString() : null)),
+        endsAt: z
+          .string()
+          .optional()
+          .transform((val) => (val ? new Date(val).toISOString() : null)),
+        status: z.enum(["planned", "active", "archived"]).optional(),
+      })
+      .safeParse({
+        tournamentId: formData.get("tournamentId"),
+        name: formData.get("name"),
+        startsAt: formData.get("startsAt"),
+        endsAt: formData.get("endsAt"),
+        status: formData.get("status"),
+      });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const { tournamentId, name, startsAt, endsAt, status } = parsed.data
+    const { tournamentId, name, startsAt, endsAt, status } = parsed.data;
 
     const { error } = await olympia
-      .from('tournaments')
+      .from("tournaments")
       .update({
         name: name,
         starts_at: startsAt,
         ends_at: endsAt,
         status: status,
       })
-      .eq('id', tournamentId)
+      .eq("id", tournamentId);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã cập nhật giải đấu thành công.' }
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã cập nhật giải đấu thành công." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể cập nhật giải đấu.' }
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật giải đấu." };
   }
 }
 
 export async function updateMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const parsed = z.object({
-      matchId: z.string().uuid('ID trận không hợp lệ.'),
-      name: z.string().min(3, 'Tên trận tối thiểu 3 ký tự'),
-      tournamentId: z.string().uuid().optional().or(z.literal('')).transform((val) => (val ? val : null)),
-      scheduledAt: z.string().optional().transform((val) => (val ? new Date(val).toISOString() : null)),
-      status: z.enum(['draft', 'scheduled', 'live', 'finished', 'cancelled']).optional(),
-    }).safeParse({
-      matchId: formData.get('matchId'),
-      name: formData.get('name'),
-      tournamentId: formData.get('tournamentId'),
-      scheduledAt: formData.get('scheduledAt'),
-      status: formData.get('status'),
-    })
+    const parsed = z
+      .object({
+        matchId: z.string().uuid("ID trận không hợp lệ."),
+        name: z.string().min(3, "Tên trận tối thiểu 3 ký tự"),
+        tournamentId: z
+          .string()
+          .uuid()
+          .optional()
+          .or(z.literal(""))
+          .transform((val) => (val ? val : null)),
+        scheduledAt: z
+          .string()
+          .optional()
+          .transform((val) => (val ? new Date(val).toISOString() : null)),
+        status: z.enum(["draft", "scheduled", "live", "finished", "cancelled"]).optional(),
+      })
+      .safeParse({
+        matchId: formData.get("matchId"),
+        name: formData.get("name"),
+        tournamentId: formData.get("tournamentId"),
+        scheduledAt: formData.get("scheduledAt"),
+        status: formData.get("status"),
+      });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
     }
 
-    const { matchId, name, tournamentId, scheduledAt, status } = parsed.data
+    const { matchId, name, tournamentId, scheduledAt, status } = parsed.data;
 
     const { error } = await olympia
-      .from('matches')
+      .from("matches")
       .update({
         name: name,
         tournament_id: tournamentId,
         scheduled_at: scheduledAt,
         status: status,
       })
-      .eq('id', matchId)
+      .eq("id", matchId);
 
-    if (error) return { error: error.message }
+    if (error) return { error: error.message };
 
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã cập nhật trận thành công.' }
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã cập nhật trận thành công." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể cập nhật trận.' }
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật trận." };
   }
 }
 
-export async function updateMatchQuestionSetsAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function updateMatchQuestionSetsAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const rawSetIds = formData.getAll('questionSetIds').filter((value): value is string => typeof value === 'string')
+    const rawSetIds = formData
+      .getAll("questionSetIds")
+      .filter((value): value is string => typeof value === "string");
     const parsed = updateMatchQuestionSetsSchema.safeParse({
-      matchId: formData.get('matchId'),
+      matchId: formData.get("matchId"),
       questionSetIds: rawSetIds,
-    })
+    });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Dữ liệu gán bộ đề không hợp lệ.' }
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu gán bộ đề không hợp lệ." };
     }
 
-    const matchId = parsed.data.matchId
-    const uniqueSetIds = Array.from(new Set(parsed.data.questionSetIds))
+    const matchId = parsed.data.matchId;
+    const uniqueSetIds = Array.from(new Set(parsed.data.questionSetIds));
 
     if (uniqueSetIds.length > 0) {
       const { data: validSets, error: validateError } = await olympia
-        .from('question_sets')
-        .select('id')
-        .in('id', uniqueSetIds)
+        .from("question_sets")
+        .select("id")
+        .in("id", uniqueSetIds);
 
-      if (validateError) return { error: validateError.message }
-      const validSetIds = (validSets ?? []).map((set) => set.id)
-      const missing = uniqueSetIds.filter((id) => !validSetIds.includes(id))
+      if (validateError) return { error: validateError.message };
+      const validSetIds = (validSets ?? []).map((set) => set.id);
+      const missing = uniqueSetIds.filter((id) => !validSetIds.includes(id));
       if (missing.length > 0) {
-        return { error: 'Tồn tại bộ đề không hợp lệ hoặc đã bị xóa.' }
+        return { error: "Tồn tại bộ đề không hợp lệ hoặc đã bị xóa." };
       }
     }
 
-    const { error: deleteError } = await olympia.from('match_question_sets').delete().eq('match_id', matchId)
-    if (deleteError) return { error: deleteError.message }
+    const { error: deleteError } = await olympia
+      .from("match_question_sets")
+      .delete()
+      .eq("match_id", matchId);
+    if (deleteError) return { error: deleteError.message };
 
     if (uniqueSetIds.length > 0) {
-      const payload = uniqueSetIds.map((setId) => ({ match_id: matchId, question_set_id: setId }))
-      const { error: insertError } = await olympia.from('match_question_sets').insert(payload)
-      if (insertError) return { error: insertError.message }
+      const payload = uniqueSetIds.map((setId) => ({ match_id: matchId, question_set_id: setId }));
+      const { error: insertError } = await olympia.from("match_question_sets").insert(payload);
+      if (insertError) return { error: insertError.message };
     }
 
-    revalidatePath(`/olympia/admin/matches/${matchId}`)
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
-    revalidatePath('/olympia/admin/matches')
-    revalidatePath('/olympia/admin')
-    return { success: 'Đã cập nhật bộ đề cho trận.' }
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã cập nhật bộ đề cho trận." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể gán bộ đề cho trận.' }
+    return { error: err instanceof Error ? err.message : "Không thể gán bộ đề cho trận." };
   }
 }
 const createMatchRoundsSchema = z.object({
-  matchId: z.string().uuid('Mã trận không hợp lệ.'),
-})
+  matchId: z.string().uuid("Mã trận không hợp lệ."),
+});
 
-export async function createMatchRoundsAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function createMatchRoundsAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess()
-    const { supabase } = await getServerAuthContext()
-    const olympia = supabase.schema('olympia')
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
 
-    const parsed = createMatchRoundsSchema.safeParse({ matchId: formData.get('matchId') })
+    const parsed = createMatchRoundsSchema.safeParse({ matchId: formData.get("matchId") });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? 'Thiếu thông tin trận.' }
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trận." };
     }
 
-    const matchId = parsed.data.matchId
+    const matchId = parsed.data.matchId;
 
     // Check if match exists
     const { data: match, error: matchError } = await olympia
-      .from('matches')
-      .select('id')
-      .eq('id', matchId)
-      .maybeSingle()
-    if (matchError) return { error: matchError.message }
-    if (!match) return { error: 'Không tìm thấy trận.' }
+      .from("matches")
+      .select("id")
+      .eq("id", matchId)
+      .maybeSingle();
+    if (matchError) return { error: matchError.message };
+    if (!match) return { error: "Không tìm thấy trận." };
 
     // Check if rounds already exist
     const { data: existingRounds, error: checkError } = await olympia
-      .from('match_rounds')
-      .select('id')
-      .eq('match_id', matchId)
-    if (checkError) return { error: checkError.message }
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId);
+    if (checkError) return { error: checkError.message };
 
     if (existingRounds && existingRounds.length > 0) {
-      return { error: 'Trận này đã có các vòng thi.' }
+      return { error: "Trận này đã có các vòng thi." };
     }
 
     // Create default rounds
     const roundTypes = [
-      { roundType: 'khoi_dong', orderIndex: 0 },
-      { roundType: 'vcnv', orderIndex: 1 },
-      { roundType: 'tang_toc', orderIndex: 2 },
-      { roundType: 've_dich', orderIndex: 3 },
-    ]
+      { roundType: "khoi_dong", orderIndex: 0 },
+      { roundType: "vcnv", orderIndex: 1 },
+      { roundType: "tang_toc", orderIndex: 2 },
+      { roundType: "ve_dich", orderIndex: 3 },
+    ];
 
-    const { error: insertError } = await olympia.from('match_rounds').insert(
+    const { error: insertError } = await olympia.from("match_rounds").insert(
       roundTypes.map((round) => ({
         match_id: matchId,
         round_type: round.roundType,
         order_index: round.orderIndex,
         config: {},
       }))
-    )
+    );
 
-    if (insertError) return { error: insertError.message }
+    if (insertError) return { error: insertError.message };
 
-    revalidatePath(`/olympia/admin/matches/${matchId}`)
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`)
-    return { success: 'Đã tạo 4 vòng thi mặc định (Khởi động, Vượt chướng, Tăng tốc, Về đích).' }
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    return { success: "Đã tạo 4 vòng thi mặc định (Khởi động, Vượt chướng, Tăng tốc, Về đích)." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Không thể tạo vòng thi.' }
+    return { error: err instanceof Error ? err.message : "Không thể tạo vòng thi." };
   }
 }

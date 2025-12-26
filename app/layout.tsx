@@ -4,7 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { OfflineIndicator } from "@/components/common/OfflineIndicator";
 import { ServiceWorkerRegistration } from "@/components/common/ServiceWorkerRegistration";
-import AppVersionBadge from "@/components/common/AppVersionBadge";
+import ClientAppVersionBadge from "@/components/common/ClientAppVersionBadge";
 
 // Optimize fonts with font-display: swap for faster initial render
 // font-display: swap allows fallback font to display immediately
@@ -61,11 +61,11 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="EduSync" />
-        
+
         {/* Icons for PWA */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        
+
         {/* Preconnect to external resources */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -76,7 +76,7 @@ export default function RootLayout({
       >
         <ServiceWorkerRegistration />
         <OfflineIndicator />
-        <AppVersionBadge />
+        <ClientAppVersionBadge />
         {children}
         <Toaster position="top-right" richColors closeButton />
       </body>

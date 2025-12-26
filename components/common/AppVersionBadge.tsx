@@ -1,15 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { BUILD_INFO } from '@/configs/generated/build-info'
 
 export default function AppVersionBadge() {
-  const [mounted] = useState(true);
   const version = BUILD_INFO?.version ?? 'dev';
-
-  if (!mounted) {
-    return null;
-  }
 
   return (
     <div

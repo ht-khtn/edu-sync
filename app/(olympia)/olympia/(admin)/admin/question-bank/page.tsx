@@ -1,4 +1,5 @@
 import { UploadQuestionSetDialog } from '@/components/olympia/UploadQuestionSetDialog'
+import { ViewQuestionSetDialog } from '@/components/olympia/ViewQuestionSetDialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -136,6 +137,7 @@ export default async function OlympiaQuestionBankPage() {
                   <TableHead>Số câu</TableHead>
                   <TableHead>File gốc</TableHead>
                   <TableHead>Thời gian</TableHead>
+                  <TableHead>Hành động</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -145,6 +147,13 @@ export default async function OlympiaQuestionBankPage() {
                     <TableCell>{set.item_count}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{set.original_filename ?? '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(set.created_at)}</TableCell>
+                    <TableCell>
+                      <ViewQuestionSetDialog
+                        questionSetId={set.id}
+                        questionSetName={set.name}
+                        itemCount={set.item_count}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

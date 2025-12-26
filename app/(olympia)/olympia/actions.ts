@@ -10,7 +10,7 @@ import { getServerAuthContext, getServerSupabase } from '@/lib/server-auth'
 export type ActionState = {
   error?: string | null
   success?: string | null
-  data?: Record<string, any> | null
+  data?: Record<string, unknown> | null
 }
 
 function generateRoomPassword() {

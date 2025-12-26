@@ -1,8 +1,6 @@
 import { notFound } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { OlympiaGameClient } from '@/components/olympia/game'
 import { SessionInfoSidebar } from '@/components/olympia/SessionInfoSidebar'
 import { PlayerPasswordGate } from '@/components/olympia/PlayerPasswordGate'

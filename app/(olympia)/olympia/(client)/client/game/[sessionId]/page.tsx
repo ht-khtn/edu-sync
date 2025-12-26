@@ -49,9 +49,9 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
             .maybeSingle(),
         olympia
             .from('match_players')
-            .select('id, player_id, display_name, seat_number, class_name, school_name, user_id')
+            .select('id, match_id, participant_id, seat_index, display_name, is_disqualified_obstacle')
             .eq('match_id', session.match_id)
-            .order('seat_number', { ascending: true }),
+            .order('seat_index', { ascending: true }),
     ])
 
     if (matchError) {

@@ -20,7 +20,7 @@ const matchStatusLabel: Record<string, string> = {
     finished: 'Đã kết thúc',
 }
 
-const matchStatusColor: Record<string, "default" | "outline" | "secondary" | "destructive"> = {
+const matchStatusColor: Record<string, 'default' | 'outline' | 'secondary' | 'destructive'> = {
     scheduled: 'outline',
     live: 'default',
     finished: 'secondary',
@@ -107,7 +107,13 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
     }
 })
 
-function MatchCard({ match, session }: { match: MatchesPayload['upcomingMatches'][0]; session?: MatchesPayload['sessions'][0] }) {
+function MatchCard({
+    match,
+    session,
+}: {
+    match: MatchesPayload['upcomingMatches'][0]
+    session?: MatchesPayload['sessions'][0]
+}) {
     const scheduledDate = match.scheduled_at ? new Date(match.scheduled_at) : null
     const isLive = match.status === 'live' && session?.status === 'running'
 
@@ -138,9 +144,7 @@ function MatchCard({ match, session }: { match: MatchesPayload['upcomingMatches'
                     </Button>
                 ) : (
                     <Button asChild variant="outline" className="w-full">
-                        <Link href={`/olympia/client/watch/${match.id}`}>
-                            Xem chi tiết
-                        </Link>
+                        <Link href={`/olympia/client/watch/${match.id}`}>Xem chi tiết</Link>
                     </Button>
                 )}
             </CardContent>

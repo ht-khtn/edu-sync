@@ -70,10 +70,8 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
                     <AlertTitle>Trận chưa diễn ra</AlertTitle>
                     <AlertDescription>
                         Trạng thái hiện tại:{' '}
-                        <span className="font-semibold">
-                            {match.status === 'scheduled' ? 'Chưa bắt đầu' : 'Đã kết thúc'}
-                        </span>
-                        . Hãy quay lại khi trận bắt đầu để xem scoreboard cập nhật real-time.
+                        <span className="font-semibold">{match.status === 'scheduled' ? 'Chưa bắt đầu' : 'Đã kết thúc'}</span>. Hãy quay lại khi trận
+                        bắt đầu để xem scoreboard cập nhật real-time.
                     </AlertDescription>
                 </Alert>
             )}
@@ -88,17 +86,11 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
                     <CardContent>
                         {session?.join_code ? (
                             <div className="space-y-2">
-                                <p className="text-3xl font-mono font-bold text-green-600 tracking-widest text-center">
-                                    {session.join_code}
-                                </p>
-                                <p className="text-xs text-muted-foreground text-center">
-                                    Thí sinh sẽ cần mật khẩu riêng để vào game
-                                </p>
+                                <p className="text-3xl font-mono font-bold text-green-600 tracking-widest text-center">{session.join_code}</p>
+                                <p className="text-xs text-muted-foreground text-center">Thí sinh sẽ cần mật khẩu riêng để vào game</p>
                             </div>
                         ) : (
-                            <p className="text-sm text-muted-foreground text-center py-4">
-                                Chưa mở phòng live
-                            </p>
+                            <p className="text-sm text-muted-foreground text-center py-4">Chưa mở phòng live</p>
                         )}
                     </CardContent>
                 </Card>
@@ -146,9 +138,7 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
                                         <p className="font-medium">
                                             Ghế {player.seat_number}: {player.display_name}
                                         </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            {player.class_name}
-                                        </p>
+                                        <p className="text-xs text-muted-foreground">{player.class_name}</p>
                                     </div>
                                 ))
                             )}

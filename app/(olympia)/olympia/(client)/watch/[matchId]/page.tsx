@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+
 import { McPasswordGate } from '@/components/olympia/shared/McPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { Eye, Lock } from 'lucide-react'
@@ -70,7 +70,8 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
           <CardContent className="space-y-3">
             <div className="text-sm text-muted-foreground space-y-2">
               <p>
-                Chế độ này cho phép khán giả và khách xem <strong>scoreboard công khai</strong> và <strong>timeline câu hỏi</strong> khi trận đang chạy.
+                Chế độ này cho phép khán giả và khách xem <strong>scoreboard công khai</strong> và <strong>timeline câu hỏi</strong> khi trận
+                đang chạy.
               </p>
               <p>
                 🔑 Mã join: <span className="font-mono font-bold text-foreground">{session?.join_code ?? 'Đang cập nhật'}</span>
@@ -80,9 +81,7 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
               </p>
             </div>
             <Button asChild variant="outline" className="w-full">
-              <Link href={`/olympia/client/guest/${match.id}`}>
-                Xem chế độ khách →
-              </Link>
+              <Link href={`/olympia/client/guest/${match.id}`}>Xem chế độ khách →</Link>
             </Button>
           </CardContent>
         </Card>

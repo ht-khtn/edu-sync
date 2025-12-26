@@ -81,17 +81,18 @@ type ParsedQuestionSetItem = {
 
 async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array) {
   const workbook = new ExcelJS.Workbook();
-  // ExcelJS expects a Node Buffer; ensure we pass a Buffer instance
+  // ExcelJS expects a Node Buffer; normalize input properly
   let nodeBuffer: Buffer;
   if (Buffer.isBuffer(buffer)) {
     nodeBuffer = buffer;
   } else if (buffer instanceof ArrayBuffer) {
-    nodeBuffer = Buffer.from(new Uint8Array(buffer));
+    nodeBuffer = Buffer.from(buffer) as unknown as Buffer;
   } else {
-    // Uint8Array or similar
-    nodeBuffer = Buffer.from(buffer as Uint8Array);
+    nodeBuffer = Buffer.from(buffer) as unknown as Buffer;
   }
-  await workbook.xlsx.load(nodeBuffer);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await workbook.xlsx.load(nodeBuffer as any);
   const sheet = workbook.worksheets[0];
   if (!sheet) {
     throw new Error("File không có sheet hợp lệ.");

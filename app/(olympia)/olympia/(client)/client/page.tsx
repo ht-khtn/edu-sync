@@ -91,15 +91,33 @@ export default async function OlympiaClientHomePage() {
           </p>
         </div>
 
-        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Tham gia phòng thi</CardTitle>
-            <CardDescription>Nhập mã tham gia do ban tổ chức cung cấp</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <JoinSessionForm />
-          </CardContent>
-        </Card>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {/* Join Card */}
+          <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 lg:col-span-2">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">⚡ Tham gia nhanh</CardTitle>
+              <CardDescription>Nhập mã tham gia do ban tổ chức cung cấp</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <JoinSessionForm />
+            </CardContent>
+          </Card>
+
+          {/* Help Card */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">❓ Cần giúp?</CardTitle>
+              <CardDescription>Tìm hiểu cách tham gia</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/olympia/client/how-to-join">
+                  Hướng dẫn →
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {error ? (

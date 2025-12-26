@@ -6,14 +6,17 @@ export default function OlympiaClientLayout({ children }: { children: ReactNode 
     <div className="min-h-screen bg-slate-100">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-          <Link href="/client" className="text-base font-semibold">
+          <Link href="/olympia/client" className="text-base font-semibold">
             EduSync Olympia
           </Link>
           <nav className="flex gap-3 text-sm text-muted-foreground">
-            <Link href="/client" className="hover:text-slate-900">
+            <Link href="/olympia/client" className="hover:text-slate-900">
               Trang chủ
             </Link>
-            <Link href="/client/matches" className="hover:text-slate-900">
+            <Link href="/olympia/client/join" className="hover:text-slate-900">
+              Tham gia
+            </Link>
+            <Link href="/olympia/client/matches" className="hover:text-slate-900">
               Lịch thi
             </Link>
           </nav>

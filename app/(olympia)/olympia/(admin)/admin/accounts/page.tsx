@@ -49,9 +49,9 @@ type UserRow = {
 }
 
 type AccountsPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     role?: string
-  }
+  }>
 }
 
 function resolveProfileName(user: UserRow | undefined) {
@@ -105,7 +105,8 @@ export default async function OlympiaAdminAccountsPage({ searchParams }: Account
   const adminCount = participantRows.filter((row) => row.role === 'AD').length
   const contestantCount = participantRows.filter((row) => row.role !== 'AD' && row.contestant_code).length
 
-  const roleParam = searchParams ? searchParams.role : undefined
+  const params = await searchParams
+  const roleParam = params?.role
   const filterValue: FilterOption =
     roleParam && filterOptions.some((option) => option.id === roleParam) ? (roleParam as FilterOption) : 'all'
 

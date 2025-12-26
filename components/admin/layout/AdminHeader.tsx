@@ -13,7 +13,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { User, LogOut } from "lucide-react";
-import NotificationsBell from "@/components/common/NotificationsBell";
+import dynamic from "next/dynamic";
+
+const NotificationsBell = dynamic(
+  () => import("@/components/common/NotificationsBell"),
+  { ssr: false }
+);
 import { useUser } from "@/hooks/useUser";
 
 function AdminHeaderComponent() {

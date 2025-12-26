@@ -23,7 +23,7 @@ export function QuickJoinForm() {
             if (result.success && result.data?.sessionId) {
                 toast.success('Tìm thấy phòng thi! Chuyển hướng...')
                 setTimeout(() => {
-                    router.push(`/olympia/client/game/${result.data.sessionId}`)
+                    router.push(`/olympia/client/game/${result.data!.sessionId}`)
                 }, 500)
             } else if (result.error) {
                 toast.error(result.error)

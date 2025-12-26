@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import type { NextConfig } from "next";
-import packageJson from "./package.json" assert { type: "json" };
+import packageJson from "./package.json";
 
 function readGeneratedVersion(): string | null {
   const generatedPath = path.join(__dirname, "configs", "generated", "version.json");

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { McPasswordGate } from '@/components/olympia/McPasswordGate'
+import { McPasswordGate } from '@/components/olympia/shared/McPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // KEEP force-dynamic: Real-time match state (live scores, current question)

@@ -7,9 +7,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
-import { CreateParticipantDialog } from '@/components/olympia/CreateParticipantDialog'
-import { EditParticipantDialog } from '@/components/olympia/EditParticipantDialog'
-import { DeleteParticipantButton } from '@/components/olympia/DeleteParticipantButton'
+import { CreateParticipantDialog } from '@/components/olympia/admin/accounts/CreateParticipantDialog'
+import { EditParticipantDialog } from '@/components/olympia/admin/accounts/EditParticipantDialog'
+import { DeleteParticipantButton } from '@/components/olympia/admin/accounts/DeleteParticipantButton'
 import { cn } from '@/utils/cn'
 
 // ISR: Participant list. Revalidate every 30s.

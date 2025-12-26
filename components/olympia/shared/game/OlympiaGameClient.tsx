@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { useOlympiaGameState } from '@/components/olympia/game/useOlympiaGameState'
+import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
 import { cn } from '@/utils/cn'

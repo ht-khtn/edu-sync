@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { OlympiaGameClient } from '@/components/olympia/game'
-import { SessionInfoSidebar } from '@/components/olympia/SessionInfoSidebar'
-import { PlayerPasswordGate } from '@/components/olympia/PlayerPasswordGate'
+import { OlympiaGameClient } from '@/components/olympia/shared/game'
+import { SessionInfoSidebar } from '@/components/olympia/client/game/SessionInfoSidebar'
+import { PlayerPasswordGate } from '@/components/olympia/client/game/PlayerPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 

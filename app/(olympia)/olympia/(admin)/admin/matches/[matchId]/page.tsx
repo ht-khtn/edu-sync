@@ -4,8 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { LiveSessionControls } from '@/components/olympia/LiveSessionControls'
-import { MatchQuestionSetSelector } from '@/components/olympia/MatchQuestionSetSelector'
+import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
+import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements

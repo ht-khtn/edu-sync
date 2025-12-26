@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { openLiveSessionAction, endLiveSessionAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { ViewPasswordDialog } from '@/components/olympia/ShowPasswordDialog'
+import { ViewPasswordDialog } from '@/components/olympia/client/client/ShowPasswordDialog'
 import type { LiveSessionRow } from '@/types/olympia/game'
 
 const initialState: ActionState = { error: null, success: null }

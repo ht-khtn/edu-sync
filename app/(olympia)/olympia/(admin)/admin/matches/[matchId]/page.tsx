@@ -8,7 +8,7 @@ import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSess
 import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
 import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
 import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
-import { CopyMatchIdButton } from '@/components/olympia/admin/CopyMatchIdButton'
+import { CopyMatchIdButton } from '@/components/olympia/admin/matches/CopyMatchIdButton'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements

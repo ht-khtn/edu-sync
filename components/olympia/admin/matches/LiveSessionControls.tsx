@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Copy, Eye, EyeOff } from 'lucide-react'
+import { CopyRoomCodeButton } from '@/components/olympia/admin/matches/CopyRoomCodeButton'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -138,7 +139,10 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
       <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <Badge variant={disableOpen ? 'default' : 'secondary'}>{statusText}</Badge>
-          <span className="font-mono text-sm tracking-wider">{joinCode}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm tracking-wider">{joinCode}</span>
+            <CopyRoomCodeButton code={joinCode} title="Sao chép mã phòng" />
+          </div>
         </div>
         <p className="mt-1 text-[11px] text-muted-foreground">Vòng hiện tại: {roundLabel}</p>
         <p className="text-[11px] text-muted-foreground">Trạng thái câu hỏi: {questionState}</p>

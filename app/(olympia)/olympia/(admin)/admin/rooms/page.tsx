@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { Radio, Clock, Users, Eye, ExternalLink } from 'lucide-react'
+import { CopyRoomCodeButton } from '@/components/olympia/admin/matches/CopyRoomCodeButton'
 
 // ISR: Sessions update every 30s via realtime listener
 export const revalidate = 30
@@ -182,7 +183,12 @@ export default async function OlympiaAdminRoomsPage() {
                     return (
                       <TableRow key={session.id} className="hover:bg-green-50/50">
                         <TableCell className="font-medium">{match?.name ?? '—'}</TableCell>
-                        <TableCell className="font-mono font-semibold text-green-700">{session.join_code}</TableCell>
+                        <TableCell className="font-mono font-semibold text-green-700">
+                          <div className="flex items-center gap-2 justify-start">
+                            <span className="font-mono">{session.join_code}</span>
+                            <CopyRoomCodeButton code={session.join_code} title="Sao chép mã phòng" />
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">{session.current_round_type ?? '—'}</Badge>
                         </TableCell>
@@ -263,7 +269,12 @@ export default async function OlympiaAdminRoomsPage() {
                     return (
                       <TableRow key={session.id} className="hover:bg-blue-50/50">
                         <TableCell className="font-medium">{match?.name ?? '—'}</TableCell>
-                        <TableCell className="font-mono font-semibold">{session.join_code}</TableCell>
+                        <TableCell className="font-mono font-semibold">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono">{session.join_code}</span>
+                            <CopyRoomCodeButton code={session.join_code} title="Sao chép mã phòng" />
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="secondary">Chờ mở</Badge>
                         </TableCell>
@@ -329,7 +340,12 @@ export default async function OlympiaAdminRoomsPage() {
                     return (
                       <TableRow key={session.id} className="hover:bg-slate-50/50">
                         <TableCell className="font-medium text-muted-foreground">{match?.name ?? '—'}</TableCell>
-                        <TableCell className="font-mono">{session.join_code}</TableCell>
+                        <TableCell className="font-mono">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono">{session.join_code}</span>
+                            <CopyRoomCodeButton code={session.join_code} title="Sao chép mã phòng" />
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">{session.current_round_type ?? '—'}</Badge>
                         </TableCell>

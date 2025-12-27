@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
 import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
 import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
+import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements
@@ -71,6 +72,7 @@ async function fetchMatchDetail(matchId: string) {
     tournamentResult,
     matchQuestionSetsResult,
     questionSetsResult,
+    allParticipantsResult,
   ] = await Promise.all([
     olympia
       .from('live_sessions')
@@ -105,6 +107,16 @@ async function fetchMatchDetail(matchId: string) {
           .select('id, name, item_count, original_filename, created_at')
           .order('created_at', { ascending: false })
           .limit(50)
+      } catch {
+        return { data: [], error: null }
+      }
+    })(),
+    (async () => {
+      try {
+        return await olympia
+          .from('participants')
+          .select('user_id, contestant_code, role')
+          .order('contestant_code', { ascending: true })
       } catch {
         return { data: [], error: null }
       }
@@ -147,6 +159,7 @@ async function fetchMatchDetail(matchId: string) {
     questionSets: questionSetsResult.data ?? [],
     selectedQuestionSetIds: (matchQuestionSetsResult.data ?? []).map((row) => row.question_set_id),
     participantLookup,
+    allParticipants: allParticipantsResult.data ?? [],
   }
 }
 
@@ -239,12 +252,27 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
             Kéo và thả để sắp xếp thứ tự ghế (1-4). Thay đổi sẽ được lưu ngay khi bấm "Lưu thứ tự".
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <MatchPlayersReorder
-            matchId={match.id}
-            players={players}
-            participantLookup={participantLookup}
-          />
+        <CardContent className="space-y-6">
+          <div>
+            <h4 className="font-semibold text-sm mb-3">Thêm thí sinh mới</h4>
+            <AddPlayersToMatch
+              matchId={match.id}
+              availableParticipants={details.allParticipants.map((p) => ({
+                user_id: p.user_id,
+                contestant_code: p.contestant_code,
+              }))}
+              currentPlayers={players}
+            />
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-sm mb-3">Sắp xếp thứ tự</h4>
+            <MatchPlayersReorder
+              matchId={match.id}
+              players={players}
+              participantLookup={participantLookup}
+            />
+          </div>
         </CardContent>
       </Card>
 

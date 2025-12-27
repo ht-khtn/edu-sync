@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { JoinSessionForm } from '@/components/olympia/client/client/JoinSessionForm'
+import { JoinQuickTabs } from '@/components/olympia/client/client/JoinQuickTabs'
 import { LiveScheduleAutoRefresh } from '@/components/olympia/client/client/LiveScheduleAutoRefresh'
 import { OlympiaRealtimeListener } from '@/components/olympia/shared/OlympiaRealtimeListener'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -96,14 +96,10 @@ export default async function OlympiaClientHomePage() {
           <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 lg:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">⚡ Tham gia nhanh</CardTitle>
-              <CardDescription>Nhập mã tham gia hoặc chọn vai trò (Thí sinh/MC/Khách)</CardDescription>
+              <CardDescription>Chọn vai trò (Thí sinh/MC/Khách) và nhập thông tin cần thiết</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <JoinSessionForm />
-              <p className="text-xs text-muted-foreground">Hoặc</p>
-              <Button asChild variant="outline" className="w-full">
-                <Link href="/olympia/client/join">Xem tất cả các cách tham gia →</Link>
-              </Button>
+            <CardContent>
+              <JoinQuickTabs />
             </CardContent>
           </Card>
 

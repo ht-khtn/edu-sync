@@ -2,9 +2,8 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { JoinSessionForm } from '@/components/olympia/client/client/JoinSessionForm'
+import { JoinQuickTabs } from '@/components/olympia/client/client/JoinQuickTabs'
 import { Users, Eye, Gamepad2, HelpCircle } from 'lucide-react'
 
 export const metadata = {
@@ -28,10 +27,10 @@ export default function JoinPage() {
                         <Gamepad2 className="h-5 w-5" />
                         Tham gia nhanh
                     </CardTitle>
-                    <CardDescription>Nhập mã tham gia để vào phòng thi</CardDescription>
+                    <CardDescription>Chọn vai trò (Thí sinh/MC/Khách) và nhập thông tin</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <JoinSessionForm />
+                    <JoinQuickTabs />
                 </CardContent>
             </Card>
 
@@ -157,85 +156,6 @@ export default function JoinPage() {
                     </Card>
                 </div>
             </div>
-
-            {/* Steps */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Bước tham gia từng chế độ</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Tabs defaultValue="player" className="w-full">
-                        <TabsList className="grid w-full grid-cols-3">
-                            <TabsTrigger value="player">Thí sinh</TabsTrigger>
-                            <TabsTrigger value="guest">Khách</TabsTrigger>
-                            <TabsTrigger value="mc">MC</TabsTrigger>
-                        </TabsList>
-
-                        <TabsContent value="player" className="space-y-4">
-                            <ol className="space-y-3">
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-blue-600 min-w-fit">Bước 1:</span>
-                                    <span>Lấy mã tham gia từ giáo viên hoặc từ email</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-blue-600 min-w-fit">Bước 2:</span>
-                                    <span>Nhập mã tham gia vào ô &quot;Mã tham gia&quot; ở trên</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-blue-600 min-w-fit">Bước 3:</span>
-                                    <span>Nhập mật khẩu của bạn để xác thực</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-blue-600 min-w-fit">Bước 4:</span>
-                                    <span>Bạn sẵn sàng! Bắt đầu trả lời các câu hỏi</span>
-                                </li>
-                            </ol>
-                        </TabsContent>
-
-                        <TabsContent value="guest" className="space-y-4">
-                            <ol className="space-y-3">
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-green-600 min-w-fit">Bước 1:</span>
-                                    <span>Đi đến trang danh sách trận thi</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-green-600 min-w-fit">Bước 2:</span>
-                                    <span>Tìm trận thi bạn muốn theo dõi</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-green-600 min-w-fit">Bước 3:</span>
-                                    <span>Nhấp vào &quot;Xem chi tiết&quot; → &quot;Xem chế độ khách&quot;</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-green-600 min-w-fit">Bước 4:</span>
-                                    <span>Xem bảng xếp hạng trực tiếp</span>
-                                </li>
-                            </ol>
-                        </TabsContent>
-
-                        <TabsContent value="mc" className="space-y-4">
-                            <ol className="space-y-3">
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-purple-600 min-w-fit">Bước 1:</span>
-                                    <span>Tìm trận thi cần quản lý trong danh sách</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-purple-600 min-w-fit">Bước 2:</span>
-                                    <span>Nhấp &quot;Xem chi tiết&quot; → nhập mật khẩu MC</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-purple-600 min-w-fit">Bước 3:</span>
-                                    <span>Truy cập giao diện quản lý phòng thi</span>
-                                </li>
-                                <li className="flex gap-3">
-                                    <span className="font-bold text-purple-600 min-w-fit">Bước 4:</span>
-                                    <span>Điều khiển trận thi từ bảng điều khiển</span>
-                                </li>
-                            </ol>
-                        </TabsContent>
-                    </Tabs>
-                </CardContent>
-            </Card>
         </section>
     )
 }

@@ -78,7 +78,7 @@ export function MatchPlayersReorder({
             formData.append('playerOrder[]', JSON.stringify(order))
         })
 
-        const result = await updateMatchPlayersOrderAction({} as any, formData)
+        const result = await updateMatchPlayersOrderAction({} as Record<string, unknown>, formData)
         if (result.success) {
             // Refresh page or show success message
             window.location.reload()

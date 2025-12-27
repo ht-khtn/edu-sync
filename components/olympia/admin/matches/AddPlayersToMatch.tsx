@@ -22,6 +22,7 @@ type Participant = {
     user_id: string
     contestant_code: string | null
     display_name?: string | null
+    role?: string | null
     class_name?: string | null | Array<{ class_name: string | null }>
 }
 
@@ -50,13 +51,35 @@ export function AddPlayersToMatch({
     const [selectedSeat, setSelectedSeat] = useState<string>('')
     const [isLoading, setIsLoading] = useState(false)
 
-    // Get list of already assigned participants
-    const assignedParticipantIds = new Set(currentPlayers.map((p) => p.participant_id))
-
-    // Filter available participants (remove already assigned)
-    const unassignedParticipants = availableParticipants.filter(
-        (p) => !assignedParticipantIds.has(p.user_id)
+    // Get list of already assigned participants (filter out nulls)
+    const assignedParticipantIds = new Set(
+        currentPlayers
+            .map((p) => p.participant_id)
+            .filter((id): id is string => Boolean(id))
     )
+
+    const isContestantRole = (role: string | null | undefined) =>
+        role === null || role === undefined || role === 'contestant'
+
+    const unassignedParticipants = availableParticipants.filter((p) => {
+        if (!isContestantRole(p.role)) {
+            return false
+        }
+        return !assignedParticipantIds.has(p.user_id)
+    })
+
+    console.log('[AddPlayersToMatch Debug]', {
+        availableParticipantsCount: availableParticipants.length,
+        availableParticipants: availableParticipants.map(p => ({
+            user_id: p.user_id,
+            role: p.role,
+            code: p.contestant_code
+        })),
+        currentPlayersCount: currentPlayers.length,
+        assignedParticipantIdsSize: assignedParticipantIds.size,
+        assignedParticipantIds: Array.from(assignedParticipantIds),
+        unassignedCount: unassignedParticipants.length,
+    })
 
     // Get occupied seats
     const occupiedSeats = new Set(currentPlayers.map((p) => p.seat_index))
@@ -91,6 +114,9 @@ export function AddPlayersToMatch({
             setSelectedSeat('')
             setIsOpen(false)
             onAddSuccess?.()
+
+            // Refresh page to update available participants
+            setTimeout(() => window.location.reload(), 500)
         } catch (error) {
             console.error('[AddPlayersToMatch]', error)
             toast.error('Lỗi khi thêm thí sinh')

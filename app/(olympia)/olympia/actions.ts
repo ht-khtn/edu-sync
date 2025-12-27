@@ -266,7 +266,11 @@ const joinSchema = z.object({
 });
 
 const mcPasswordSchema = z.object({
-  matchId: z.string().uuid("Trận không hợp lệ."),
+  joinCode: z
+    .string()
+    .min(1, "Vui lòng nhập mã phòng")
+    .max(20, "Mã phòng quá dài")
+    .transform((val) => val.trim().toUpperCase()),
   mcPassword: z
     .string()
     .min(4, "Mật khẩu tối thiểu 4 ký tự")
@@ -532,23 +536,23 @@ export async function verifyMcPasswordAction(
 ): Promise<ActionState> {
   try {
     const parsed = mcPasswordSchema.safeParse({
-      matchId: formData.get("matchId"),
+      joinCode: formData.get("joinCode"),
       mcPassword: formData.get("mcPassword"),
     });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Mật khẩu không hợp lệ." };
+      return { error: parsed.error.issues[0]?.message ?? "Mã phòng hoặc mật khẩu không hợp lệ." };
     }
 
     const supabase = await getServerSupabase();
     const olympia = supabase.schema("olympia");
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("mc_view_password, status")
-      .eq("match_id", parsed.data.matchId)
+      .select("id, match_id, mc_view_password, status")
+      .eq("join_code", parsed.data.joinCode)
       .maybeSingle();
 
     if (error) return { error: error.message };
-    if (!session) return { error: "Trận này chưa có phòng live." };
+    if (!session) return { error: "Không tìm thấy phòng với mã này." };
 
     if (!session.mc_view_password) {
       return { error: "Phòng chưa cấu hình mật khẩu MC." };
@@ -561,10 +565,11 @@ export async function verifyMcPasswordAction(
     if (session.status !== "running") {
       return {
         success: "Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.",
+        data: { matchId: session.match_id },
       };
     }
 
-    return { success: "Đã mở khóa chế độ xem MC." };
+    return { success: "Đã mở khóa chế độ xem MC.", data: { matchId: session.match_id } };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể xác thực mật khẩu MC." };
   }

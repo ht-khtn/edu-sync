@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useSession } from '@/hooks/useSession'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,6 +23,7 @@ interface OlympiaClientNavProps {
 
 export function OlympiaClientNav({ sticky = false }: OlympiaClientNavProps) {
     const router = useRouter()
+    const pathname = usePathname()
     const sessionResult = useSession()
     const session = sessionResult?.data
     const [changePasswordOpen, setChangePasswordOpen] = useState(false)
@@ -136,7 +137,7 @@ export function OlympiaClientNav({ sticky = false }: OlympiaClientNavProps) {
                             </DropdownMenu>
                         ) : (
                             <Button asChild size="sm" variant="default">
-                                <Link href="/login">Đăng nhập</Link>
+                                <Link href={`/login?redirect=${encodeURIComponent(pathname || '/')}`}>Đăng nhập</Link>
                             </Button>
                         )}
                     </nav>

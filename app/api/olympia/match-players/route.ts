@@ -42,13 +42,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Thí sinh này đã được gán vào trận" }, { status: 409 });
     }
 
-    // Insert new match_player
+    // Fetch participant data to get display_name
+    const { data: participant } = await olympia
+      .from("participants")
+      .select("display_name")
+      .eq("user_id", participantId)
+      .maybeSingle();
+
+    // Insert new match_player with participant's display_name
     const { data, error } = await olympia
       .from("match_players")
       .insert({
         match_id: matchId,
         participant_id: participantId,
         seat_index: seatIndex,
+        display_name: participant?.display_name || null,
       })
       .select()
       .maybeSingle();

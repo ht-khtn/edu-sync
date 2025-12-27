@@ -30,7 +30,7 @@ export function JoinQuickTabs() {
     )
 
     // MC
-    const [mcMatchId, setMcMatchId] = useState('')
+    const [mcJoinCode, setMcJoinCode] = useState('')
     const [mcPassword, setMcPassword] = useState('')
     const [showMcPassword, setShowMcPassword] = useState(false)
     const [mcState, mcFormAction] = useActionState(verifyMcPasswordAction, initialState)
@@ -52,15 +52,15 @@ export function JoinQuickTabs() {
 
     // Handle MC success
     useEffect(() => {
-        if (mcState.success && mcMatchId) {
+        if (mcState.success && mcState.data?.matchId) {
             toast.success('Đã xác nhận mật khẩu MC.')
             setTimeout(() => {
-                router.push(`/olympia/client/watch/${mcMatchId}`)
+                router.push(`/olympia/client/watch/${mcState.data?.matchId}`)
             }, 500)
         } else if (mcState.error) {
             toast.error(mcState.error)
         }
-    }, [mcState.success, mcState.error, mcMatchId, router])
+    }, [mcState.success, mcState.error, mcState.data, router])
 
     return (
         <Tabs defaultValue="contestant" className="w-full">
@@ -142,17 +142,18 @@ export function JoinQuickTabs() {
             <TabsContent value="mc" className="space-y-3">
                 <form action={mcFormAction} className="space-y-3">
                     <div>
-                        <label htmlFor="mcMatchId" className="block text-sm font-medium mb-2">
-                            Mã trận thi
+                        <label htmlFor="mcJoinCode" className="block text-sm font-medium mb-2">
+                            Mã phòng
                         </label>
                         <Input
-                            id="mcMatchId"
-                            name="matchId"
-                            placeholder="Ví dụ: UUID"
-                            className="font-mono text-sm"
-                            value={mcMatchId}
-                            onChange={(e) => setMcMatchId(e.target.value.trim())}
+                            id="mcJoinCode"
+                            name="joinCode"
+                            placeholder="Ví dụ: ABC123"
+                            className="font-mono text-lg tracking-widest"
+                            value={mcJoinCode}
+                            onChange={(e) => setMcJoinCode(e.target.value.toUpperCase().trim())}
                             required
+                            maxLength={20}
                             autoComplete="off"
                         />
                     </div>
@@ -184,7 +185,7 @@ export function JoinQuickTabs() {
                         </div>
                     </div>
 
-                    <Button type="submit" className="w-full" disabled={!mcMatchId || !mcPassword}>
+                    <Button type="submit" className="w-full" disabled={!mcJoinCode || !mcPassword}>
                         Mở chế độ xem MC
                     </Button>
 

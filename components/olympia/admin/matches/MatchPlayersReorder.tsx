@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { updateMatchPlayersOrderAction } from '@/app/(olympia)/olympia/actions'
 import { useFormStatus } from 'react-dom'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 type Player = {
     id: string
@@ -16,6 +17,8 @@ type Player = {
 type ParticipantInfo = {
     contestant_code: string | null
     role: string | null
+    display_name?: string | null
+    class_name?: string | null | Array<{ class_name: string | null }>
 }
 
 interface MatchPlayersReorderProps {
@@ -42,6 +45,7 @@ export function MatchPlayersReorder({
         players.sort((a, b) => a.seat_index - b.seat_index)
     )
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+    const [isRemoving, setIsRemoving] = useState(false)
 
     function handleDragStart(index: number) {
         setDraggedIndex(index)
@@ -85,6 +89,33 @@ export function MatchPlayersReorder({
         }
     }
 
+    async function handleRemovePlayer(playerId: string) {
+        setIsRemoving(true)
+        try {
+            const response = await fetch(`/api/olympia/match-players-remove?id=${playerId}`, {
+                method: 'DELETE',
+            })
+
+            if (!response.ok) {
+                const result = await response.json()
+                toast.error(result.error || 'Không thể xóa thí sinh')
+                return
+            }
+
+            // Remove from local state first
+            setPlayerList(playerList.filter((p) => p.id !== playerId))
+            toast.success('Đã xóa thí sinh khỏi trận')
+
+            // Refresh to sync with server
+            setTimeout(() => window.location.reload(), 500)
+        } catch (error) {
+            console.error('[RemovePlayer]', error)
+            toast.error('Lỗi khi xóa thí sinh')
+        } finally {
+            setIsRemoving(false)
+        }
+    }
+
     if (playerList.length === 0) {
         return <p className="text-sm text-muted-foreground">Chưa có thí sinh nào được gán cho trận này.</p>
     }
@@ -96,6 +127,11 @@ export function MatchPlayersReorder({
                     const participant = player.participant_id
                         ? participantLookup.get(player.participant_id)
                         : null
+                    const displayName = participant?.display_name || player.display_name || '—'
+                    const contestantCode = participant?.contestant_code || '—'
+                    const classInfo = Array.isArray(participant?.class_name)
+                        ? participant?.class_name[0]?.class_name
+                        : (participant?.class_name as string | null | undefined)
                     return (
                         <div
                             key={player.id}
@@ -111,12 +147,28 @@ export function MatchPlayersReorder({
                             <GripVertical className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
                             <div className="flex-1">
                                 <p className="text-sm font-medium">
-                                    Ghế {index + 1}: {player.display_name ?? '—'}
+                                    Ghế {index + 1}: {displayName}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    {participant?.contestant_code || '—'} · {participant?.role || 'contestant'}
+                                    {contestantCode} · {participant?.role || 'contestant'}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {displayName}{classInfo ? ` - ${classInfo}` : ''}
                                 </p>
                             </div>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                    e.preventDefault()
+                                    handleRemovePlayer(player.id)
+                                }}
+                                disabled={isRemoving}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </Button>
                         </div>
                     )
                 })}

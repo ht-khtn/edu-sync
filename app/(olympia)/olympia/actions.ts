@@ -79,6 +79,34 @@ type ParsedQuestionSetItem = {
   order_index: number;
 };
 
+/**
+ * Parses code format to extract round/question info.
+ * Supports formats: KD{i}-{n}, DKA-{n}, VCNV-{n}, VCNV-OTT, CNV, TT{n}, VD-{s}.{n}, CHP-{i}
+ * Returns normalized code (uppercase) and metadata.
+ */
+function parseQuestionCode(rawCode: string): {
+  normalizedCode: string;
+  isTT: boolean;
+  ttNumber?: number;
+} {
+  const normalized = rawCode.toUpperCase().trim();
+
+  // Check if TT{n} (Tăng tốc)
+  const ttMatch = normalized.match(/^TT(\d+)$/);
+  if (ttMatch) {
+    return {
+      normalizedCode: normalized,
+      isTT: true,
+      ttNumber: parseInt(ttMatch[1], 10),
+    };
+  }
+
+  return {
+    normalizedCode: normalized,
+    isTT: false,
+  };
+}
+
 async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array) {
   const workbook = new ExcelJS.Workbook();
   // ExcelJS expects a Node Buffer; normalize input properly
@@ -102,12 +130,20 @@ async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Arra
   const codeSet = new Set<string>();
   let skipped = 0;
 
+  // First pass: collect all rows
+  const rows: string[][] = [];
   sheet.eachRow((row) => {
     const cells = Array.from({ length: 9 }, (_, index) => row.getCell(index + 1));
     const values = cells.map((cell) =>
       typeof cell.text === "string" ? cell.text.trim() : String(cell.text || "").trim()
     );
+    rows.push(values);
+  });
 
+  // Second pass: process rows with TT merge handling
+  let i = 0;
+  while (i < rows.length) {
+    const values = rows[i];
     const [
       rawCode,
       rawCategory,
@@ -121,38 +157,98 @@ async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Arra
     ] = values;
 
     const isEmptyRow = values.every((value) => !value || value.length === 0);
-    if (isEmptyRow) return;
+    if (isEmptyRow) {
+      i += 1;
+      continue;
+    }
 
     if (!rawCode || !rawQuestion || !rawAnswer) {
       skipped += 1;
-      return;
+      i += 1;
+      continue;
     }
 
-    const normalizedCode = rawCode.toUpperCase();
+    const codeInfo = parseQuestionCode(rawCode);
+    const normalizedCode = codeInfo.normalizedCode;
+
     if (normalizedCode.length < 3 || normalizedCode.length > 32) {
       skipped += 1;
-      return;
+      i += 1;
+      continue;
     }
 
     if (codeSet.has(normalizedCode)) {
       skipped += 1;
-      return;
+      i += 1;
+      continue;
+    }
+
+    // Handle TT{n} merge: if code is TT{n}, check next rows for more TT{n} and merge
+    let mergedQuestion = rawQuestion;
+    let mergedAnswer = rawAnswer;
+    let mergedNote = rawNote;
+    let mergedImage = rawImage;
+    let mergedAudio = rawAudio;
+
+    if (codeInfo.isTT) {
+      // Look ahead for consecutive rows with same TT prefix but more data
+      let j = i + 1;
+      while (j < rows.length) {
+        const nextValues = rows[j];
+        const nextRawCode = nextValues[0]?.trim() || "";
+        const nextRawQuestion = nextValues[2]?.trim() || "";
+        const nextRawAnswer = nextValues[3]?.trim() || "";
+
+        // Check if next row is also TT with same number, or is a continuation row
+        const nextCodeInfo = parseQuestionCode(nextRawCode);
+        const isContinuation =
+          nextRawCode === "" ||
+          (codeInfo.isTT && nextCodeInfo.isTT && nextCodeInfo.ttNumber === codeInfo.ttNumber);
+
+        if (!isContinuation || (!nextRawQuestion && !nextRawAnswer)) {
+          break; // Stop merging if next row doesn't belong to this TT or is empty
+        }
+
+        // Merge data with newline separator (for display purposes)
+        if (nextRawQuestion) {
+          mergedQuestion = mergedQuestion + "\n" + nextRawQuestion;
+        }
+        if (nextRawAnswer) {
+          mergedAnswer = mergedAnswer + "\n" + nextRawAnswer;
+        }
+        if (nextValues[4]?.trim()) {
+          mergedNote = (mergedNote || "") + "\n" + nextValues[4].trim();
+        }
+        if (nextValues[7]?.trim()) {
+          mergedImage = mergedImage || nextValues[7].trim();
+        }
+        if (nextValues[8]?.trim()) {
+          mergedAudio = mergedAudio || nextValues[8].trim();
+        }
+
+        j += 1;
+      }
+
+      // Skip merged rows
+      i = j;
+    } else {
+      i += 1;
     }
 
     codeSet.add(normalizedCode);
     items.push({
       code: normalizedCode,
       category: rawCategory?.length ? rawCategory : null,
-      question_text: rawQuestion,
-      answer_text: rawAnswer,
-      note: rawNote?.length ? rawNote : null,
+      question_text: mergedQuestion,
+      answer_text: mergedAnswer,
+      note: mergedNote?.length ? mergedNote : null,
       submitted_by: rawSender?.length ? rawSender : null,
       source: rawSource?.length ? rawSource : null,
-      image_url: rawImage?.length ? rawImage : null,
-      audio_url: rawAudio?.length ? rawAudio : null,
+      image_url: mergedImage?.length ? mergedImage : null,
+      audio_url: mergedAudio?.length ? mergedAudio : null,
       order_index: items.length,
     });
-  });
+  }
 
   return { items, skipped };
 }
@@ -1306,6 +1402,84 @@ export async function updateMatchQuestionSetsAction(
     return { error: err instanceof Error ? err.message : "Không thể gán bộ đề cho trận." };
   }
 }
+
+const updateMatchPlayersOrderSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  playerOrder: z.array(
+    z.object({
+      playerId: z.string().uuid(),
+      seatIndex: z.number().int().min(1).max(4),
+    })
+  ),
+});
+
+export async function updateMatchPlayersOrderAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const rawPlayerOrder = formData.getAll("playerOrder[]");
+    const playerOrderData = rawPlayerOrder
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => {
+        try {
+          return JSON.parse(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter((item) => item !== null);
+
+    const parsed = updateMatchPlayersOrderSchema.safeParse({
+      matchId: formData.get("matchId"),
+      playerOrder: playerOrderData,
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu sắp xếp thí sinh không hợp lệ." };
+    }
+
+    const { matchId, playerOrder } = parsed.data;
+
+    // Verify match exists
+    const { data: match, error: matchError } = await olympia
+      .from("matches")
+      .select("id")
+      .eq("id", matchId)
+      .maybeSingle();
+    if (matchError) return { error: matchError.message };
+    if (!match) return { error: "Không tìm thấy trận." };
+
+    // Update each player's seat_index
+    const updatePromises = playerOrder.map((player) =>
+      olympia
+        .from("match_players")
+        .update({ seat_index: player.seatIndex })
+        .eq("id", player.playerId)
+        .eq("match_id", matchId)
+    );
+
+    const results = await Promise.all(updatePromises);
+    const hasError = results.some((r) => r.error);
+    if (hasError) {
+      const firstError = results.find((r) => r.error)?.error;
+      return { error: firstError?.message || "Không thể cập nhật thứ tự thí sinh." };
+    }
+
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+
+    return { success: "Đã cập nhật thứ tự thí sinh thành công." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật thứ tự thí sinh." };
+  }
+}
+
 const createMatchRoundsSchema = z.object({
   matchId: z.string().uuid("Mã trận không hợp lệ."),
 });

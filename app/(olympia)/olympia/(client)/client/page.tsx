@@ -96,10 +96,14 @@ export default async function OlympiaClientHomePage() {
           <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 lg:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">⚡ Tham gia nhanh</CardTitle>
-              <CardDescription>Nhập mã tham gia do ban tổ chức cung cấp</CardDescription>
+              <CardDescription>Nhập mã tham gia hoặc chọn vai trò (Thí sinh/MC/Khách)</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <JoinSessionForm />
+              <p className="text-xs text-muted-foreground">Hoặc</p>
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/olympia/client/join">Xem tất cả các cách tham gia →</Link>
+              </Button>
             </CardContent>
           </Card>
 
@@ -111,7 +115,7 @@ export default async function OlympiaClientHomePage() {
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" className="w-full">
-                <Link href="/olympia/client/how-to-join">
+                <Link href="/olympia/client/join">
                   Hướng dẫn →
                 </Link>
               </Button>

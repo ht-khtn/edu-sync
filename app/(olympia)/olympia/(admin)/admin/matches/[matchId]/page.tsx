@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
 import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
+import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements
@@ -57,10 +58,10 @@ async function fetchMatchDetail(matchId: string) {
 
   const tournamentPromise = match.tournament_id
     ? olympia
-        .from('tournaments')
-        .select('id, name, status, starts_at, ends_at')
-        .eq('id', match.tournament_id)
-        .maybeSingle()
+      .from('tournaments')
+      .select('id, name, status, starts_at, ends_at')
+      .eq('id', match.tournament_id)
+      .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
   const [
@@ -151,7 +152,7 @@ async function fetchMatchDetail(matchId: string) {
 
 export default async function OlympiaMatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params
-  
+
   // Validate matchId is a valid UUID before querying
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   if (!uuidRegex.test(matchId)) {
@@ -235,41 +236,15 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
         <CardHeader>
           <CardTitle>Danh sách thí sinh</CardTitle>
           <CardDescription>
-            Sắp xếp theo thứ tự ghế, hiển thị mã thí sinh và trạng thái hiện tại. Những ghế chưa gán bị để trống.
+            Kéo và thả để sắp xếp thứ tự ghế (1-4). Thay đổi sẽ được lưu ngay khi bấm "Lưu thứ tự".
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {players.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Chưa có thí sinh nào được gán cho trận này.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ghế</TableHead>
-                  <TableHead>Họ tên hiển thị</TableHead>
-                  <TableHead>Mã thí sinh</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Thời gian gán</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {players.map((player) => {
-                  const participant = player.participant_id
-                    ? participantLookup.get(player.participant_id)
-                    : null
-                  return (
-                    <TableRow key={player.id}>
-                      <TableCell>Ghế {player.seat_index}</TableCell>
-                      <TableCell className="font-medium">{player.display_name ?? '—'}</TableCell>
-                      <TableCell>{participant?.contestant_code ?? '—'}</TableCell>
-                      <TableCell>{participant?.role ?? 'contestant'}</TableCell>
-                      <TableCell>{formatDate(player.created_at)}</TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
+        <CardContent>
+          <MatchPlayersReorder
+            matchId={match.id}
+            players={players}
+            participantLookup={participantLookup}
+          />
         </CardContent>
       </Card>
 

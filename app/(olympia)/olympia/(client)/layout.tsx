@@ -1,27 +1,10 @@
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import { OlympiaClientNav } from '@/components/olympia/client/OlympiaClientNav'
 
 export default function OlympiaClientLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-100">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-          <Link href="/olympia/client" className="text-base font-semibold">
-            EduSync Olympia
-          </Link>
-          <nav className="flex gap-3 text-sm text-muted-foreground">
-            <Link href="/olympia/client" className="hover:text-slate-900">
-              Trang chủ
-            </Link>
-            <Link href="/olympia/client/join" className="hover:text-slate-900">
-              Tham gia
-            </Link>
-            <Link href="/olympia/client/matches" className="hover:text-slate-900">
-              Lịch thi
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <OlympiaClientNav sticky />
       <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
     </div>
   )

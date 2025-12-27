@@ -35,21 +35,24 @@ export function JoinQuickTabs() {
     const [showMcPassword, setShowMcPassword] = useState(false)
     const [mcState, mcFormAction] = useActionState(verifyMcPasswordAction, initialState)
 
-    // Contestant success
+    // Guest
+    const [guestMatchId, setGuestMatchId] = useState('')
+
+    // Handle contestant success
     useEffect(() => {
         if (contestantState.success && contestantState.data?.sessionId) {
-            toast.success('Đã xác nhận phòng thi. Đang vào phòng...')
+            toast.success('Đã xác nhận. Chuyển đến phòng thi...')
             setTimeout(() => {
-                router.push(`/olympia/client/game/${contestantState.data!.sessionId}`)
+                router.push(`/olympia/client/game/${contestantState.data?.sessionId}`)
             }, 500)
         } else if (contestantState.error) {
             toast.error(contestantState.error)
         }
     }, [contestantState.success, contestantState.error, contestantState.data, router])
 
-    // MC success
+    // Handle MC success
     useEffect(() => {
-        if (mcState.success) {
+        if (mcState.success && mcMatchId) {
             toast.success('Đã xác nhận mật khẩu MC.')
             setTimeout(() => {
                 router.push(`/olympia/client/watch/${mcMatchId}`)
@@ -198,12 +201,34 @@ export function JoinQuickTabs() {
 
             {/* Guest Tab */}
             <TabsContent value="guest" className="space-y-3">
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-sm text-amber-900 mb-3">
+                <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
                         Chế độ khách cho phép bạn xem bảng xếp hạng trực tiếp mà không cần đăng nhập.
                     </p>
-                    <Button asChild className="w-full">
-                        <a href="/olympia/client/matches">Xem danh sách trận thi →</a>
+                    <div>
+                        <label htmlFor="guestMatchId" className="block text-sm font-medium mb-2">
+                            Mã trận thi (không bắt buộc)
+                        </label>
+                        <Input
+                            id="guestMatchId"
+                            placeholder="Nhập mã trận để vào trực tiếp, hoặc để trống để xem danh sách"
+                            className="font-mono text-sm"
+                            value={guestMatchId}
+                            onChange={(e) => setGuestMatchId(e.target.value.trim())}
+                            autoComplete="off"
+                        />
+                    </div>
+                    <Button
+                        className="w-full"
+                        onClick={() => {
+                            if (guestMatchId) {
+                                router.push(`/olympia/client/guest/${guestMatchId}`)
+                            } else {
+                                router.push('/olympia/client/matches')
+                            }
+                        }}
+                    >
+                        {guestMatchId ? 'Vào phòng khách' : 'Xem danh sách trận thi →'}
                     </Button>
                 </div>
             </TabsContent>

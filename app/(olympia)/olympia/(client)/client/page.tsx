@@ -42,16 +42,9 @@ type UpcomingMatchesPayload = {
 }
 
 const fetchUpcomingMatches = cache(async (): Promise<UpcomingMatchesPayload> => {
-  const { supabase, authUid } = await getServerAuthContext()
+  const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
 
-  if (!authUid) {
-    return {
-      matches: [],
-      sessions: [],
-      error: 'Bạn cần đăng nhập để xem lịch thi Olympia.',
-    }
-  }
   const { data: matches, error } = await olympia
     .from('matches')
     .select('id, name, status, scheduled_at')

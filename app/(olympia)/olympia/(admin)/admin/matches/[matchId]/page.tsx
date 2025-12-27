@@ -8,6 +8,7 @@ import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSess
 import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
 import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
 import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
+import { CopyMatchIdButton } from '@/components/olympia/admin/CopyMatchIdButton'
 import { getServerAuthContext } from '@/lib/server-auth'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements
@@ -115,7 +116,8 @@ async function fetchMatchDetail(matchId: string) {
       try {
         return await olympia
           .from('participants')
-          .select('user_id, contestant_code, role')
+          .select('user_id, contestant_code, display_name, role, user_profiles:user_id (class_name)')
+          .is('role', null)
           .order('contestant_code', { ascending: true })
       } catch {
         return { data: [], error: null }
@@ -187,7 +189,10 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
       <div className="flex flex-col gap-4 border-b pb-4">
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Mã trận · {match.id}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">Mã trận · {match.id}</p>
+              <CopyMatchIdButton matchId={match.id} />
+            </div>
             <h1 className="text-3xl font-semibold tracking-tight">{match.name}</h1>
             <div className="flex gap-3 text-sm text-muted-foreground">
               <span>Lịch dự kiến: {formatDate(match.scheduled_at)}</span>
@@ -253,13 +258,15 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <h4 className="font-semibold text-sm mb-3">Thêm thí sinh mới</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold text-sm">Quản lý thí sinh</h4>
             <AddPlayersToMatch
               matchId={match.id}
               availableParticipants={details.allParticipants.map((p) => ({
                 user_id: p.user_id,
                 contestant_code: p.contestant_code,
+                display_name: p.display_name,
+                class_name: p.class_name,
               }))}
               currentPlayers={players}
             />

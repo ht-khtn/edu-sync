@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
 import {
     Select,
     SelectContent,
@@ -10,13 +16,13 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
 
 type Participant = {
     user_id: string
     contestant_code: string | null
     display_name?: string | null
+    class_name?: string | null | Array<{ class_name: string | null }>
 }
 
 type MatchPlayer = {
@@ -33,21 +39,13 @@ interface AddPlayersToMatchProps {
     onAddSuccess?: () => void
 }
 
-function AddPlayerSubmitButton() {
-    const { pending } = useFormStatus()
-    return (
-        <Button type="submit" disabled={pending} size="sm">
-            {pending ? 'Đang thêm...' : 'Thêm thí sinh'}
-        </Button>
-    )
-}
-
 export function AddPlayersToMatch({
     matchId,
     availableParticipants,
     currentPlayers,
     onAddSuccess,
 }: AddPlayersToMatchProps) {
+    const [isOpen, setIsOpen] = useState(false)
     const [selectedParticipant, setSelectedParticipant] = useState<string>('')
     const [selectedSeat, setSelectedSeat] = useState<string>('')
     const [isLoading, setIsLoading] = useState(false)
@@ -91,6 +89,7 @@ export function AddPlayersToMatch({
             toast.success('Đã thêm thí sinh vào trận')
             setSelectedParticipant('')
             setSelectedSeat('')
+            setIsOpen(false)
             onAddSuccess?.()
         } catch (error) {
             console.error('[AddPlayersToMatch]', error)
@@ -102,61 +101,91 @@ export function AddPlayersToMatch({
 
     if (unassignedParticipants.length === 0) {
         return (
-            <Card>
-                <CardContent className="pt-6">
-                    <p className="text-sm text-muted-foreground">Tất cả thí sinh đã được gán hoặc không có thí sinh khả dụng.</p>
-                </CardContent>
-            </Card>
+            <Button disabled size="sm">
+                Tất cả thí sinh đã gán
+            </Button>
         )
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base">Thêm thí sinh vào trận</CardTitle>
-                <CardDescription>Chọn thí sinh chưa được gán và ghế trống</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-                <div>
-                    <label className="block text-sm font-medium mb-2">Chọn thí sinh</label>
-                    <Select value={selectedParticipant} onValueChange={setSelectedParticipant}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Chọn thí sinh..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {unassignedParticipants.map((p) => (
-                                <SelectItem key={p.user_id} value={p.user_id}>
-                                    {p.contestant_code || p.user_id}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+        <>
+            <Button onClick={() => setIsOpen(true)} size="sm">
+                + Thêm thí sinh
+            </Button>
 
-                <div>
-                    <label className="block text-sm font-medium mb-2">Chọn ghế</label>
-                    <Select value={selectedSeat} onValueChange={setSelectedSeat}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Chọn ghế..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {availableSeats.map((seat) => (
-                                <SelectItem key={seat} value={String(seat)}>
-                                    Ghế {seat}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Thêm thí sinh vào trận</DialogTitle>
+                        <DialogDescription>Chọn thí sinh chưa được gán và ghế trống</DialogDescription>
+                    </DialogHeader>
 
-                <Button
-                    onClick={handleAddPlayer}
-                    disabled={!selectedParticipant || !selectedSeat || isLoading}
-                    className="w-full"
-                >
-                    {isLoading ? 'Đang thêm...' : 'Thêm thí sinh'}
-                </Button>
-            </CardContent>
-        </Card>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Chọn thí sinh</label>
+                            <Select value={selectedParticipant} onValueChange={setSelectedParticipant}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Chọn thí sinh..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {unassignedParticipants.map((p) => {
+                                        const classInfo = Array.isArray(p.class_name)
+                                            ? (p.class_name[0]?.class_name || '')
+                                            : (p.class_name || '')
+
+                                        const parts = [
+                                            p.contestant_code,
+                                            classInfo,
+                                            p.display_name,
+                                        ].filter(Boolean)
+
+                                        const displayText = parts.length > 0 ? parts.join(' - ') : p.user_id
+
+                                        return (
+                                            <SelectItem key={p.user_id} value={p.user_id}>
+                                                {displayText}
+                                            </SelectItem>
+                                        )
+                                    })}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Chọn ghế</label>
+                            <Select value={selectedSeat} onValueChange={setSelectedSeat}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Chọn ghế..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableSeats.map((seat) => (
+                                        <SelectItem key={seat} value={String(seat)}>
+                                            Ghế {seat}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="flex gap-2 justify-end">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setIsOpen(false)}
+                                disabled={isLoading}
+                            >
+                                Hủy
+                            </Button>
+                            <Button
+                                onClick={handleAddPlayer}
+                                disabled={!selectedParticipant || !selectedSeat || isLoading}
+                            >
+                                {isLoading ? 'Đang thêm...' : 'Thêm thí sinh'}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }

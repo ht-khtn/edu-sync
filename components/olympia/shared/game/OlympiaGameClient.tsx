@@ -77,13 +77,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
 
     return players
       .map((player) => {
-        const id = (player.player_id ?? player.id) as string
+        const id = player.id
         return {
           id,
           name: player.display_name ?? 'Thí sinh',
-          seat: player.seat_number,
-          className: player.class_name,
-          schoolName: player.school_name,
+          seat: player.seat_index,
           total: totals.get(id) ?? 0,
         }
       })

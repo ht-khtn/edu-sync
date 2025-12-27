@@ -67,12 +67,14 @@ async function fetchMatchDetail(matchId: string) {
 
   const { data: match, error: matchError } = await olympia
     .from('matches')
-    .select('id, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
-    .eq('id', matchId)
+    .select('id, code, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
+    .eq('code', matchId)
     .maybeSingle()
 
   if (matchError) throw matchError
   if (!match) return null
+
+  const realMatchId = match.id
 
   const tournamentPromise = match.tournament_id
     ? olympia
@@ -94,17 +96,17 @@ async function fetchMatchDetail(matchId: string) {
     olympia
       .from('live_sessions')
       .select('id, match_id, status, join_code, question_state, current_round_type, timer_deadline, requires_player_password')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
       .from('match_players')
       .select('id, match_id, seat_index, display_name, participant_id, created_at')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .order('seat_index', { ascending: true }),
     olympia
       .from('match_rounds')
       .select('id, round_type, order_index, config')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .order('order_index', { ascending: true }),
     tournamentPromise,
     (async () => {
@@ -309,13 +311,7 @@ async function fetchMatchDetail(matchId: string) {
 export default async function OlympiaMatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params
 
-  // Validate matchId is a valid UUID before querying
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (!uuidRegex.test(matchId)) {
-    console.error('[OlympiaMatchDetailPage] Invalid UUID format:', matchId)
-    notFound()
-  }
-
+  // Match routes now use match code in the URL (not UUID). Resolve by code.
   const details = await fetchMatchDetail(matchId)
   if (!details) {
     console.error('[OlympiaMatchDetailPage] Match not found in database:', matchId)

@@ -562,14 +562,23 @@ export async function verifyMcPasswordAction(
       return { error: "Sai mật khẩu MC." };
     }
 
+    // Resolve match code to return a user-friendly identifier for client routing
+    const { data: matchRow, error: matchRowErr } = await olympia
+      .from("matches")
+      .select("code")
+      .eq("id", session.match_id)
+      .maybeSingle();
+
+    const matchCode = matchRow?.code ?? session.match_id;
+
     if (session.status !== "running") {
       return {
         success: "Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.",
-        data: { matchId: session.match_id },
+        data: { matchCode },
       };
     }
 
-    return { success: "Đã mở khóa chế độ xem MC.", data: { matchId: session.match_id } };
+    return { success: "Đã mở khóa chế độ xem MC.", data: { matchCode } };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể xác thực mật khẩu MC." };
   }

@@ -24,14 +24,20 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
   const [{ data: match, error: matchError }, { data: session }] = await Promise.all([
     olympia
       .from('matches')
-      .select('id, name, status, scheduled_at')
-      .eq('id', params.matchId)
+      .select('id, code, name, status, scheduled_at')
+      .eq('code', params.matchId)
       .maybeSingle(),
-    olympia
-      .from('live_sessions')
-      .select('join_code, status, question_state, current_round_type')
-      .eq('match_id', params.matchId)
-      .maybeSingle(),
+    (async () => {
+      // resolve live session after match lookup
+      const { data: m } = await olympia.from('matches').select('id').eq('code', params.matchId).maybeSingle()
+      const realMatchId = m?.id
+      if (!realMatchId) return { data: null, error: null }
+      return await olympia
+        .from('live_sessions')
+        .select('join_code, status, question_state, current_round_type')
+        .eq('match_id', realMatchId)
+        .maybeSingle()
+    })(),
   ])
 
   if (matchError) {
@@ -81,7 +87,7 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
               </p>
             </div>
             <Button asChild variant="outline" className="w-full">
-              <Link href={`/olympia/client/guest/${match.id}`}>Xem chế độ khách →</Link>
+              <Link href={`/olympia/client/guest/${match.code}`}>Xem chế độ khách →</Link>
             </Button>
           </CardContent>
         </Card>

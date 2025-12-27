@@ -29,6 +29,7 @@ const matchStatusColor: Record<string, 'default' | 'outline' | 'secondary' | 'de
 type MatchesPayload = {
     upcomingMatches: Array<{
         id: string
+        code?: string | null
         name: string
         status: string
         scheduled_at: string | null
@@ -43,6 +44,7 @@ type MatchesPayload = {
         id: string
         match_id: string
         status: string
+        join_code: string
     }>
     error?: string
 }
@@ -54,7 +56,7 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
     try {
         const { data: allMatches, error } = await olympia
             .from('matches')
-            .select('id, name, status, scheduled_at')
+            .select('id, code, name, status, scheduled_at')
             .order('scheduled_at', { ascending: false, nullsFirst: true })
 
         if (error) {
@@ -85,7 +87,7 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
         // Fetch live sessions for all matches
         const { data: sessions } = await olympia
             .from('live_sessions')
-            .select('id, match_id, status')
+            .select('id, match_id, status, join_code')
             .in(
                 'match_id',
                 matches.map((m) => m.id)
@@ -144,7 +146,7 @@ function MatchCard({
                     </Button>
                 ) : (
                     <Button asChild variant="outline" className="w-full">
-                        <Link href={`/olympia/client/watch/${match.id}`}>Xem chi tiết</Link>
+                        <Link href={`/olympia/client/watch/${match.code}`}>Xem chi tiết</Link>
                     </Button>
                 )}
             </CardContent>

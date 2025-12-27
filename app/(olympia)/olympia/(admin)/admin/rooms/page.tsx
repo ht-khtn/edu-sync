@@ -36,7 +36,7 @@ async function fetchLiveSessionsData() {
       .order('created_at', { ascending: false }),
     olympia
       .from('matches')
-      .select('id, name, status, scheduled_at'),
+      .select('id, code, name, status, scheduled_at'),
   ])
 
   if (sessionsError) {
@@ -55,6 +55,7 @@ async function fetchLiveSessionsData() {
         name: m.name,
         status: m.status,
         scheduledAt: m.scheduled_at,
+        code: (m as any).code,
       },
     ])
   )
@@ -225,7 +226,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/admin/matches/${session.match_id}/host`}>
+                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}/host`}>
                               <Radio className="h-4 w-4" />
                               Host
                             </Link>
@@ -288,7 +289,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/client/game/${session.id}`}>
+                            <Link href={`/olympia/client/game/${session.join_code}`}>
                               <Eye className="h-4 w-4" />
                               Xem
                             </Link>
@@ -299,7 +300,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/admin/matches/${session.match_id}/host`}>
+                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}/host`}>
                               <ExternalLink className="h-4 w-4" />
                               Mở
                             </Link>
@@ -359,18 +360,13 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/client/game/${session.id}`}>
+                            <Link href={`/olympia/client/game/${session.join_code}`}>
                               <Eye className="h-4 w-4" />
                               Xem
                             </Link>
                           </Button>
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1"
-                          >
-                            <Link href={`/olympia/admin/matches/${session.match_id}`}>
+                          <Button asChild variant="ghost" size="sm" className="gap-1">
+                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}`}>
                               <Eye className="h-4 w-4" />
                               Kết quả
                             </Link>

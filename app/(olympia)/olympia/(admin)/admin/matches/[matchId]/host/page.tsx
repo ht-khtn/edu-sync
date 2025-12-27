@@ -28,38 +28,41 @@ const roundLabelMap: Record<string, string> = {
   ve_dich: 'Về đích',
 }
 
-async function fetchHostData(matchId: string) {
+async function fetchHostData(matchCode: string) {
   const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
 
+  // Resolve match by code
   const { data: match, error: matchError } = await olympia
     .from('matches')
-    .select('id, name, status')
-    .eq('id', matchId)
+    .select('id, code, name, status')
+    .eq('code', matchCode)
     .maybeSingle()
   if (matchError) throw matchError
   if (!match) return null
+
+  const realMatchId = match.id
 
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
       .select('id, match_id, status, join_code, question_state, current_round_type, requires_player_password')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
       .from('match_rounds')
       .select('id, round_type, order_index')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .order('order_index', { ascending: true }),
     olympia
       .from('match_players')
       .select('id, seat_index, display_name, participant_id')
-      .eq('match_id', matchId)
+      .eq('match_id', realMatchId)
       .order('seat_index', { ascending: true }),
     olympia
       .from('match_scores')
       .select('player_id, total_score')
-      .eq('match_id', matchId),
+      .eq('match_id', realMatchId),
   ])
 
   if (liveError) throw liveError
@@ -85,7 +88,7 @@ async function fetchHostData(matchId: string) {
 
 export default async function OlympiaHostConsolePage({ params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params
-  
+
   // Validate matchId is a valid UUID before querying
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   if (!uuidRegex.test(matchId)) {

@@ -43,19 +43,22 @@ export function JoinQuickTabs() {
         if (contestantState.success && contestantState.data?.sessionId) {
             toast.success('Đã xác nhận. Chuyển đến phòng thi...')
             setTimeout(() => {
-                router.push(`/olympia/client/game/${contestantState.data?.sessionId}`)
+                // navigate using the join code user entered (public route uses join_code)
+                router.push(`/olympia/client/game/${contestantCode}`)
             }, 500)
         } else if (contestantState.error) {
             toast.error(contestantState.error)
         }
-    }, [contestantState.success, contestantState.error, contestantState.data, router])
+    }, [contestantState.success, contestantState.error, contestantState.data, router, contestantCode])
 
     // Handle MC success
     useEffect(() => {
-        if (mcState.success && mcState.data?.matchId) {
+        if (mcState.success && (mcState.data?.matchCode || mcState.data?.matchId)) {
             toast.success('Đã xác nhận mật khẩu MC.')
             setTimeout(() => {
-                router.push(`/olympia/client/watch/${mcState.data?.matchId}`)
+                // prefer matchCode returned by the action; fallback to matchId if necessary
+                const routeId = mcState.data?.matchCode ?? mcState.data?.matchId
+                router.push(`/olympia/client/watch/${routeId}`)
             }, 500)
         } else if (mcState.error) {
             toast.error(mcState.error)

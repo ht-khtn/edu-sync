@@ -214,7 +214,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/client/game/${session.id}`}>
+                            <Link href={`/olympia/client/game/${session.join_code}`}>
                               <Eye className="h-4 w-4" />
                               Xem
                             </Link>

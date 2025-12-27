@@ -23,7 +23,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         .select(
             'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password'
         )
-        .eq('id', sessionId)
+        .eq('join_code', sessionId)
         .maybeSingle()
 
     if (sessionError) {
@@ -117,7 +117,7 @@ export default async function OlympiaGamePage({ params }: PageProps) {
         const { data: verification } = await olympia
             .from('session_verifications')
             .select('id')
-            .eq('session_id', sessionId)
+            .eq('session_id', data.session.id)
             .eq('user_id', authUid)
             .gt('expires_at', new Date().toISOString())
             .maybeSingle()
@@ -156,7 +156,7 @@ export default async function OlympiaGamePage({ params }: PageProps) {
                 <div className="mx-auto max-w-7xl px-4 py-6">
                     <div className="grid gap-6 lg:grid-cols-4">
                         <div className="lg:col-span-3">
-                            <OlympiaGameClient initialData={{ ...data, viewerUserId: viewerId }} sessionId={sessionId} allowGuestFallback={!authUid} />
+                            <OlympiaGameClient initialData={{ ...data, viewerUserId: viewerId }} sessionId={data.session.id} allowGuestFallback={!authUid} />
                         </div>
 
                         <aside className="lg:sticky lg:top-6 lg:h-fit">

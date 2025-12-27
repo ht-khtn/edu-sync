@@ -137,7 +137,7 @@ function MatchCard({
             <CardContent>
                 {isLive && session ? (
                     <Button asChild className="w-full gap-2 bg-green-600 hover:bg-green-700">
-                        <Link href={`/olympia/client/game/${session.id}`}>
+                        <Link href={`/olympia/client/game/${session.join_code}`}>
                             <Radio className="h-4 w-4" />
                             Xem trực tiếp
                         </Link>

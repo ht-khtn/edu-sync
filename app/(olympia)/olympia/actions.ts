@@ -569,6 +569,10 @@ export async function verifyMcPasswordAction(
       .eq("id", session.match_id)
       .maybeSingle();
 
+    if (matchRowErr) {
+      return { error: matchRowErr.message };
+    }
+
     const matchCode = matchRow?.code ?? session.match_id;
 
     if (session.status !== "running") {

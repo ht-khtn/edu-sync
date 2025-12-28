@@ -24,6 +24,14 @@ const questionStateLabel: Record<string, string> = {
   completed: 'Hoàn tất',
 }
 
+type MatchRow = {
+  id: string
+  code: string | null
+  name: string | null
+  status: string | null
+  scheduled_at: string | null
+}
+
 async function fetchLiveSessionsData() {
   const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
@@ -49,13 +57,13 @@ async function fetchLiveSessionsData() {
   }
 
   const matchLookup = new Map(
-    (matches ?? []).map((m) => [
+    ((matches ?? []) as MatchRow[]).map((m) => [
       m.id,
       {
         name: m.name,
         status: m.status,
         scheduledAt: m.scheduled_at,
-        code: (m as any).code,
+        code: m.code,
       },
     ])
   )

@@ -200,9 +200,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                       <p className="text-sm font-semibold">
                         {index + 1}. {player.name}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {player.schoolName ?? '—'} · Ghế {player.seat ?? '—'}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Ghế {player.seat ?? '—'}</p>
                     </div>
                     <span className="text-lg font-semibold text-slate-900">{player.total}</span>
                   </div>

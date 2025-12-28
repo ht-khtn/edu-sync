@@ -68,7 +68,7 @@ async function fetchMatchDetail(matchId: string) {
   const { data: match, error: matchError } = await olympia
     .from('matches')
     .select('id, code, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
-    .eq('code', matchId)
+    .eq('id', matchId)
     .maybeSingle()
 
   if (matchError) throw matchError
@@ -311,7 +311,7 @@ async function fetchMatchDetail(matchId: string) {
 export default async function OlympiaMatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params
 
-  // Match routes now use match code in the URL (not UUID). Resolve by code.
+  // Match routes now use match UUID in the URL (not code). matchId is the match.id UUID.
   const details = await fetchMatchDetail(matchId)
   if (!details) {
     console.error('[OlympiaMatchDetailPage] Match not found in database:', matchId)

@@ -107,8 +107,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             (payload) => {
               const nextQuestion = payload.new as RoundQuestionRow | null;
               if (!nextQuestion) return;
-              const eventMatchId =
-                nextQuestion.match_id ?? nextQuestion.match_rounds?.match_id ?? matchId;
+              const joinMatchId = Array.isArray(nextQuestion.match_rounds)
+                ? nextQuestion.match_rounds[0]?.match_id
+                : nextQuestion.match_rounds?.match_id;
+              const eventMatchId = joinMatchId ?? matchId;
               if (eventMatchId !== matchId) return;
               setRoundQuestions((prev) => {
                 const next = [...prev];

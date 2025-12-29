@@ -9,7 +9,7 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
-import { confirmDecisionAction, setCurrentQuestionAction } from '@/app/(olympia)/olympia/actions'
+import { confirmDecisionFormAction, setCurrentQuestionFormAction } from '@/app/(olympia)/olympia/actions'
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
@@ -179,7 +179,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                 <CardDescription>Chọn câu theo thứ tự để bật chế độ “Đang hiển thị” (timer 5s mặc định).</CardDescription>
               </CardHeader>
               <CardContent>
-                <form action={setCurrentQuestionAction} className="flex flex-col gap-3 md:flex-row md:items-end">
+                <form action={setCurrentQuestionFormAction} className="flex flex-col gap-3 md:flex-row md:items-end">
                   <input type="hidden" name="matchId" value={match.id} />
                   <div className="flex-1 space-y-1">
                     <p className="text-sm text-slate-700">Câu hỏi</p>
@@ -225,7 +225,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                 <CardDescription>Áp dụng +10 nếu đúng, -5 nếu sai/hết giờ (không âm).</CardDescription>
               </CardHeader>
               <CardContent>
-                <form action={confirmDecisionAction} className="space-y-3">
+                <form action={confirmDecisionFormAction} className="space-y-3">
                   <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-slate-700">Chọn thí sinh</p>

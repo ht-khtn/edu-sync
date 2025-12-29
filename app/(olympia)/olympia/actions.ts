@@ -1227,6 +1227,12 @@ export async function confirmDecisionAction(
   }
 }
 
+// Wrapper dùng trực tiếp cho <form action={...}> trong Server Component.
+// Next.js form action chỉ truyền 1 tham số (FormData).
+export async function confirmDecisionFormAction(formData: FormData): Promise<void> {
+  await confirmDecisionAction({}, formData);
+}
+
 export async function setCurrentQuestionAction(
   _: ActionState,
   formData: FormData
@@ -1283,6 +1289,11 @@ export async function setCurrentQuestionAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật câu hỏi." };
   }
+}
+
+// Wrapper dùng trực tiếp cho <form action={...}> trong Server Component.
+export async function setCurrentQuestionFormAction(formData: FormData): Promise<void> {
+  await setCurrentQuestionAction({}, formData);
 }
 
 const participantSchema = z.object({

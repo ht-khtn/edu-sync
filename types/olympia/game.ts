@@ -42,10 +42,17 @@ export type RoundQuestionRow = {
   order_index: number | null;
   target_player_id: string | null;
   meta?: Record<string, unknown> | null;
-  match_rounds?: {
-    match_id?: string | null;
-    round_type?: string | null;
-  } | null;
+  // Supabase join có thể trả về object (many-to-one) hoặc mảng (tuỳ select/alias).
+  match_rounds?:
+    | {
+        match_id?: string | null;
+        round_type?: string | null;
+      }
+    | Array<{
+        match_id?: string | null;
+        round_type?: string | null;
+      }>
+    | null;
 };
 
 export type BuzzerEventRow = {

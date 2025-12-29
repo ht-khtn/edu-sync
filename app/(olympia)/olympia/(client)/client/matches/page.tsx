@@ -146,7 +146,7 @@ function MatchCard({
                     </Button>
                 ) : (
                     <Button asChild variant="outline" className="w-full">
-                        <Link href={`/olympia/client/watch/${match.code}`}>Xem chi tiết</Link>
+                        <Link href={`/olympia/client/watch/${session?.join_code ?? match.id}`}>Xem chi tiết</Link>
                     </Button>
                 )}
             </CardContent>

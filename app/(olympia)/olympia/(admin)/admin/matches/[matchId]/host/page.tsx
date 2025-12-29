@@ -32,11 +32,11 @@ async function fetchHostData(matchCode: string) {
   const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
 
-  // Resolve match by code
+  // Resolve match by id (route provides UUID)
   const { data: match, error: matchError } = await olympia
     .from('matches')
     .select('id, code, name, status')
-    .eq('code', matchCode)
+    .eq('id', matchCode)
     .maybeSingle()
   if (matchError) throw matchError
   if (!match) return null

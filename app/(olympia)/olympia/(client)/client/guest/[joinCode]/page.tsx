@@ -22,41 +22,45 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
     const { supabase } = await getServerAuthContext()
     const olympia = supabase.schema('olympia')
 
-    const [{ data: match, error: matchError }, { data: session }, { data: players }] = await Promise.all([
-        olympia
-            .from('matches')
-            .select('id, code, name, status, scheduled_at')
-            .eq('code', params.matchId)
-            .maybeSingle(),
-        (async () => {
-            const { data: m } = await olympia.from('matches').select('id').eq('code', params.matchId).maybeSingle()
-            const realMatchId = m?.id
-            if (!realMatchId) return { data: null, error: null }
-            return await olympia
-                .from('live_sessions')
-                .select('id, join_code, status, question_state, current_round_type')
-                .eq('match_id', realMatchId)
-                .maybeSingle()
-        })(),
-        (async () => {
-            const { data: m } = await olympia.from('matches').select('id').eq('code', params.matchId).maybeSingle()
-            const realMatchId = m?.id
-            if (!realMatchId) return { data: [] }
-            return await olympia
-                .from('match_players')
-                .select('display_name, seat_number, class_name')
-                .eq('match_id', realMatchId)
-                .order('seat_number', { ascending: true })
-        })(),
-    ])
+    // Resolve session by join_code (routes use session.join_code). Fallback to match id if needed.
+    const { data: session, error: sessionError } = await olympia
+        .from('live_sessions')
+        .select('id, join_code, status, question_state, current_round_type, match_id')
+        .eq('join_code', params.matchId)
+        .maybeSingle()
+
+    if (sessionError) {
+        console.error('Olympia guest watch page failed (session lookup)', sessionError.message)
+    }
+
+    let match = null
+    let matchError = null
+    if (session?.match_id) {
+        const res = await olympia.from('matches').select('id, name, status, scheduled_at').eq('id', session.match_id).maybeSingle()
+        match = res.data
+        matchError = res.error
+    } else {
+        // fallback: try resolving by match id
+        const res = await olympia.from('matches').select('id, name, status, scheduled_at').eq('id', params.matchId).maybeSingle()
+        match = res.data
+        matchError = res.error
+    }
 
     if (matchError) {
-        console.error('Olympia guest watch page failed', matchError.message)
+        console.error('Olympia guest watch page failed (match lookup)', matchError.message)
     }
 
     if (!match) {
         notFound()
     }
+
+    // Fetch players for resolved match id
+    const playersRes = await olympia
+        .from('match_players')
+        .select('display_name, seat_number, class_name')
+        .eq('match_id', match.id)
+        .order('seat_number', { ascending: true })
+    const players = playersRes.data ?? []
 
     const isLive = match.status === 'live' && session?.status === 'running'
     const scheduledDate = match.scheduled_at ? new Date(match.scheduled_at) : null

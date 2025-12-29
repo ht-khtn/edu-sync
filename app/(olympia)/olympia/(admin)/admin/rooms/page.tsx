@@ -26,7 +26,6 @@ const questionStateLabel: Record<string, string> = {
 
 type MatchRow = {
   id: string
-  code: string | null
   name: string | null
   status: string | null
   scheduled_at: string | null
@@ -44,7 +43,7 @@ async function fetchLiveSessionsData() {
       .order('created_at', { ascending: false }),
     olympia
       .from('matches')
-      .select('id, code, name, status, scheduled_at'),
+      .select('id, name, status, scheduled_at'),
   ])
 
   if (sessionsError) {
@@ -63,7 +62,6 @@ async function fetchLiveSessionsData() {
         name: m.name,
         status: m.status,
         scheduledAt: m.scheduled_at,
-        code: m.code,
       },
     ])
   )
@@ -234,7 +232,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}/host`}>
+                            <Link href={`/olympia/admin/matches/${session.match_id}/host`}>
                               <Radio className="h-4 w-4" />
                               Host
                             </Link>
@@ -308,7 +306,7 @@ export default async function OlympiaAdminRoomsPage() {
                             size="sm"
                             className="gap-1"
                           >
-                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}/host`}>
+                            <Link href={`/olympia/admin/matches/${session.match_id}/host`}>
                               <ExternalLink className="h-4 w-4" />
                               Mở
                             </Link>
@@ -374,7 +372,7 @@ export default async function OlympiaAdminRoomsPage() {
                             </Link>
                           </Button>
                           <Button asChild variant="ghost" size="sm" className="gap-1">
-                            <Link href={`/olympia/admin/matches/${match?.code ?? session.match_id}`}>
+                            <Link href={`/olympia/admin/matches/${session.match_id}`}>
                               <Eye className="h-4 w-4" />
                               Kết quả
                             </Link>

@@ -52,7 +52,7 @@ async function fetchMatchesData() {
       .order('starts_at', { ascending: true, nullsFirst: true }),
     olympia
       .from('matches')
-      .select('id, code, name, status, scheduled_at, tournament_id')
+      .select('id, name, status, scheduled_at, tournament_id')
       .order('scheduled_at', { ascending: true, nullsFirst: true }),
   ])
 

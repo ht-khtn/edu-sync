@@ -159,13 +159,11 @@ export function AddPlayersToMatch({
                                             ? (p.class_name[0]?.class_name || '')
                                             : (p.class_name || '')
 
-                                        const parts = [
-                                            p.contestant_code,
-                                            classInfo,
-                                            p.display_name,
-                                        ].filter(Boolean)
+                                        const code = p.contestant_code ?? '—'
+                                        const name = p.display_name ?? p.user_id
+                                        const cls = classInfo || '—'
 
-                                        const displayText = parts.length > 0 ? parts.join(' - ') : p.user_id
+                                        const displayText = `${code} - ${name} - ${cls}`
 
                                         return (
                                             <SelectItem key={p.user_id} value={p.user_id}>

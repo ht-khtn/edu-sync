@@ -35,7 +35,7 @@ async function fetchHostData(matchCode: string) {
   // Resolve match by id (route provides UUID)
   const { data: match, error: matchError } = await olympia
     .from('matches')
-    .select('id, code, name, status')
+    .select('id, name, status')
     .eq('id', matchCode)
     .maybeSingle()
   if (matchError) throw matchError

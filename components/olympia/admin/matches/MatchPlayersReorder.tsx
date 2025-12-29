@@ -127,11 +127,12 @@ export function MatchPlayersReorder({
                     const participant = player.participant_id
                         ? participantLookup.get(player.participant_id)
                         : null
-                    const displayName = participant?.display_name || player.display_name || '—'
-                    const contestantCode = participant?.contestant_code || '—'
+                    const code = participant?.contestant_code ?? '—'
+                    const name = participant?.display_name ?? player.display_name ?? '—'
                     const classInfo = Array.isArray(participant?.class_name)
                         ? participant?.class_name[0]?.class_name
                         : (participant?.class_name as string | null | undefined)
+                    const cls = classInfo ?? '—'
                     return (
                         <div
                             key={player.id}
@@ -147,13 +148,7 @@ export function MatchPlayersReorder({
                             <GripVertical className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
                             <div className="flex-1">
                                 <p className="text-sm font-medium">
-                                    Ghế {index + 1}: {displayName}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    {contestantCode} · {participant?.role || 'contestant'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    {displayName}{classInfo ? ` - ${classInfo}` : ''}
+                                    Ghế {index + 1}: {`${code} - ${name} - ${cls}`}
                                 </p>
                             </div>
                             <Button

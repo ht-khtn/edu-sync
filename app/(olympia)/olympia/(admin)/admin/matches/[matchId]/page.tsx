@@ -45,21 +45,7 @@ function formatDate(value: string | null | undefined) {
   }
 }
 
-const extractClassName = (profileField: unknown): string | null => {
-  if (Array.isArray(profileField)) {
-    const first = profileField[0]
-    if (first && typeof first === 'object' && 'class_name' in first) {
-      const v = (first as Record<string, unknown>)['class_name']
-      return typeof v === 'string' ? (v as string) : null
-    }
-    return null
-  }
-  if (profileField && typeof profileField === 'object' && 'class_name' in profileField) {
-    const v = (profileField as Record<string, unknown>)['class_name']
-    return typeof v === 'string' ? (v as string) : null
-  }
-  return null
-}
+// helper removed: class name extracted from user_profiles when enriching participants
 
 async function fetchMatchDetail(matchId: string) {
   const { supabase } = await getServerAuthContext()
@@ -67,7 +53,7 @@ async function fetchMatchDetail(matchId: string) {
 
   const { data: match, error: matchError } = await olympia
     .from('matches')
-    .select('id, code, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
+    .select('id, name, status, scheduled_at, tournament_id, host_user_id, metadata, created_at, updated_at')
     .eq('id', matchId)
     .maybeSingle()
 
@@ -168,6 +154,15 @@ async function fetchMatchDetail(matchId: string) {
 
         const authMap = new Map((authUsers || []).map((a) => [a.id as string, a.user_metadata]))
 
+        // fetch public.user_profiles to get full_name if available
+        const { data: userProfiles } = await publicSubabase
+          .from('user_profiles')
+          .select('user_id, full_name')
+          .in('user_id', userIds)
+        const profilesMap = new Map(
+          (userProfiles || []).map((r: Record<string, unknown>) => [r.user_id as string, r.full_name as string])
+        )
+
         // Build lookup map enriched with full name and class
         const userMap = new Map((userData || []).map((u: Record<string, unknown>) => {
           const classes = u.classes as Record<string, unknown> | null
@@ -178,7 +173,8 @@ async function fetchMatchDetail(matchId: string) {
             const maybeFull = meta['full_name'] ?? meta['display_name']
             if (typeof maybeFull === 'string') fullName = maybeFull
           }
-          const displayName = fullName || (u.user_name as string | null) || null
+          const profileFull = profilesMap.get(u.id as string) || null
+          const displayName = profileFull || fullName || (u.user_name as string | null) || null
           return [
             u.id as string,
             {
@@ -229,70 +225,96 @@ async function fetchMatchDetail(matchId: string) {
   if (playerParticipantIds.length > 0) {
     const { data: participants, error: participantError } = await olympia
       .from('participants')
-      .select('user_id, contestant_code, display_name, role, user_profiles:user_id (class_name)')
+      .select('user_id, contestant_code, role')
       .in('user_id', playerParticipantIds)
 
     if (participantError) {
       console.warn('[Olympia] Failed to load participants:', participantError.message)
-    } else {
-      const participantRows = (participants ?? []) as Array<
-        Record<string, unknown> & {
-          user_id: string
-          contestant_code?: string | null
-          display_name?: string | null
-          role?: string | null
-          user_profiles?: unknown
+    } else if (participants && participants.length > 0) {
+      type SimpleParticipant = { user_id: string; contestant_code?: string | null; role?: string | null }
+      const participantsList = participants as SimpleParticipant[]
+      const userIds = participantsList.map((p) => p.user_id)
+
+      // Enrich user info from public.users, auth.users and user_profiles (same approach as allParticipants)
+      const publicSubabase = supabase
+      const { data: userData } = await publicSubabase
+        .from('users')
+        .select('id, user_name, auth_uid, class_id, classes:class_id (name)')
+        .in('id', userIds)
+
+      const authUids = (userData || [])
+        .map((u: Record<string, unknown>) => (u.auth_uid as string | undefined))
+        .filter(Boolean) as string[]
+
+      let authUsers: Array<Record<string, unknown>> = []
+      if (authUids.length > 0) {
+        const { data: authData } = await publicSubabase
+          .from('auth.users')
+          .select('id, user_metadata')
+          .in('id', authUids)
+        authUsers = authData || []
+      }
+
+      const authMap = new Map((authUsers || []).map((a) => [a.id as string, a.user_metadata]))
+
+      const { data: userProfiles } = await publicSubabase
+        .from('user_profiles')
+        .select('user_id, full_name')
+        .in('user_id', userIds)
+      const profilesMap = new Map(
+        (userProfiles || []).map((r: Record<string, unknown>) => [r.user_id as string, r.full_name as string])
+      )
+
+      const userMap = new Map((userData || []).map((u: Record<string, unknown>) => {
+        const classes = u.classes as Record<string, unknown> | null
+        const authMetaRaw = (u.auth_uid as string | undefined) ? authMap.get(u.auth_uid as string) : null
+        let fullName: string | null = null
+        if (authMetaRaw && typeof authMetaRaw === 'object') {
+          const meta = authMetaRaw as Record<string, unknown>
+          const maybeFull = meta['full_name'] ?? meta['display_name']
+          if (typeof maybeFull === 'string') fullName = maybeFull
         }
-      >
+        const profileFull = profilesMap.get(u.id as string) || null
+        const displayName = profileFull || fullName || (u.user_name as string | null) || null
+        return [
+          u.id as string,
+          {
+            display_name: displayName,
+            class_name: ((classes as Record<string, unknown> | null)?.name as string) || null,
+          },
+        ]
+      }))
 
       participantLookup = new Map(
-        participantRows.map((participant) => {
-          const classInfo = extractClassName(participant.user_profiles)
+        participantsList.map((participant) => {
+          const userInfo = userMap.get(participant.user_id) || { display_name: null, class_name: null }
           return [
             participant.user_id,
             {
-              contestant_code: participant.contestant_code as string | null,
-              role: participant.role as string | null,
-              display_name: participant.display_name as string | null,
-              class_name: classInfo,
+              contestant_code: participant.contestant_code ?? null,
+              role: participant.role ?? null,
+              display_name: userInfo.display_name,
+              class_name: (userInfo.class_name as string) ?? null,
             },
           ]
         })
       )
     }
   } else {
-    // Fallback: If no participant IDs found, fetch all participants and build a complete lookup
-    const { data: allParticipantsData } = await olympia
-      .from('participants')
-      .select('user_id, contestant_code, display_name, role, user_profiles:user_id (class_name)')
-      .limit(500)
-
-    if (allParticipantsData) {
-      const participantRows = allParticipantsData as Array<
-        Record<string, unknown> & {
-          user_id: string
-          contestant_code?: string | null
-          display_name?: string | null
-          role?: string | null
-          user_profiles?: unknown
-        }
-      >
-
-      participantLookup = new Map(
-        participantRows.map((participant) => {
-          const classInfo = extractClassName(participant.user_profiles)
-          return [
-            participant.user_id,
-            {
-              contestant_code: participant.contestant_code as string | null,
-              role: participant.role as string | null,
-              display_name: participant.display_name as string | null,
-              class_name: classInfo,
-            },
-          ]
-        })
-      )
-    }
+    // Fallback: use enriched allParticipants result (already has display_name and class_name)
+    type EnrichedParticipant = { user_id: string; contestant_code?: string | null; role?: string | null; display_name?: string | null; class_name?: string | null }
+    const all = (allParticipantsResult.data ?? []) as EnrichedParticipant[]
+    participantLookup = new Map(
+      all.map((participant) => [
+        participant.user_id,
+        {
+          contestant_code: participant.contestant_code ?? null,
+          role: participant.role ?? null,
+          display_name: participant.display_name ?? null,
+          class_name: participant.class_name ?? null,
+        },
+      ])
+    )
   }
 
   return {
@@ -327,6 +349,7 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
     display_name?: string | null
     user_profiles?: unknown
     role?: string | null
+    class_name?: string | null
   }
   // Only include participants with role === null (contestants)
   const availableParticipants = ((details.allParticipants ?? []) as ParticipantRow[]).filter(
@@ -416,7 +439,7 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
                 contestant_code: p.contestant_code ?? null,
                 display_name: p.display_name ?? null,
                 role: p.role ?? null,
-                class_name: extractClassName((p as Record<string, unknown>)['user_profiles']),
+                class_name: p.class_name ?? null,
               }))}
               currentPlayers={players}
             />

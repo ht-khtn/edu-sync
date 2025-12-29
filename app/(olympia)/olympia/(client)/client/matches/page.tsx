@@ -56,6 +56,7 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
     try {
         const { data: allMatches, error } = await olympia
             .from('matches')
+            // TODO: change matches.code to sessions.join_code in client view
             .select('id, code, name, status, scheduled_at')
             .order('scheduled_at', { ascending: false, nullsFirst: true })
 

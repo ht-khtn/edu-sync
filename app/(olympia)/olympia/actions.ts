@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { z } from "zod";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
+import { computeKhoiDongCommonScore } from "@/lib/olympia-scoring";
 
 export type ActionState = {
   error?: string | null;
@@ -312,6 +313,12 @@ const decisionSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
   playerId: z.string().uuid("Thí sinh không hợp lệ."),
   decision: z.enum(["correct", "wrong", "timeout"]),
+});
+
+const setCurrentQuestionSchema = z.object({
+  matchId: z.string().uuid("Trận không hợp lệ."),
+  roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
+  durationMs: z.number().int().min(1000).max(120000).optional().default(5000),
 });
 
 function generateJoinCode() {
@@ -944,9 +951,12 @@ export async function setQuestionStateAction(
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
 
+    const nextDeadline =
+      questionState === "showing" ? new Date(Date.now() + 5000).toISOString() : null;
+
     const { error } = await olympia
       .from("live_sessions")
-      .update({ question_state: questionState })
+      .update({ question_state: questionState, timer_deadline: nextDeadline })
       .eq("id", session.id);
 
     if (error) return { error: error.message };
@@ -1152,8 +1162,6 @@ export async function confirmDecisionAction(
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
 
     const roundType = session.current_round_type ?? "khoi_dong";
-    const delta = decision === "correct" ? 10 : -5;
-
     const { data: scoreRow, error: scoreError } = await olympia
       .from("match_scores")
       .select("id, points")
@@ -1165,7 +1173,7 @@ export async function confirmDecisionAction(
     if (scoreError) return { error: scoreError.message };
 
     const currentPoints = scoreRow?.points ?? 0;
-    const nextPoints = Math.max(0, currentPoints + delta);
+    const { delta, nextPoints } = computeKhoiDongCommonScore(decision, currentPoints);
 
     if (scoreRow?.id) {
       const { error: updateScoreError } = await olympia
@@ -1216,6 +1224,64 @@ export async function confirmDecisionAction(
     return { success: `Đã xác nhận: ${decision}. Điểm mới: ${nextPoints}.` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể xác nhận kết quả." };
+  }
+}
+
+export async function setCurrentQuestionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = setCurrentQuestionSchema.safeParse({
+      matchId: formData.get("matchId"),
+      roundQuestionId: formData.get("roundQuestionId"),
+      durationMs: formData.get("durationMs") ? Number(formData.get("durationMs")) : undefined,
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin câu hỏi." };
+    }
+
+    const { matchId, roundQuestionId, durationMs } = parsed.data;
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+
+    const { data: roundQuestion, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, match_round_id")
+      .eq("id", roundQuestionId)
+      .maybeSingle();
+    if (rqError) return { error: rqError.message };
+    if (!roundQuestion) return { error: "Không tìm thấy câu hỏi." };
+
+    const deadline = new Date(Date.now() + durationMs).toISOString();
+
+    const { error: updateError } = await olympia
+      .from("live_sessions")
+      .update({
+        current_round_id: roundQuestion.match_round_id,
+        current_round_question_id: roundQuestion.id,
+        question_state: "showing",
+        timer_deadline: deadline,
+      })
+      .eq("id", session.id);
+
+    if (updateError) return { error: updateError.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    return { success: "Đã hiển thị câu hỏi." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật câu hỏi." };
   }
 }
 

@@ -9,7 +9,7 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
-import { confirmDecisionAction } from '@/app/(olympia)/olympia/actions'
+import { confirmDecisionAction, setCurrentQuestionAction } from '@/app/(olympia)/olympia/actions'
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
@@ -47,7 +47,7 @@ async function fetchHostData(matchCode: string) {
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, requires_player_password')
+      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, requires_player_password')
       .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
@@ -73,6 +73,13 @@ async function fetchHostData(matchCode: string) {
 
   const scoreLookup = new Map((scores ?? []).map((s) => [s.player_id, s.points ?? 0]))
 
+  const { data: roundQuestions } = await olympia
+    .from('round_questions')
+    .select('id, match_round_id, order_index, question_id, match_rounds!inner(match_id, round_type)')
+    .eq('match_rounds.match_id', realMatchId)
+    .order('order_index', { ascending: true })
+    .order('id', { ascending: true })
+
   return {
     match,
     liveSession,
@@ -84,6 +91,7 @@ async function fetchHostData(matchCode: string) {
       seatNumber: p.seat_index,
       totalScore: scoreLookup.get(p.id) ?? 0,
     })),
+    roundQuestions: roundQuestions ?? [],
   }
 }
 
@@ -101,7 +109,11 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores } = data
+  const { match, liveSession, rounds, players, scores, roundQuestions } = data
+  const currentRoundId = liveSession?.current_round_id
+  const currentRoundQuestions = currentRoundId
+    ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
+    : roundQuestions
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
 
   return (
@@ -159,6 +171,52 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
               />
             </CardContent>
           </Card>
+
+          {currentRoundQuestions.length > 0 && liveSession?.id ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Chọn câu hỏi & hiển thị</CardTitle>
+                <CardDescription>Chọn câu theo thứ tự để bật chế độ “Đang hiển thị” (timer 5s mặc định).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form action={setCurrentQuestionAction} className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <input type="hidden" name="matchId" value={match.id} />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm text-slate-700">Câu hỏi</p>
+                    <select
+                      name="roundQuestionId"
+                      defaultValue={liveSession.current_round_question_id ?? ''}
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      required
+                    >
+                      <option value="" disabled>
+                        Chọn câu trong vòng hiện tại
+                      </option>
+                      {currentRoundQuestions.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          Câu #{q.order_index ?? '?'} · {q.question_id ?? 'n/a'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-full md:w-32 space-y-1">
+                    <p className="text-sm text-slate-700">Thời gian (ms)</p>
+                    <input
+                      type="number"
+                      name="durationMs"
+                      min={1000}
+                      max={120000}
+                      defaultValue={5000}
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <Button type="submit" className="md:w-auto w-full">
+                    Hiển thị câu
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {players.length > 0 && (
             <Card>

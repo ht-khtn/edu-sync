@@ -71,7 +71,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     for (const score of scores) {
       if (!score.player_id) continue
       const prev = totals.get(score.player_id) ?? 0
-      const current = typeof score.total_score === 'number' ? score.total_score : 0
+      const current = typeof score.points === 'number' ? score.points : 0
       totals.set(score.player_id, Math.max(prev, current))
     }
 
@@ -224,7 +224,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
               <p className="text-muted-foreground">Chưa có tín hiệu buzzer.</p>
             ) : (
               buzzerEvents.map((event) => {
-                const timestamp = event.created_at ? new Date(event.created_at).toLocaleTimeString('vi-VN') : '—'
+                const ts = event.occurred_at ?? event.created_at
+                const timestamp = ts ? new Date(ts).toLocaleTimeString('vi-VN') : '—'
                 return (
                   <div
                     key={event.id ?? `${event.player_id}-${event.created_at}`}
@@ -232,7 +233,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                   >
                     <p className="font-semibold">{event.player_id ?? '—'}</p>
                     <p className="text-muted-foreground">
-                      {timestamp} · {event.event_type ?? 'event'}
+                      {timestamp} · {event.event_type ?? 'event'} {event.result ? `· ${event.result}` : ''}
                     </p>
                   </div>
                 )

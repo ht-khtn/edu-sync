@@ -9,6 +9,7 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
+import { confirmDecisionAction } from '@/app/(olympia)/olympia/actions'
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
@@ -61,7 +62,7 @@ async function fetchHostData(matchCode: string) {
       .order('seat_index', { ascending: true }),
     olympia
       .from('match_scores')
-      .select('player_id, total_score')
+      .select('player_id, points')
       .eq('match_id', realMatchId),
   ])
 
@@ -70,7 +71,7 @@ async function fetchHostData(matchCode: string) {
   if (playersError) console.warn('[Olympia] Failed to load match players:', playersError.message)
   if (scoresError) console.warn('[Olympia] Failed to load match scores:', scoresError.message)
 
-  const scoreLookup = new Map((scores ?? []).map((s) => [s.player_id, s.total_score ?? 0]))
+  const scoreLookup = new Map((scores ?? []).map((s) => [s.player_id, s.points ?? 0]))
 
   return {
     match,
@@ -158,6 +159,61 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
               />
             </CardContent>
           </Card>
+
+          {players.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Chấm điểm nhanh (Khởi động chung)</CardTitle>
+                <CardDescription>Áp dụng +10 nếu đúng, -5 nếu sai/hết giờ (không âm).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form action={confirmDecisionAction} className="space-y-3">
+                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-slate-700">Chọn thí sinh</p>
+                    <select
+                      name="playerId"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      defaultValue=""
+                      required
+                      disabled={!liveSession?.id}
+                    >
+                      <option value="" disabled>
+                        Chọn thí sinh cần chấm
+                      </option>
+                      {players.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          Ghế {p.seat_index}: {p.display_name ?? 'Không tên'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-slate-700">Kết quả</p>
+                    <select
+                      name="decision"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      defaultValue="correct"
+                      required
+                      disabled={!liveSession?.id}
+                    >
+                      <option value="correct">Đúng (+10)</option>
+                      <option value="wrong">Sai (-5)</option>
+                      <option value="timeout">Hết giờ (-5)</option>
+                    </select>
+                  </div>
+
+                  <Button type="submit" size="sm" disabled={!liveSession?.id}>
+                    Xác nhận
+                  </Button>
+                  {!liveSession?.id ? (
+                    <p className="text-xs text-muted-foreground">Cần mở phòng live để thao tác chấm điểm.</p>
+                  ) : null}
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
           {players.length > 0 && (
             <Card>

@@ -308,6 +308,12 @@ const buzzerSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
 });
 
+const decisionSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  playerId: z.string().uuid("Thí sinh không hợp lệ."),
+  decision: z.enum(["correct", "wrong", "timeout"]),
+});
+
 function generateJoinCode() {
   return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
@@ -977,7 +983,7 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     const sessionId = parsed.data.sessionId;
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status")
+      .select("id, status, match_id, current_round_question_id")
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -986,18 +992,45 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     if (session.status !== "running") {
       return { error: "Phòng chưa mở nhận đáp án." };
     }
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang mở." };
 
-    // TODO: persist payload vào `olympia.answers` và kích hoạt service chấm điểm.
-    console.info("[Olympia] submitAnswerAction stub", {
-      responder: appUserId,
-      sessionId,
-      answer: parsed.data.answer,
-      notes: parsed.data.notes,
+    const { data: playerRow, error: playerError } = await olympia
+      .from("match_players")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("participant_id", appUserId)
+      .maybeSingle();
+
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    const { data: roundQuestion, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, match_round_id")
+      .eq("id", session.current_round_question_id)
+      .maybeSingle();
+
+    if (rqError) return { error: rqError.message };
+    if (!roundQuestion) return { error: "Không tìm thấy câu hỏi hiện tại." };
+
+    const submittedAt = new Date().toISOString();
+    const { error: insertError } = await olympia.from("answers").insert({
+      match_id: session.match_id,
+      match_round_id: roundQuestion.match_round_id,
+      round_question_id: roundQuestion.id,
+      player_id: playerRow.id,
+      answer_text: parsed.data.answer,
+      response_time_ms: null,
+      submitted_at: submittedAt,
     });
 
+    if (insertError) {
+      return { error: insertError.message };
+    }
+
     return {
-      success:
-        "Hệ thống đã nhận được đáp án (stub). Tính năng chấm điểm sẽ bật trong bản cập nhật kế tiếp.",
+      success: "Đã ghi nhận đáp án. Host sẽ chấm và cập nhật điểm.",
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể gửi đáp án ngay lúc này." };
@@ -1022,7 +1055,7 @@ export async function triggerBuzzerAction(
 
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status, match_id")
+      .select("id, status, match_id, current_round_question_id, question_state")
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
 
@@ -1031,19 +1064,158 @@ export async function triggerBuzzerAction(
     if (session.status !== "running") {
       return { error: "Phòng chưa sẵn sàng nhận tín hiệu buzzer." };
     }
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+    if (session.question_state !== "showing") {
+      return { error: "Host chưa mở câu hỏi để nhận buzzer." };
+    }
 
-    // TODO: ghi nhận buzzer event (ưu tiên Supabase Realtime cho vòng VCNV).
-    console.info("[Olympia] triggerBuzzerAction stub", {
-      responder: appUserId,
-      sessionId: parsed.data.sessionId,
-      matchId: session.match_id,
+    const { data: playerRow, error: playerError } = await olympia
+      .from("match_players")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("participant_id", appUserId)
+      .maybeSingle();
+
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    // Nếu đã có người thắng, không cho nhận thêm.
+    const { data: firstBuzz, error: buzzError } = await olympia
+      .from("buzzer_events")
+      .select("id, player_id, result, occurred_at")
+      .eq("round_question_id", session.current_round_question_id)
+      .order("occurred_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (buzzError) return { error: buzzError.message };
+    if (firstBuzz && firstBuzz.result === "win" && firstBuzz.player_id !== playerRow.id) {
+      return { error: "Đã có người bấm trước." };
+    }
+
+    if (firstBuzz && firstBuzz.player_id === playerRow.id && firstBuzz.result === "win") {
+      return { success: "Bạn đã là người bấm nhanh nhất." };
+    }
+
+    const isWinner = !firstBuzz;
+    const now = new Date().toISOString();
+    const { error: insertError } = await olympia.from("buzzer_events").insert({
+      match_id: session.match_id,
+      round_question_id: session.current_round_question_id,
+      player_id: playerRow.id,
+      event_type: "buzz",
+      result: isWinner ? "win" : "lose",
+      occurred_at: now,
     });
 
+    if (insertError) return { error: insertError.message };
+
     return {
-      success: "Đã gửi tín hiệu buzzer (stub). Host sẽ xác nhận khi tính năng hoàn tất.",
+      success: isWinner
+        ? "Bạn đã giành quyền trả lời."
+        : "Đã ghi nhận tín hiệu (không phải người nhanh nhất).",
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể gửi tín hiệu buzzer." };
+  }
+}
+
+export async function confirmDecisionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = decisionSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      playerId: formData.get("playerId"),
+      decision: formData.get("decision"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm điểm." };
+    }
+
+    const { sessionId, playerId, decision } = parsed.data;
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+
+    const roundType = session.current_round_type ?? "khoi_dong";
+    const delta = decision === "correct" ? 10 : -5;
+
+    const { data: scoreRow, error: scoreError } = await olympia
+      .from("match_scores")
+      .select("id, points")
+      .eq("match_id", session.match_id)
+      .eq("player_id", playerId)
+      .eq("round_type", roundType)
+      .maybeSingle();
+
+    if (scoreError) return { error: scoreError.message };
+
+    const currentPoints = scoreRow?.points ?? 0;
+    const nextPoints = Math.max(0, currentPoints + delta);
+
+    if (scoreRow?.id) {
+      const { error: updateScoreError } = await olympia
+        .from("match_scores")
+        .update({ points: nextPoints, updated_at: new Date().toISOString() })
+        .eq("id", scoreRow.id);
+      if (updateScoreError) return { error: updateScoreError.message };
+    } else {
+      const { error: insertScoreError } = await olympia.from("match_scores").insert({
+        match_id: session.match_id,
+        player_id: playerId,
+        round_type: roundType,
+        points: nextPoints,
+      });
+      if (insertScoreError) return { error: insertScoreError.message };
+    }
+
+    // Cập nhật đáp án mới nhất (nếu có) để lưu điểm và trạng thái đúng/sai.
+    if (session.current_round_question_id) {
+      const { data: latestAnswer, error: answerError } = await olympia
+        .from("answers")
+        .select("id")
+        .eq("match_id", session.match_id)
+        .eq("player_id", playerId)
+        .eq("round_question_id", session.current_round_question_id)
+        .order("submitted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (answerError) return { error: answerError.message };
+      if (latestAnswer?.id) {
+        const { error: updateAnswerError } = await olympia
+          .from("answers")
+          .update({
+            is_correct: decision === "correct",
+            points_awarded: delta,
+          })
+          .eq("id", latestAnswer.id);
+        if (updateAnswerError) return { error: updateAnswerError.message };
+      }
+    }
+
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    if (session.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+    }
+
+    return { success: `Đã xác nhận: ${decision}. Điểm mới: ${nextPoints}.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể xác nhận kết quả." };
   }
 }
 

@@ -71,13 +71,13 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
     const [{ data: scores }, { data: roundQuestions }] = await Promise.all([
         olympia
             .from('match_scores')
-            .select('id, match_id, player_id, round_type, total_score')
+            .select('id, match_id, player_id, round_type, points')
             .eq('match_id', session.match_id),
         olympia
             .from('round_questions')
-            .select('id, match_id, round_id, round_type, sequence, question_id, target_player_id')
-            .eq('match_id', session.match_id)
-            .order('sequence', { ascending: true }),
+            .select('id, match_round_id, question_id, order_index, target_player_id, meta, match_rounds!inner(match_id, round_type)')
+            .eq('match_rounds.match_id', session.match_id)
+            .order('order_index', { ascending: true }),
     ])
 
     return {

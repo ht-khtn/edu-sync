@@ -35,29 +35,28 @@ export function OlympiaRealtimeListener({ debounceMs = 800 }: OlympiaRealtimeLis
         const supabase = await getSupabase()
         if (!mounted) return
         supabaseInstance = supabase
-        
+
         // Optimized: Filter only active matches (status != 'completed')
         // Reduces payload by ~80% (only listen to live matches)
         channel = supabase
           .channel(channelName)
           .on(
-            'postgres_changes', 
-            { 
-              event: '*', 
-              schema: 'olympia', 
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'olympia',
               table: 'matches',
               filter: 'status=neq.completed' // Only active matches
-            }, 
+            },
             scheduleRefresh
           )
           .on(
-            'postgres_changes', 
-            { 
-              event: '*', 
-              schema: 'olympia', 
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'olympia',
               table: 'live_sessions',
-              filter: 'is_active=eq.true' // Only active sessions
-            }, 
+            },
             scheduleRefresh
           )
 

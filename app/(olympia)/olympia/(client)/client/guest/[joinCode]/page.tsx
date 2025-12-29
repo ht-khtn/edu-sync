@@ -57,9 +57,9 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
     // Fetch players for resolved match id
     const playersRes = await olympia
         .from('match_players')
-        .select('display_name, seat_number, class_name')
+        .select('display_name, seat_index')
         .eq('match_id', match.id)
-        .order('seat_number', { ascending: true })
+        .order('seat_index', { ascending: true })
     const players = playersRes.data ?? []
 
     const isLive = match.status === 'live' && session?.status === 'running'
@@ -150,9 +150,8 @@ export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) 
                                 players.map((player, idx) => (
                                     <div key={idx} className="text-sm p-2 rounded bg-slate-50 dark:bg-slate-900">
                                         <p className="font-medium">
-                                            Ghế {player.seat_number}: {player.display_name}
+                                            Ghế {player.seat_index ?? '—'}: {player.display_name ?? 'Chưa có tên'}
                                         </p>
-                                        <p className="text-xs text-muted-foreground">{player.class_name}</p>
                                     </div>
                                 ))
                             )}

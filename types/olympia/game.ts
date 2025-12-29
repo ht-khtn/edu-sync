@@ -31,26 +31,31 @@ export type ScoreRow = {
   id?: string;
   match_id?: string;
   player_id: string;
-  total_score: number | null;
+  points: number | null;
   round_type: string | null;
 };
 
 export type RoundQuestionRow = {
   id: string;
-  match_id?: string | null;
-  round_id: string | null;
-  round_type: string | null;
-  sequence: number | null;
+  match_round_id: string | null;
   question_id: string | null;
+  order_index: number | null;
   target_player_id: string | null;
+  meta?: Record<string, unknown> | null;
+  match_rounds?: {
+    match_id?: string | null;
+    round_type?: string | null;
+  } | null;
 };
 
 export type BuzzerEventRow = {
   id?: string;
   match_id?: string | null;
+  round_question_id?: string | null;
   player_id?: string | null;
-  state?: string | null;
   event_type?: string | null;
+  result?: string | null;
+  occurred_at?: string | null;
   created_at?: string | null;
 };
 

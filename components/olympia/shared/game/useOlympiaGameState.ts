@@ -160,10 +160,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         setScores(nextScores as ScoreRow[]);
       }
 
-      const currentRqId = (nextSession?.current_round_question_id ?? sessionRef.current.current_round_question_id) as
-        | string
-        | null
-        | undefined;
+      const currentRqId = (nextSession?.current_round_question_id ??
+        sessionRef.current.current_round_question_id) as string | null | undefined;
 
       if (currentRqId) {
         const [{ data: rqRow }, { data: buzzerRows }] = await Promise.all([
@@ -176,7 +174,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             .maybeSingle(),
           olympia
             .from("buzzer_events")
-            .select("id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at")
+            .select(
+              "id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at"
+            )
             .eq("round_question_id", currentRqId)
             .order("occurred_at", { ascending: false })
             .limit(20),

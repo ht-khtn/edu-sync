@@ -9,7 +9,16 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
-import { advanceCurrentQuestionFormAction, confirmDecisionFormAction, setCurrentQuestionFormAction } from '@/app/(olympia)/olympia/actions'
+import {
+  advanceCurrentQuestionFormAction,
+  autoScoreTangTocFormAction,
+  confirmDecisionFormAction,
+  confirmObstacleGuessFormAction,
+  confirmVcnvRowDecisionFormAction,
+  markAnswerCorrectnessFormAction,
+  openObstacleTileFormAction,
+  setCurrentQuestionFormAction,
+} from '@/app/(olympia)/olympia/actions'
 
 type PlayerSummary = {
   seat_index: number | null
@@ -33,6 +42,29 @@ type RecentAnswerRow = {
   is_correct: boolean | null
   points_awarded: number | null
   submitted_at: string
+  match_players: PlayerSummary | null
+}
+
+type HostObstacleRow = {
+  id: string
+  match_round_id: string
+  title: string | null
+}
+
+type HostObstacleTileRow = {
+  id: string
+  round_question_id: string | null
+  position_index: number
+  is_open: boolean
+}
+
+type HostObstacleGuessRow = {
+  id: string
+  player_id: string
+  guess_text: string
+  is_correct: boolean
+  attempt_order: number | null
+  attempted_at: string
   match_players: PlayerSummary | null
 }
 
@@ -96,7 +128,11 @@ async function fetchHostData(matchCode: string) {
   if (playersError) console.warn('[Olympia] Failed to load match players:', playersError.message)
   if (scoresError) console.warn('[Olympia] Failed to load match scores:', scoresError.message)
 
-  const scoreLookup = new Map((scores ?? []).map((s) => [s.player_id, s.points ?? 0]))
+  const scoreLookup = new Map<string, number>()
+  for (const s of scores ?? []) {
+    const prev = scoreLookup.get(s.player_id) ?? 0
+    scoreLookup.set(s.player_id, prev + (s.points ?? 0))
+  }
 
   const { data: roundQuestions } = await olympia
     .from('round_questions')
@@ -136,6 +172,36 @@ async function fetchHostData(matchCode: string) {
       : Promise.resolve({ data: [] }),
   ])
 
+  let obstacle: HostObstacleRow | null = null
+  let obstacleTiles: HostObstacleTileRow[] = []
+  let obstacleGuesses: HostObstacleGuessRow[] = []
+  if (liveSession?.current_round_type === 'vcnv' && liveSession.current_round_id) {
+    const { data: obstacleRow } = await olympia
+      .from('obstacles')
+      .select('id, match_round_id, title')
+      .eq('match_round_id', liveSession.current_round_id)
+      .maybeSingle()
+    obstacle = (obstacleRow as HostObstacleRow | null) ?? null
+
+    if (obstacle?.id) {
+      const [{ data: tiles }, { data: guesses }] = await Promise.all([
+        olympia
+          .from('obstacle_tiles')
+          .select('id, round_question_id, position_index, is_open')
+          .eq('obstacle_id', obstacle.id)
+          .order('position_index', { ascending: true }),
+        olympia
+          .from('obstacle_guesses')
+          .select('id, player_id, guess_text, is_correct, attempt_order, attempted_at, match_players(seat_index, display_name)')
+          .eq('obstacle_id', obstacle.id)
+          .order('attempted_at', { ascending: false })
+          .limit(10),
+      ])
+      obstacleTiles = (tiles as HostObstacleTileRow[] | null) ?? []
+      obstacleGuesses = (guesses as HostObstacleGuessRow[] | null) ?? []
+    }
+  }
+
   return {
     match,
     liveSession,
@@ -151,6 +217,9 @@ async function fetchHostData(matchCode: string) {
     winnerBuzz: (winnerBuzz as WinnerBuzzRow | null) ?? null,
     recentBuzzes: (recentBuzzes as RecentBuzzRow[]) ?? [],
     recentAnswers: (recentAnswers as RecentAnswerRow[]) ?? [],
+    obstacle,
+    obstacleTiles,
+    obstacleGuesses,
   }
 }
 
@@ -168,7 +237,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores, roundQuestions, winnerBuzz, recentBuzzes, recentAnswers } = data
+  const { match, liveSession, rounds, players, scores, roundQuestions, winnerBuzz, recentBuzzes, recentAnswers, obstacle, obstacleTiles, obstacleGuesses } = data
   const currentRoundId = liveSession?.current_round_id
   const currentRoundQuestions = currentRoundId
     ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
@@ -390,6 +459,158 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                             {typeof a.points_awarded === 'number' ? ` · ${a.points_awarded >= 0 ? '+' : ''}${a.points_awarded}` : ''}
                           </p>
                           {a.answer_text ? <p className="mt-1">{a.answer_text}</p> : null}
+
+                          {liveSession?.current_round_type === 'tang_toc' ? (
+                            <div className="mt-2 flex gap-2">
+                              <form action={markAnswerCorrectnessFormAction}>
+                                <input type="hidden" name="answerId" value={a.id} />
+                                <input type="hidden" name="decision" value="correct" />
+                                <Button type="submit" size="sm" variant="outline">
+                                  Đúng
+                                </Button>
+                              </form>
+                              <form action={markAnswerCorrectnessFormAction}>
+                                <input type="hidden" name="answerId" value={a.id} />
+                                <input type="hidden" name="decision" value="wrong" />
+                                <Button type="submit" size="sm" variant="outline">
+                                  Sai
+                                </Button>
+                              </form>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {liveSession?.current_round_type === 'tang_toc' ? (
+                  <div className="pt-2">
+                    <form action={autoScoreTangTocFormAction}>
+                      <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                      <Button type="submit" size="sm" disabled={!liveSession?.id}>
+                        Chấm tự động (Tăng tốc)
+                      </Button>
+                    </form>
+                    <p className="mt-2 text-xs text-muted-foreground">Chỉ tính các đáp án đã được đánh dấu ĐÚNG theo thứ tự gửi.</p>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {liveSession?.current_round_type === 'vcnv' && obstacle ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>CNV · Điều khiển & chấm</CardTitle>
+                <CardDescription>Mở ô, chấm hàng (+10 nếu đúng), và xác nhận lượt đoán CNV.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Ô CNV</p>
+                  {obstacleTiles.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có ô CNV.</p>
+                  ) : (
+                    <div className="grid grid-cols-5 gap-2">
+                      {obstacleTiles.map((t) => (
+                        <div key={t.id} className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+                          <p className="font-semibold">Ô {t.position_index}</p>
+                          <p className="text-muted-foreground">{t.is_open ? 'MỞ' : 'ĐÓNG'}</p>
+                          {!t.is_open ? (
+                            <form action={openObstacleTileFormAction} className="mt-2">
+                              <input type="hidden" name="tileId" value={t.id} />
+                              <Button type="submit" size="sm" variant="outline" className="w-full">
+                                Mở
+                              </Button>
+                            </form>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {players.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Chấm hàng (CNV)</p>
+                    <form action={confirmVcnvRowDecisionFormAction} className="space-y-3">
+                      <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-slate-700">Chọn thí sinh</p>
+                        <select
+                          name="playerId"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                          defaultValue=""
+                          required
+                          disabled={!liveSession?.id}
+                        >
+                          <option value="" disabled>
+                            Chọn thí sinh cần chấm
+                          </option>
+                          {players.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              Ghế {p.seat_index}: {p.display_name ?? 'Không tên'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-slate-700">Kết quả</p>
+                        <select
+                          name="decision"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                          defaultValue="correct"
+                          required
+                          disabled={!liveSession?.id}
+                        >
+                          <option value="correct">Đúng (+10) · mở ô theo câu</option>
+                          <option value="wrong">Sai (0)</option>
+                          <option value="timeout">Hết giờ (0)</option>
+                        </select>
+                      </div>
+
+                      <Button type="submit" size="sm" disabled={!liveSession?.id}>
+                        Xác nhận
+                      </Button>
+                    </form>
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Lượt đoán CNV gần đây</p>
+                  {obstacleGuesses.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có lượt đoán.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {obstacleGuesses.map((g) => (
+                        <div key={g.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
+                          <p className="font-semibold">
+                            Ghế {g.match_players?.seat_index ?? '—'}: {g.match_players?.display_name ?? g.player_id}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {g.attempted_at ? new Date(g.attempted_at).toLocaleTimeString('vi-VN') : '—'}
+                            {g.attempt_order ? ` · lượt ${g.attempt_order}` : ''} · {g.is_correct ? 'ĐÚNG' : 'CHƯA/SAI'}
+                          </p>
+                          <p className="mt-1">{g.guess_text}</p>
+                          {!g.is_correct ? (
+                            <div className="mt-2 flex gap-2">
+                              <form action={confirmObstacleGuessFormAction}>
+                                <input type="hidden" name="guessId" value={g.id} />
+                                <input type="hidden" name="decision" value="correct" />
+                                <Button type="submit" size="sm">
+                                  Đúng
+                                </Button>
+                              </form>
+                              <form action={confirmObstacleGuessFormAction}>
+                                <input type="hidden" name="guessId" value={g.id} />
+                                <input type="hidden" name="decision" value="wrong" />
+                                <Button type="submit" size="sm" variant="outline">
+                                  Sai
+                                </Button>
+                              </form>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>

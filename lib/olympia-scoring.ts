@@ -1,5 +1,12 @@
 export type KhoiDongDecision = "correct" | "wrong" | "timeout";
 
+export function computeVcnvFinalScore(openedTilesCount: number): number {
+  const safeCount = Number.isFinite(openedTilesCount)
+    ? Math.max(0, Math.floor(openedTilesCount))
+    : 0;
+  return Math.max(0, 60 - 10 * safeCount);
+}
+
 /**
  * Tính delta và điểm mới cho vòng Khởi động (lượt chung).
  * - Đúng: +10

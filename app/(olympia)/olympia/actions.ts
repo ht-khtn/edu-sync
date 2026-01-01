@@ -6,7 +6,7 @@ import ExcelJS from "exceljs";
 import { z } from "zod";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
-import { computeKhoiDongCommonScore } from "@/lib/olympia-scoring";
+import { computeKhoiDongCommonScore, computeVcnvFinalScore } from "@/lib/olympia-scoring";
 
 export type ActionState = {
   error?: string | null;
@@ -329,6 +329,38 @@ const setCurrentQuestionSchema = z.object({
   matchId: z.string().uuid("Trận không hợp lệ."),
   roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
   durationMs: z.number().int().min(1000).max(120000).optional().default(5000),
+});
+
+const vcnvRowDecisionSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  playerId: z.string().uuid("Thí sinh không hợp lệ."),
+  decision: z.enum(["correct", "wrong", "timeout"]),
+});
+
+const obstacleGuessSubmitSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  guessText: z
+    .string()
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0, "Vui lòng nhập dự đoán CNV."),
+});
+
+const obstacleGuessConfirmSchema = z.object({
+  guessId: z.string().uuid("Lượt đoán không hợp lệ."),
+  decision: z.enum(["correct", "wrong"]),
+});
+
+const openObstacleTileSchema = z.object({
+  tileId: z.string().uuid("Ô CNV không hợp lệ."),
+});
+
+const markAnswerCorrectnessSchema = z.object({
+  answerId: z.string().uuid("Đáp án không hợp lệ."),
+  decision: z.enum(["correct", "wrong"]),
+});
+
+const autoScoreTangTocSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
 });
 
 function generateJoinCode() {
@@ -1398,6 +1430,529 @@ export async function advanceCurrentQuestionAction(
 
 export async function advanceCurrentQuestionFormAction(formData: FormData): Promise<void> {
   await advanceCurrentQuestionAction({}, formData);
+}
+
+async function applyRoundDelta(params: {
+  olympia: unknown;
+  matchId: string;
+  playerId: string;
+  roundType: string;
+  delta: number;
+}): Promise<{ nextPoints: number; error?: string }> {
+  const { olympia, matchId, playerId, roundType, delta } = params;
+  const db = olympia as {
+    from: (table: string) => unknown;
+  };
+
+  type DbError = { message: string } | null;
+  type ScoreRow = { id: string; points: number | null };
+  type ScoreSelectBuilder = {
+    eq: (col: string, val: unknown) => ScoreSelectBuilder;
+    maybeSingle: () => Promise<{ data: ScoreRow | null; error: DbError }>;
+  };
+  type ScoreUpdateBuilder = {
+    eq: (col: string, val: unknown) => Promise<{ error: DbError }>;
+  };
+  type ScoreUpdateQuery = {
+    update: (payload: Record<string, unknown>) => ScoreUpdateBuilder;
+  };
+  type ScoreInsertQuery = {
+    insert: (payload: Record<string, unknown>) => Promise<{ error: DbError }>;
+  };
+
+  const scoreQuery = db.from("match_scores") as unknown as {
+    select: (cols: string) => ScoreSelectBuilder;
+  };
+
+  const { data: scoreRow, error: scoreError } = await scoreQuery
+    .select("id, points")
+    .eq("match_id", matchId)
+    .eq("player_id", playerId)
+    .eq("round_type", roundType)
+    .maybeSingle();
+
+  if (scoreError) return { nextPoints: 0, error: scoreError.message };
+  const currentPoints = scoreRow?.points ?? 0;
+  const nextPoints = Math.max(0, currentPoints + delta);
+
+  if (scoreRow?.id) {
+    const updateQuery = db.from("match_scores") as unknown as ScoreUpdateQuery;
+    const { error: updateError } = await updateQuery
+      .update({ points: nextPoints, updated_at: new Date().toISOString() })
+      .eq("id", scoreRow.id);
+    if (updateError) return { nextPoints: 0, error: updateError.message };
+  } else {
+    const insertQuery = db.from("match_scores") as unknown as ScoreInsertQuery;
+    const { error: insertError } = await insertQuery.insert({
+      match_id: matchId,
+      player_id: playerId,
+      round_type: roundType,
+      points: nextPoints,
+    });
+    if (insertError) return { nextPoints: 0, error: insertError.message };
+  }
+
+  return { nextPoints };
+}
+
+export async function submitObstacleGuessAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const { supabase, authUid, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+    if (!authUid || !appUserId) {
+      return { error: "Bạn cần đăng nhập để dự đoán CNV." };
+    }
+
+    const parsed = obstacleGuessSubmitSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      guessText: formData.get("guessText"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu dự đoán không hợp lệ." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status, match_id, current_round_id, current_round_type")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (!session.match_id || !session.current_round_id)
+      return { error: "Phòng chưa gắn trận/vòng hiện tại." };
+    if (session.current_round_type !== "vcnv")
+      return { error: "Hiện không ở vòng Vượt chướng ngại vật." };
+
+    const { data: playerRow, error: playerError } = await olympia
+      .from("match_players")
+      .select("id, is_disqualified_obstacle")
+      .eq("match_id", session.match_id)
+      .eq("participant_id", appUserId)
+      .maybeSingle();
+
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+    if (playerRow.is_disqualified_obstacle) {
+      return { error: "Bạn đã bị loại khỏi quyền đoán CNV." };
+    }
+
+    const { data: obstacle, error: obstacleError } = await olympia
+      .from("obstacles")
+      .select("id")
+      .eq("match_round_id", session.current_round_id)
+      .maybeSingle();
+    if (obstacleError) return { error: obstacleError.message };
+    if (!obstacle) return { error: "Vòng này chưa có CNV." };
+
+    const { count, error: countError } = await olympia
+      .from("obstacle_guesses")
+      .select("id", { count: "exact", head: true })
+      .eq("obstacle_id", obstacle.id)
+      .eq("player_id", playerRow.id);
+    if (countError) return { error: countError.message };
+
+    const attemptOrder = (count ?? 0) + 1;
+    const { error: insertError } = await olympia.from("obstacle_guesses").insert({
+      obstacle_id: obstacle.id,
+      player_id: playerRow.id,
+      guess_text: parsed.data.guessText,
+      attempt_order: attemptOrder,
+      attempted_at: new Date().toISOString(),
+    });
+    if (insertError) return { error: insertError.message };
+
+    return { success: "Đã ghi nhận dự đoán CNV. Host sẽ xác nhận." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể gửi dự đoán CNV." };
+  }
+}
+
+export async function confirmVcnvRowDecisionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = vcnvRowDecisionSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      playerId: formData.get("playerId"),
+      decision: formData.get("decision"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm CNV." };
+    }
+
+    const { sessionId, playerId, decision } = parsed.data;
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select(
+        "id, match_id, join_code, current_round_type, current_round_id, current_round_question_id"
+      )
+      .eq("id", sessionId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (session.current_round_type !== "vcnv") return { error: "Hiện không ở vòng CNV." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi CNV đang hiển thị." };
+
+    const delta = decision === "correct" ? 10 : 0;
+    const { nextPoints, error: scoreErr } = await applyRoundDelta({
+      olympia,
+      matchId: session.match_id,
+      playerId,
+      roundType: "vcnv",
+      delta,
+    });
+    if (scoreErr) return { error: scoreErr };
+
+    const { data: latestAnswer, error: answerError } = await olympia
+      .from("answers")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("player_id", playerId)
+      .eq("round_question_id", session.current_round_question_id)
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (answerError) return { error: answerError.message };
+
+    if (latestAnswer?.id) {
+      const { error: updateAnswerError } = await olympia
+        .from("answers")
+        .update({
+          is_correct: decision === "correct",
+          points_awarded: delta,
+        })
+        .eq("id", latestAnswer.id);
+      if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    if (decision === "correct" && session.current_round_id) {
+      const { data: obstacle, error: obstacleError } = await olympia
+        .from("obstacles")
+        .select("id")
+        .eq("match_round_id", session.current_round_id)
+        .maybeSingle();
+      if (obstacleError) return { error: obstacleError.message };
+      if (obstacle?.id) {
+        const { error: tileError } = await olympia
+          .from("obstacle_tiles")
+          .update({ is_open: true })
+          .eq("obstacle_id", obstacle.id)
+          .eq("round_question_id", session.current_round_question_id);
+        if (tileError) return { error: tileError.message };
+      }
+    }
+
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    if (session.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+      revalidatePath(`/olympia/client/guest/${session.join_code}`);
+    }
+
+    return { success: `Đã chấm CNV: ${decision}. Điểm vòng CNV hiện tại: ${nextPoints}.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chấm CNV." };
+  }
+}
+
+export async function confirmVcnvRowDecisionFormAction(formData: FormData): Promise<void> {
+  await confirmVcnvRowDecisionAction({}, formData);
+}
+
+export async function confirmObstacleGuessAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = obstacleGuessConfirmSchema.safeParse({
+      guessId: formData.get("guessId"),
+      decision: formData.get("decision"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin xác nhận CNV." };
+    }
+
+    const { data: guess, error: guessError } = await olympia
+      .from("obstacle_guesses")
+      .select("id, obstacle_id, player_id, is_correct")
+      .eq("id", parsed.data.guessId)
+      .maybeSingle();
+    if (guessError) return { error: guessError.message };
+    if (!guess) return { error: "Không tìm thấy lượt đoán." };
+
+    const { data: obstacleRow, error: obstacleError } = await olympia
+      .from("obstacles")
+      .select("id, match_round_id, match_rounds!inner(match_id)")
+      .eq("id", guess.obstacle_id)
+      .maybeSingle();
+    if (obstacleError) return { error: obstacleError.message };
+    if (!obstacleRow) return { error: "Không tìm thấy CNV." };
+
+    const join = (obstacleRow as { match_rounds?: { match_id: string } | { match_id: string }[] })
+      .match_rounds;
+    const matchId = Array.isArray(join) ? join[0]?.match_id : join?.match_id;
+    if (!matchId) return { error: "Không xác định được trận thi của CNV." };
+
+    if (parsed.data.decision === "wrong") {
+      const { error: updateGuessError } = await olympia
+        .from("obstacle_guesses")
+        .update({ is_correct: false })
+        .eq("id", guess.id);
+      if (updateGuessError) return { error: updateGuessError.message };
+
+      const { error: dqError } = await olympia
+        .from("match_players")
+        .update({ is_disqualified_obstacle: true })
+        .eq("id", guess.player_id);
+      if (dqError) return { error: dqError.message };
+
+      revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+      return { success: "Đã xác nhận SAI và loại quyền đoán CNV cho thí sinh." };
+    }
+
+    if (guess.is_correct) {
+      revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+      return { success: "Lượt đoán này đã được xác nhận đúng trước đó." };
+    }
+
+    const { error: updateGuessError } = await olympia
+      .from("obstacle_guesses")
+      .update({ is_correct: true })
+      .eq("id", guess.id);
+    if (updateGuessError) return { error: updateGuessError.message };
+
+    const { count: openedCount, error: openedError } = await olympia
+      .from("obstacle_tiles")
+      .select("id", { count: "exact", head: true })
+      .eq("obstacle_id", guess.obstacle_id)
+      .eq("is_open", true);
+    if (openedError) return { error: openedError.message };
+
+    const delta = computeVcnvFinalScore(openedCount ?? 0);
+    const { nextPoints, error: scoreErr } = await applyRoundDelta({
+      olympia,
+      matchId,
+      playerId: guess.player_id,
+      roundType: "vcnv",
+      delta,
+    });
+    if (scoreErr) return { error: scoreErr };
+
+    const { error: openAllError } = await olympia
+      .from("obstacle_tiles")
+      .update({ is_open: true })
+      .eq("obstacle_id", guess.obstacle_id);
+    if (openAllError) return { error: openAllError.message };
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("join_code")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    if (session?.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+      revalidatePath(`/olympia/client/guest/${session.join_code}`);
+    }
+
+    return {
+      success: `Đã xác nhận ĐÚNG. Cộng ${delta} điểm (CNV). Điểm vòng CNV hiện tại: ${nextPoints}.`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể xác nhận CNV." };
+  }
+}
+
+export async function confirmObstacleGuessFormAction(formData: FormData): Promise<void> {
+  await confirmObstacleGuessAction({}, formData);
+}
+
+export async function openObstacleTileAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = openObstacleTileSchema.safeParse({ tileId: formData.get("tileId") });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin ô CNV." };
+    }
+
+    const { data: tile, error: tileError } = await olympia
+      .from("obstacle_tiles")
+      .select("id, obstacle_id")
+      .eq("id", parsed.data.tileId)
+      .maybeSingle();
+    if (tileError) return { error: tileError.message };
+    if (!tile) return { error: "Không tìm thấy ô CNV." };
+
+    const { data: obstacleRow, error: obstacleError } = await olympia
+      .from("obstacles")
+      .select("id, match_round_id, match_rounds!inner(match_id)")
+      .eq("id", tile.obstacle_id)
+      .maybeSingle();
+    if (obstacleError) return { error: obstacleError.message };
+
+    const join = (obstacleRow as { match_rounds?: { match_id: string } | { match_id: string }[] })
+      ?.match_rounds;
+    const matchId = Array.isArray(join) ? join[0]?.match_id : join?.match_id;
+
+    const { error: updateError } = await olympia
+      .from("obstacle_tiles")
+      .update({ is_open: true })
+      .eq("id", tile.id);
+    if (updateError) return { error: updateError.message };
+
+    if (matchId) {
+      revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    }
+    return { success: "Đã mở ô CNV." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể mở ô CNV." };
+  }
+}
+
+export async function openObstacleTileFormAction(formData: FormData): Promise<void> {
+  await openObstacleTileAction({}, formData);
+}
+
+export async function markAnswerCorrectnessAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = markAnswerCorrectnessSchema.safeParse({
+      answerId: formData.get("answerId"),
+      decision: formData.get("decision"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin đánh dấu đáp án." };
+    }
+
+    const { data: answerRow, error: answerError } = await olympia
+      .from("answers")
+      .select("id, match_id")
+      .eq("id", parsed.data.answerId)
+      .maybeSingle();
+    if (answerError) return { error: answerError.message };
+    if (!answerRow) return { error: "Không tìm thấy đáp án." };
+
+    const { error: updateError } = await olympia
+      .from("answers")
+      .update({ is_correct: parsed.data.decision === "correct" })
+      .eq("id", answerRow.id);
+    if (updateError) return { error: updateError.message };
+
+    revalidatePath(`/olympia/admin/matches/${answerRow.match_id}/host`);
+    return { success: "Đã cập nhật trạng thái đúng/sai." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái đáp án." };
+  }
+}
+
+export async function markAnswerCorrectnessFormAction(formData: FormData): Promise<void> {
+  await markAnswerCorrectnessAction({}, formData);
+}
+
+export async function autoScoreTangTocAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = autoScoreTangTocSchema.safeParse({ sessionId: formData.get("sessionId") });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm Tăng tốc." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (session.current_round_type !== "tang_toc") return { error: "Hiện không ở vòng Tăng tốc." };
+    if (!session.current_round_question_id) return { error: "Chưa chọn câu hỏi Tăng tốc." };
+
+    const { data: answers, error: answersError } = await olympia
+      .from("answers")
+      .select("id, player_id, submitted_at, is_correct")
+      .eq("match_id", session.match_id)
+      .eq("round_question_id", session.current_round_question_id)
+      .eq("is_correct", true)
+      .order("submitted_at", { ascending: true });
+    if (answersError) return { error: answersError.message };
+
+    const pointsByRank = [40, 30, 20, 10];
+    const winners: Array<{ answerId: string; playerId: string; points: number }> = [];
+    const seen = new Set<string>();
+    for (const a of answers ?? []) {
+      if (seen.has(a.player_id)) continue;
+      const rank = winners.length;
+      if (rank >= pointsByRank.length) break;
+      winners.push({ answerId: a.id, playerId: a.player_id, points: pointsByRank[rank] });
+      seen.add(a.player_id);
+    }
+
+    for (const w of winners) {
+      const { error: scoreErr } = await applyRoundDelta({
+        olympia,
+        matchId: session.match_id,
+        playerId: w.playerId,
+        roundType: "tang_toc",
+        delta: w.points,
+      });
+      if (scoreErr) return { error: scoreErr };
+
+      const { error: updateAnswerError } = await olympia
+        .from("answers")
+        .update({ points_awarded: w.points })
+        .eq("id", w.answerId);
+      if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    if (session.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+      revalidatePath(`/olympia/client/guest/${session.join_code}`);
+    }
+
+    return { success: `Đã chấm Tăng tốc (tự động) cho ${winners.length} thí sinh.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chấm Tăng tốc." };
+  }
+}
+
+export async function autoScoreTangTocFormAction(formData: FormData): Promise<void> {
+  await autoScoreTangTocAction({}, formData);
 }
 
 const participantSchema = z.object({

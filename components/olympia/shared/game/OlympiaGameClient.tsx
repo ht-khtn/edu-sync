@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { submitAnswerAction, submitObstacleGuessAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
@@ -67,6 +67,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
   const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
+  const [cnvGuessState, cnvGuessAction] = useActionState(submitObstacleGuessAction, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
 
   const scoreboard = useMemo(() => {
@@ -75,7 +76,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
       if (!score.player_id) continue
       const prev = totals.get(score.player_id) ?? 0
       const current = typeof score.points === 'number' ? score.points : 0
-      totals.set(score.player_id, Math.max(prev, current))
+      totals.set(score.player_id, prev + current)
     }
 
     return players
@@ -96,6 +97,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
   const isGuest = Boolean(allowGuestFallback)
   const disableInteractions = isGuest
   const answerFeedback = answerState.error ?? answerState.success
+  const cnvGuessFeedback = cnvGuessState.error ?? cnvGuessState.success
   const buzzerFeedback = buzzerState.error ?? buzzerState.success
 
   return (
@@ -205,6 +207,25 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                       Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.
                     </p>
                   </form>
+
+                  {roundType === 'vcnv' && obstacle ? (
+                    <>
+                      <Separator />
+                      <form action={cnvGuessAction} className="space-y-2">
+                        <input type="hidden" name="sessionId" value={session.id} />
+                        <p className="text-xs font-semibold uppercase text-slate-500">CNV · Dự đoán chướng ngại vật</p>
+                        <Input name="guessText" placeholder="Nhập dự đoán CNV" disabled={disableInteractions} />
+                        <div className="flex gap-3">
+                          <FormSubmitButton disabled={disableInteractions}>Gửi dự đoán</FormSubmitButton>
+                        </div>
+                        {cnvGuessFeedback ? (
+                          <p className={cn('text-xs', cnvGuessState.error ? 'text-destructive' : 'text-emerald-600')}>
+                            {cnvGuessFeedback}
+                          </p>
+                        ) : null}
+                      </form>
+                    </>
+                  ) : null}
 
                   <Separator />
 

@@ -3,23 +3,26 @@ import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
 import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundControls'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
 import {
-  advanceCurrentQuestionFormAction,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Eye,
+  Hand,
+  Sparkles,
+  Timer,
+  Undo2,
+  X,
+} from 'lucide-react'
+import {
   autoScoreTangTocFormAction,
   confirmDecisionFormAction,
-  confirmObstacleGuessFormAction,
-  confirmVcnvRowDecisionFormAction,
   confirmVeDichMainDecisionFormAction,
   confirmVeDichStealDecisionFormAction,
-  manualAdjustScoreFormAction,
-  markAnswerCorrectnessFormAction,
-  openObstacleTileFormAction,
   openStealWindowFormAction,
   setCurrentQuestionFormAction,
   setRoundQuestionTargetPlayerFormAction,
@@ -97,6 +100,35 @@ type HostObstacleGuessRow = {
   match_players: PlayerSummary | PlayerSummary[] | null
 }
 
+type QuestionJoinRow = {
+  code: string
+  category: string | null
+  question_text: string
+  answer_text: string
+  note: string | null
+  image_url: string | null
+  audio_url: string | null
+}
+
+function normalizeQuestionJoin(value: QuestionJoinRow | QuestionJoinRow[] | null | undefined): QuestionJoinRow | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+type RoundJoinRow = {
+  match_id: string
+  round_type: string | null
+}
+
+function normalizeRoundJoin(value: RoundJoinRow | RoundJoinRow[] | null | undefined): RoundJoinRow | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
 
@@ -119,21 +151,34 @@ async function fetchHostData(matchCode: string) {
   const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
 
-  // Resolve match by id (route provides UUID)
+  // Route param historically is match UUID, nhưng user cũng hay copy/paste join_code.
+  // Hỗ trợ cả 2 để tránh 404.
+  let realMatchId: string | null = null
+  if (isUuid(matchCode)) {
+    realMatchId = matchCode
+  } else {
+    const { data: sessionByJoin, error: sessionByJoinError } = await olympia
+      .from('live_sessions')
+      .select('match_id')
+      .eq('join_code', matchCode)
+      .maybeSingle()
+    if (sessionByJoinError) throw sessionByJoinError
+    realMatchId = sessionByJoin?.match_id ?? null
+  }
+  if (!realMatchId) return null
+
   const { data: match, error: matchError } = await olympia
     .from('matches')
     .select('id, name, status')
-    .eq('id', matchCode)
+    .eq('id', realMatchId)
     .maybeSingle()
   if (matchError) throw matchError
   if (!match) return null
 
-  const realMatchId = match.id
-
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, requires_player_password')
+      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password')
       .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
@@ -165,7 +210,9 @@ async function fetchHostData(matchCode: string) {
 
   const { data: roundQuestions } = await olympia
     .from('round_questions')
-    .select('id, match_round_id, order_index, question_id, target_player_id, meta, match_rounds!inner(match_id, round_type)')
+    .select(
+      'id, match_round_id, order_index, question_id, target_player_id, meta, match_rounds!inner(match_id, round_type), questions(code, category, question_text, answer_text, note, image_url, audio_url)'
+    )
     .eq('match_rounds.match_id', realMatchId)
     .order('order_index', { ascending: true })
     .order('id', { ascending: true })
@@ -286,26 +333,76 @@ async function fetchHostData(matchCode: string) {
   }
 }
 
-export default async function OlympiaHostConsolePage({ params }: { params: Promise<{ matchId: string }> }) {
+export default async function OlympiaHostConsolePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ matchId: string }>
+  searchParams?: Promise<{ preview?: string | string[] }>
+}) {
   const { matchId } = await params
-
-  // Validate matchId is a valid UUID before querying
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  if (!uuidRegex.test(matchId)) {
-    notFound()
-  }
+  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[] }
+  const previewParam = Array.isArray(resolvedSearchParams.preview)
+    ? resolvedSearchParams.preview[0]
+    : resolvedSearchParams.preview
 
   const data = await fetchHostData(matchId)
   if (!data) {
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores, roundQuestions, currentRoundQuestion, isStarEnabled, winnerBuzz, recentBuzzes, recentAnswers, scoreChanges, scoreChangesError, obstacle, obstacleTiles, obstacleGuesses } = data
+  const {
+    match,
+    liveSession,
+    rounds,
+    players,
+    scores,
+    roundQuestions,
+    currentRoundQuestion,
+    isStarEnabled,
+    winnerBuzz,
+    recentAnswers,
+  } = data
   const currentRoundId = liveSession?.current_round_id
   const currentRoundQuestions = currentRoundId
     ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
     : roundQuestions
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
+
+  const questionsByRoundType = new Map<string, string[]>()
+  for (const q of roundQuestions) {
+    const roundType = normalizeRoundJoin((q as unknown as { match_rounds?: RoundJoinRow | RoundJoinRow[] | null | undefined }).match_rounds)?.round_type
+    const key = roundType ?? 'unknown'
+    const code = normalizeQuestionJoin((q as unknown as { questions?: QuestionJoinRow | QuestionJoinRow[] | null | undefined }).questions)?.code
+    const label = code ?? q.question_id ?? q.id
+    const list = questionsByRoundType.get(key) ?? []
+    list.push(label)
+    questionsByRoundType.set(key, list)
+  }
+  const questionsByRoundTypeEntries = Array.from(questionsByRoundType.entries())
+    .map(([roundType, codes]) => ({ roundType, codes }))
+    .sort((a, b) => a.roundType.localeCompare(b.roundType))
+
+  const previewRoundQuestionId =
+    previewParam && currentRoundQuestions.some((q) => q.id === previewParam)
+      ? previewParam
+      : liveSession?.current_round_question_id && currentRoundQuestions.some((q) => q.id === liveSession.current_round_question_id)
+        ? liveSession.current_round_question_id
+        : currentRoundQuestions[0]?.id
+
+  const previewRoundQuestion = previewRoundQuestionId
+    ? currentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
+    : null
+  const previewIndex = previewRoundQuestionId
+    ? currentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
+    : -1
+  const previewPrevId = previewIndex > 0 ? currentRoundQuestions[previewIndex - 1]?.id ?? null : null
+  const previewNextId =
+    previewIndex >= 0 && previewIndex < currentRoundQuestions.length - 1
+      ? currentRoundQuestions[previewIndex + 1]?.id ?? null
+      : null
+
+  const hostPath = `/olympia/admin/matches/${matchId}/host`
 
   const isVeDich = liveSession?.current_round_type === 've_dich'
   const veDichValueRaw =
@@ -315,417 +412,373 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
   const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : undefined
   const veDichValueText = veDichValue === 20 || veDichValue === 30 ? String(veDichValue) : ''
 
+  const previewJoinedQuestion = normalizeQuestionJoin(
+    (previewRoundQuestion as unknown as { questions?: QuestionJoinRow | QuestionJoinRow[] | null | undefined })?.questions
+  )
+  const previewQuestionText = previewJoinedQuestion?.question_text ?? null
+  const previewAnswerText = previewJoinedQuestion?.answer_text ?? null
+  const previewNoteText = previewJoinedQuestion?.note ?? null
+  const previewQuestionCode = previewJoinedQuestion?.code ?? null
+
+
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Console điều khiển trận</p>
-          <h1 className="text-2xl font-semibold">{match.name}</h1>
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground">Host console</p>
+          <h1 className="truncate text-xl font-semibold">{match.name}</h1>
         </div>
-        <Badge className={statusClass}>{match.status}</Badge>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="ghost" size="icon-sm" title="Về chi tiết trận" aria-label="Về chi tiết trận">
+            <Link href={`/olympia/admin/matches/${match.id}`}>
+              <ArrowLeft />
+            </Link>
+          </Button>
+          <Badge className={statusClass}>{match.status}</Badge>
+        </div>
       </div>
 
-      <div className="flex gap-3 text-sm flex-wrap">
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/olympia/admin/matches/${match.id}`}>← Về chi tiết trận</Link>
-        </Button>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/olympia/admin/matches">Danh sách trận</Link>
-        </Button>
-      </div>
+      {rounds.length === 0 ? (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6 space-y-3">
+            <p className="text-sm text-amber-900">
+              <strong>Chưa có vòng thi!</strong> Cần tạo vòng trước khi mở phòng / gán câu.
+            </p>
+            <InitializeRoundsButton matchId={match.id} roundsCount={rounds.length} />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          {rounds.length === 0 && (
-            <Card className="border-amber-200 bg-amber-50">
-              <CardContent className="pt-6 space-y-3">
-                <p className="text-sm text-amber-900">
-                  <strong>Chưa có vòng thi!</strong> Bạn cần tạo các vòng thi trước khi mở phòng hoặc gán câu hỏi.
-                </p>
-                <InitializeRoundsButton matchId={match.id} roundsCount={rounds.length} />
-              </CardContent>
-            </Card>
-          )}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Trạng thái phòng thi</CardTitle>
-              <CardDescription>Khởi động hoặc kết thúc phòng live để sẵn sàng cho học sinh.</CardDescription>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <CardTitle className="text-base">Câu hỏi</CardTitle>
+                  <CardDescription>
+                    {liveSession?.current_round_type ? roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type : 'Chưa chọn vòng'}
+                    {' '}· trạng thái: {liveSession?.question_state ?? '—'}
+                  </CardDescription>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {previewPrevId ? (
+                    <Button asChild size="icon-sm" variant="outline" title="Xem câu trước" aria-label="Xem câu trước">
+                      <Link href={`${hostPath}?preview=${encodeURIComponent(previewPrevId)}`}>
+                        <ArrowLeft />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button size="icon-sm" variant="outline" disabled title="Xem câu trước" aria-label="Xem câu trước">
+                      <ArrowLeft />
+                    </Button>
+                  )}
+
+                  <form method="get" className="flex items-center gap-2">
+                    <select
+                      name="preview"
+                      defaultValue={previewRoundQuestionId ?? ''}
+                      className="w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      disabled={currentRoundQuestions.length === 0}
+                      required={currentRoundQuestions.length > 0}
+                      aria-label="Danh sách câu hỏi"
+                    >
+                      {currentRoundQuestions.length === 0 ? (
+                        <option value="" disabled>
+                          Chưa có câu trong vòng
+                        </option>
+                      ) : null}
+                      {currentRoundQuestions.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          #{q.order_index ?? '?'} · {q.question_id ?? 'n/a'}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="submit"
+                      size="icon-sm"
+                      variant="outline"
+                      disabled={currentRoundQuestions.length === 0}
+                      title="Xem"
+                      aria-label="Xem"
+                    >
+                      <Check />
+                    </Button>
+                  </form>
+
+                  {previewNextId ? (
+                    <Button asChild size="icon-sm" variant="outline" title="Xem câu sau" aria-label="Xem câu sau">
+                      <Link href={`${hostPath}?preview=${encodeURIComponent(previewNextId)}`}>
+                        <ArrowRight />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button size="icon-sm" variant="outline" disabled title="Xem câu sau" aria-label="Xem câu sau">
+                      <ArrowRight />
+                    </Button>
+                  )}
+
+                  <form action={setCurrentQuestionFormAction} className="flex">
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <input type="hidden" name="roundQuestionId" value={previewRoundQuestionId ?? ''} />
+                    <input type="hidden" name="durationMs" value={5000} />
+                    <Button
+                      type="submit"
+                      size="icon-sm"
+                      disabled={!previewRoundQuestionId}
+                      title="Show lên (đổi câu đang live)"
+                      aria-label="Show lên (đổi câu đang live)"
+                    >
+                      <Eye />
+                    </Button>
+                  </form>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
-              <LiveSessionControls matchId={match.id} liveSession={liveSession ?? undefined} />
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border bg-background p-4">
+                <details className="mb-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Debug danh sách câu theo vòng
+                  </summary>
+                  <div className="mt-2 space-y-2 text-xs text-muted-foreground">
+                    <p>
+                      current_round_type: <span className="font-mono">{liveSession?.current_round_type ?? '—'}</span>
+                      {' '}· current_round_id: <span className="font-mono">{liveSession?.current_round_id ?? '—'}</span>
+                      {' '}· total RQ: <span className="font-mono">{roundQuestions.length}</span>
+                      {' '}· RQ in current round: <span className="font-mono">{currentRoundQuestions.length}</span>
+                    </p>
+                    {questionsByRoundTypeEntries.length === 0 ? (
+                      <p>(Không có round_questions)</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {questionsByRoundTypeEntries.map((entry) => (
+                          <p key={entry.roundType}>
+                            <span className="font-mono">{entry.roundType}</span>
+                            {': '}
+                            {entry.codes.join(', ')}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {previewQuestionCode ? `Mã: ${previewQuestionCode}` : null}
+                    {previewQuestionCode ? ' · ' : ''}
+                    {liveSession?.current_round_question_id ? `Live RQ: ${liveSession.current_round_question_id}` : 'Chưa show câu'}
+                    {previewRoundQuestionId && previewRoundQuestionId !== liveSession?.current_round_question_id ? ` · Đang xem: ${previewRoundQuestionId}` : ''}
+                  </p>
+                  {winnerBuzz ? (
+                    <p className="text-xs text-muted-foreground">
+                      Winner: Ghế {normalizePlayerSummary(winnerBuzz.match_players)?.seat_index ?? '—'}
+                    </p>
+                  ) : null}
+                </div>
+
+                <p className="mt-3 whitespace-pre-wrap text-lg font-semibold leading-relaxed">
+                  {previewQuestionText ?? (previewRoundQuestion?.question_id ? `Câu hỏi: ${previewRoundQuestion.question_id}` : 'Chưa có nội dung câu hỏi')}
+                </p>
+
+                {previewAnswerText ? (
+                  <div className="mt-4 rounded-md border bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-700">Đáp án</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">{previewAnswerText}</p>
+                    {previewNoteText ? (
+                      <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">Ghi chú: {previewNoteText}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Điều khiển vòng & câu hỏi</CardTitle>
-              <CardDescription>Chọn vòng hiện tại và trạng thái hiển thị câu hỏi cho khán phòng.</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Câu trả lời</CardTitle>
+              <CardDescription>Câu trả lời của thí sinh cho câu đang live (bấm Show câu mới sẽ reset).</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {!liveSession?.current_round_question_id ? (
+                <p className="text-sm text-muted-foreground">Chưa show câu hỏi.</p>
+              ) : recentAnswers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Chưa có câu trả lời nào.</p>
+              ) : (
+                <div className="space-y-2">
+                  {recentAnswers.map((a) => {
+                    const p = normalizePlayerSummary(a.match_players)
+                    const seatText = p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Ghế —'
+                    const nameText = p?.display_name ? ` · ${p.display_name}` : ''
+
+                    return (
+                      <div key={a.id} className="rounded-md border bg-background p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium">
+                            {seatText}
+                            {nameText}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={a.is_correct ? 'default' : 'outline'}>
+                              {a.is_correct == null ? '—' : a.is_correct ? 'Đúng' : 'Sai'}
+                            </Badge>
+                            <Badge variant="secondary">+{a.points_awarded ?? 0}</Badge>
+                          </div>
+                        </div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm">
+                          {a.answer_text?.trim() ? a.answer_text : <span className="text-muted-foreground">(Trống)</span>}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {new Date(a.submitted_at).toLocaleTimeString('vi-VN')}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Điều khiển</CardTitle>
+              <CardDescription>Chọn vòng, chọn thí sinh (tuỳ vòng), chọn câu và thao tác nhanh.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <HostRoundControls
                 matchId={match.id}
                 rounds={rounds}
                 currentRoundType={liveSession?.current_round_type}
                 currentQuestionState={liveSession?.question_state}
               />
-            </CardContent>
-          </Card>
 
-          {currentRoundQuestions.length > 0 && liveSession?.id ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Chọn câu hỏi & hiển thị</CardTitle>
-                <CardDescription>Chọn câu theo thứ tự để bật chế độ “Đang hiển thị” (timer 5s mặc định).</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form action={setCurrentQuestionFormAction} className="flex flex-col gap-3 md:flex-row md:items-end">
-                  <input type="hidden" name="matchId" value={match.id} />
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm text-slate-700">Câu hỏi</p>
-                    <select
-                      name="roundQuestionId"
-                      defaultValue={liveSession.current_round_question_id ?? ''}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      required
-                    >
-                      <option value="" disabled>
-                        Chọn câu trong vòng hiện tại
-                      </option>
-                      {currentRoundQuestions.map((q) => (
-                        <option key={q.id} value={q.id}>
-                          Câu #{q.order_index ?? '?'} · {q.question_id ?? 'n/a'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-full md:w-32 space-y-1">
-                    <p className="text-sm text-slate-700">Thời gian (ms)</p>
-                    <input
-                      type="number"
-                      name="durationMs"
-                      min={1000}
-                      max={120000}
-                      defaultValue={5000}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <Button type="submit" className="md:w-auto w-full">
-                    Hiển thị câu
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {liveSession?.id ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Điều hướng nhanh</CardTitle>
-                <CardDescription>Chuyển câu trong vòng hiện tại (tuỳ chọn hiển thị luôn).</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form action={advanceCurrentQuestionFormAction} className="flex flex-col gap-3 md:flex-row md:items-end">
-                  <input type="hidden" name="matchId" value={match.id} />
-                  <div className="w-full md:w-28 space-y-1">
-                    <p className="text-sm text-slate-700">Hướng</p>
-                    <select
-                      name="direction"
-                      defaultValue="next"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                    >
-                      <option value="prev">Trước</option>
-                      <option value="next">Sau</option>
-                    </select>
-                  </div>
-                  <div className="w-full md:w-32 space-y-1">
-                    <p className="text-sm text-slate-700">Thời gian (ms)</p>
-                    <input
-                      type="number"
-                      name="durationMs"
-                      min={1000}
-                      max={120000}
-                      defaultValue={5000}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox" name="autoShow" value="1" defaultChecked />
-                    Hiển thị luôn
-                  </label>
-                  <Button type="submit" className="md:w-auto w-full">
-                    Chuyển câu
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {liveSession?.current_round_question_id ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Trạng thái câu hiện tại</CardTitle>
-                <CardDescription>Theo dõi buzzer và đáp án gần nhất (top 10).</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">RoundQuestion:</span>{' '}
-                    <span className="font-mono">{liveSession.current_round_question_id}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">question_state: {liveSession.question_state ?? '—'}</p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold">Buzzer winner</p>
-                    {winnerBuzz ? (
-                      <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
-                        <p className="font-semibold">
-                          Ghế {normalizePlayerSummary(winnerBuzz.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(winnerBuzz.match_players)?.display_name ?? '—'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {winnerBuzz.occurred_at ? new Date(winnerBuzz.occurred_at).toLocaleTimeString('vi-VN') : '—'}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Chưa có winner.</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold">Buzzer gần đây</p>
-                    {recentBuzzes.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Chưa có buzzer.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {recentBuzzes.map((e) => (
-                          <div key={e.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
-                            <p>
-                              Ghế {normalizePlayerSummary(e.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(e.match_players)?.display_name ?? e.player_id ?? '—'}
-                            </p>
-                            <p className="text-muted-foreground">
-                              {e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString('vi-VN') : '—'} · {e.result ?? '—'}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Đáp án gần đây</p>
-                  {recentAnswers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Chưa có đáp án.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {recentAnswers.map((a) => (
-                        <div key={a.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
-                          <p className="font-semibold">
-                            Ghế {normalizePlayerSummary(a.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(a.match_players)?.display_name ?? a.player_id ?? '—'}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {a.submitted_at ? new Date(a.submitted_at).toLocaleTimeString('vi-VN') : '—'}
-                            {typeof a.is_correct === 'boolean' ? ` · ${a.is_correct ? 'ĐÚNG' : 'SAI'}` : ''}
-                            {typeof a.points_awarded === 'number' ? ` · ${a.points_awarded >= 0 ? '+' : ''}${a.points_awarded}` : ''}
-                          </p>
-                          {a.answer_text ? <p className="mt-1">{a.answer_text}</p> : null}
-
-                          {liveSession?.current_round_type === 'tang_toc' ? (
-                            <div className="mt-2 flex gap-2">
-                              <form action={markAnswerCorrectnessFormAction}>
-                                <input type="hidden" name="answerId" value={a.id} />
-                                <input type="hidden" name="decision" value="correct" />
-                                <Button type="submit" size="sm" variant="outline">
-                                  Đúng
-                                </Button>
-                              </form>
-                              <form action={markAnswerCorrectnessFormAction}>
-                                <input type="hidden" name="answerId" value={a.id} />
-                                <input type="hidden" name="decision" value="wrong" />
-                                <Button type="submit" size="sm" variant="outline">
-                                  Sai
-                                </Button>
-                              </form>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {liveSession?.current_round_type === 'tang_toc' ? (
-                  <div className="pt-2">
-                    <form action={autoScoreTangTocFormAction}>
-                      <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                      <Button type="submit" size="sm" disabled={!liveSession?.id}>
-                        Chấm tự động (Tăng tốc)
-                      </Button>
-                    </form>
-                    <p className="mt-2 text-xs text-muted-foreground">Chỉ tính các đáp án đã được đánh dấu ĐÚNG theo thứ tự gửi.</p>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {isVeDich && liveSession?.current_round_question_id ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Về đích · Điều khiển</CardTitle>
-                <CardDescription>Chọn người trả lời chính, giá trị 20/30, Star, mở cửa cướp và chấm điểm.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <form action={setRoundQuestionTargetPlayerFormAction} className="space-y-2">
+              {liveSession?.current_round_question_id ? (
+                <div className="grid gap-2">
+                  <form action={setRoundQuestionTargetPlayerFormAction} className="flex gap-2">
                     <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
-                    <p className="text-sm text-slate-700">Người trả lời chính</p>
                     <select
                       name="playerId"
                       defaultValue={currentRoundQuestion?.target_player_id ?? ''}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      required
+                      className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      aria-label="Chọn thí sinh"
                     >
-                      <option value="" disabled>
-                        Chọn thí sinh
-                      </option>
+                      <option value="">(Tuỳ vòng) Chọn thí sinh</option>
                       {players.map((p) => (
                         <option key={p.id} value={p.id}>
                           Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
                         </option>
                       ))}
                     </select>
-                    <Button type="submit" size="sm">
-                      Lưu
+                    <Button type="submit" size="icon-sm" title="Lưu thí sinh" aria-label="Lưu thí sinh" variant="outline">
+                      <Check />
                     </Button>
                   </form>
 
-                  <form action={setVeDichQuestionValueFormAction} className="space-y-2">
-                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
-                    <p className="text-sm text-slate-700">Giá trị câu hỏi</p>
-                    <select
-                      name="value"
-                      defaultValue={veDichValueText}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      required
-                    >
-                      <option value="" disabled>
-                        Chọn 20/30
-                      </option>
-                      <option value="20">20</option>
-                      <option value="30">30</option>
-                    </select>
-                    <Button type="submit" size="sm">
-                      Lưu
-                    </Button>
-                  </form>
-                </div>
+                  {isVeDich ? (
+                    <div className="grid gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <form action={setVeDichQuestionValueFormAction} className="flex gap-2">
+                          <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                          <select
+                            name="value"
+                            defaultValue={veDichValueText}
+                            className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            aria-label="Giá trị câu"
+                          >
+                            <option value="">20/30</option>
+                            <option value="20">20</option>
+                            <option value="30">30</option>
+                          </select>
+                          <Button type="submit" size="icon-sm" title="Lưu giá trị" aria-label="Lưu giá trị" variant="outline">
+                            <Check />
+                          </Button>
+                        </form>
 
-                <div className="flex flex-wrap gap-2">
-                  <form action={toggleStarUseFormAction}>
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
-                    <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
-                    {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
-                    <Button type="submit" size="sm" variant={isStarEnabled ? 'default' : 'secondary'} disabled={!currentRoundQuestion?.target_player_id}>
-                      {isStarEnabled ? 'Tắt Star' : 'Bật Star'}
-                    </Button>
-                  </form>
+                        <form action={toggleStarUseFormAction} className="flex justify-end">
+                          <input type="hidden" name="matchId" value={match.id} />
+                          <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                          <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
+                          {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
+                          <Button
+                            type="submit"
+                            size="icon-sm"
+                            variant={isStarEnabled ? 'default' : 'outline'}
+                            disabled={!currentRoundQuestion?.target_player_id}
+                            title={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
+                            aria-label={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
+                          >
+                            <Sparkles />
+                          </Button>
+                        </form>
+                      </div>
 
-                  <form action={openStealWindowFormAction}>
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="durationMs" value={5000} />
-                    <Button type="submit" size="sm" variant="outline">
-                      Mở cửa cướp (5s)
-                    </Button>
-                  </form>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <form action={confirmVeDichMainDecisionFormAction} className="space-y-2">
-                    <input type="hidden" name="sessionId" value={liveSession.id} />
-                    <p className="text-sm text-slate-700">Chấm người trả lời chính</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="submit" size="sm" name="decision" value="correct">
-                        Đúng
-                      </Button>
-                      <Button type="submit" size="sm" name="decision" value="wrong" variant="secondary">
-                        Sai
-                      </Button>
-                      <Button type="submit" size="sm" name="decision" value="timeout" variant="secondary">
-                        Hết giờ
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <form action={openStealWindowFormAction}>
+                          <input type="hidden" name="matchId" value={match.id} />
+                          <input type="hidden" name="durationMs" value={5000} />
+                          <Button type="submit" size="icon-sm" variant="outline" title="Mở cửa cướp (5s)" aria-label="Mở cửa cướp (5s)">
+                            <Hand />
+                          </Button>
+                        </form>
+                        <form action={confirmVeDichMainDecisionFormAction} className="flex gap-1">
+                          <input type="hidden" name="sessionId" value={liveSession.id} />
+                          <Button type="submit" size="icon-sm" name="decision" value="correct" title="Chính: Đúng" aria-label="Chính: Đúng">
+                            <Check />
+                          </Button>
+                          <Button type="submit" size="icon-sm" name="decision" value="wrong" variant="outline" title="Chính: Sai" aria-label="Chính: Sai">
+                            <X />
+                          </Button>
+                          <Button type="submit" size="icon-sm" name="decision" value="timeout" variant="outline" title="Chính: Hết giờ" aria-label="Chính: Hết giờ">
+                            <Timer />
+                          </Button>
+                        </form>
+                        <form action={confirmVeDichStealDecisionFormAction} className="flex gap-1">
+                          <input type="hidden" name="sessionId" value={liveSession.id} />
+                          <Button type="submit" size="icon-sm" name="decision" value="correct" title="Cướp: Đúng" aria-label="Cướp: Đúng" variant="secondary">
+                            <Check />
+                          </Button>
+                          <Button type="submit" size="icon-sm" name="decision" value="wrong" title="Cướp: Sai (phạt 1/2)" aria-label="Cướp: Sai (phạt 1/2)" variant="outline">
+                            <X />
+                          </Button>
+                          <Button type="submit" size="icon-sm" name="decision" value="timeout" title="Cướp: Hết giờ" aria-label="Cướp: Hết giờ" variant="outline">
+                            <Timer />
+                          </Button>
+                        </form>
+                      </div>
                     </div>
-                  </form>
+                  ) : null}
 
-                  <form action={confirmVeDichStealDecisionFormAction} className="space-y-2">
-                    <input type="hidden" name="sessionId" value={liveSession.id} />
-                    <p className="text-sm text-slate-700">Chấm người cướp (winner buzzer)</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="submit" size="sm" name="decision" value="correct">
-                        Đúng
-                      </Button>
-                      <Button type="submit" size="sm" name="decision" value="wrong" variant="secondary">
-                        Sai (phạt 1/2)
-                      </Button>
-                      <Button type="submit" size="sm" name="decision" value="timeout" variant="secondary">
-                        Hết giờ
-                      </Button>
-                    </div>
-                  </form>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {liveSession?.current_round_type === 'vcnv' && obstacle ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>CNV · Điều khiển & chấm</CardTitle>
-                <CardDescription>Mở ô, chấm hàng (+10 nếu đúng), và xác nhận lượt đoán CNV.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Ô CNV</p>
-                  {obstacleTiles.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Chưa có ô CNV.</p>
-                  ) : (
-                    <div className="grid grid-cols-5 gap-2">
-                      {obstacleTiles.map((t) => (
-                        <div key={t.id} className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
-                          <p className="font-semibold">Ô {t.position_index}</p>
-                          <p className="text-muted-foreground">{t.is_open ? 'MỞ' : 'ĐÓNG'}</p>
-                          {!t.is_open ? (
-                            <form action={openObstacleTileFormAction} className="mt-2">
-                              <input type="hidden" name="tileId" value={t.id} />
-                              <Button type="submit" size="sm" variant="outline" className="w-full">
-                                Mở
-                              </Button>
-                            </form>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {players.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold">Chấm hàng (CNV)</p>
-                    <form action={confirmVcnvRowDecisionFormAction} className="space-y-3">
+                  {liveSession?.current_round_type === 'tang_toc' ? (
+                    <form action={autoScoreTangTocFormAction} className="flex justify-end">
                       <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium text-slate-700">Chọn thí sinh</p>
+                      <Button type="submit" size="icon-sm" variant="outline" disabled={!liveSession?.id} title="Chấm tự động Tăng tốc" aria-label="Chấm tự động Tăng tốc">
+                        <Check />
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {players.length > 0 ? (
+                <div className="grid gap-2">
+                  <div className="grid gap-2">
+                    <form action={confirmDecisionFormAction} className="grid gap-2">
+                      <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                      <div className="grid grid-cols-2 gap-2">
                         <select
                           name="playerId"
                           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                           defaultValue=""
                           required
                           disabled={!liveSession?.id}
+                          aria-label="Thí sinh cần chấm"
                         >
                           <option value="" disabled>
-                            Chọn thí sinh cần chấm
+                            Chọn thí sinh
                           </option>
                           {players.map((p) => (
                             <option key={p.id} value={p.id}>
@@ -733,309 +786,50 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                             </option>
                           ))}
                         </select>
-                      </div>
 
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium text-slate-700">Kết quả</p>
                         <select
                           name="decision"
                           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                           defaultValue="correct"
                           required
                           disabled={!liveSession?.id}
+                          aria-label="Kết quả"
                         >
-                          <option value="correct">Đúng (+10) · mở ô theo câu</option>
-                          <option value="wrong">Sai (0)</option>
-                          <option value="timeout">Hết giờ (0)</option>
+                          <option value="correct">Đúng (+10)</option>
+                          <option value="wrong">Sai (-5)</option>
+                          <option value="timeout">Hết giờ (-5)</option>
                         </select>
                       </div>
 
-                      <Button type="submit" size="sm" disabled={!liveSession?.id}>
-                        Xác nhận
+                      <div className="flex items-center justify-end gap-2">
+                        <Button type="submit" size="icon-sm" title="Xác nhận chấm" aria-label="Xác nhận chấm">
+                          <Check />
+                        </Button>
+                      </div>
+                    </form>
+
+                    <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
+                      <input type="hidden" name="matchId" value={match.id} />
+                      <input type="hidden" name="reason" value="" />
+                      <Button type="submit" size="icon-sm" variant="outline" title="Undo" aria-label="Undo">
+                        <Undo2 />
                       </Button>
                     </form>
                   </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Lượt đoán CNV gần đây</p>
-                  {obstacleGuesses.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Chưa có lượt đoán.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {obstacleGuesses.map((g) => (
-                        <div key={g.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
-                          <p className="font-semibold">
-                            Ghế {normalizePlayerSummary(g.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(g.match_players)?.display_name ?? g.player_id}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {g.attempted_at ? new Date(g.attempted_at).toLocaleTimeString('vi-VN') : '—'}
-                            {g.attempt_order ? ` · lượt ${g.attempt_order}` : ''} · {g.is_correct ? 'ĐÚNG' : 'CHƯA/SAI'}
-                          </p>
-                          <p className="mt-1">{g.guess_text}</p>
-                          {!g.is_correct ? (
-                            <div className="mt-2 flex gap-2">
-                              <form action={confirmObstacleGuessFormAction}>
-                                <input type="hidden" name="guessId" value={g.id} />
-                                <input type="hidden" name="decision" value="correct" />
-                                <Button type="submit" size="sm">
-                                  Đúng
-                                </Button>
-                              </form>
-                              <form action={confirmObstacleGuessFormAction}>
-                                <input type="hidden" name="guessId" value={g.id} />
-                                <input type="hidden" name="decision" value="wrong" />
-                                <Button type="submit" size="sm" variant="outline">
-                                  Sai
-                                </Button>
-                              </form>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              </CardContent>
-            </Card>
+              ) : null}
+
+              {liveSession?.status !== 'running' ? (
+                <p className="text-xs text-muted-foreground">Cần mở phòng (running) để đổi vòng/trạng thái câu.</p>
+              ) : liveSession?.join_code ? (
+                <p className="text-xs text-muted-foreground">Mã phòng: <span className="font-mono">{liveSession.join_code}</span></p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {scores.length > 0 ? (
+            <LiveScoreboard matchId={match.id} scores={scores} title="Xếp hạng" description="" />
           ) : null}
-
-          {players.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Chấm điểm nhanh (Khởi động chung)</CardTitle>
-                <CardDescription>Áp dụng +10 nếu đúng, -5 nếu sai/hết giờ (không âm).</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form action={confirmDecisionFormAction} className="space-y-3">
-                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-slate-700">Chọn thí sinh</p>
-                    <select
-                      name="playerId"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      defaultValue=""
-                      required
-                      disabled={!liveSession?.id}
-                    >
-                      <option value="" disabled>
-                        Chọn thí sinh cần chấm
-                      </option>
-                      {players.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Ghế {p.seat_index}: {p.display_name ?? 'Không tên'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-slate-700">Kết quả</p>
-                    <select
-                      name="decision"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      defaultValue="correct"
-                      required
-                      disabled={!liveSession?.id}
-                    >
-                      <option value="correct">Đúng (+10)</option>
-                      <option value="wrong">Sai (-5)</option>
-                      <option value="timeout">Hết giờ (-5)</option>
-                    </select>
-                  </div>
-
-                  <Button type="submit" size="sm" disabled={!liveSession?.id}>
-                    Xác nhận
-                  </Button>
-                  {!liveSession?.id ? (
-                    <p className="text-xs text-muted-foreground">Cần mở phòng live để thao tác chấm điểm.</p>
-                  ) : null}
-                </form>
-              </CardContent>
-            </Card>
-          )}
-
-          {players.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Audit · Undo · Điều chỉnh điểm</CardTitle>
-                <CardDescription>Undo 1 bước (thay đổi điểm gần nhất) và điều chỉnh thủ công (bắt buộc lý do).</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <form action={undoLastScoreChangeFormAction} className="space-y-2">
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <p className="text-sm font-medium text-slate-700">Undo thay đổi gần nhất</p>
-                    <input
-                      name="reason"
-                      placeholder="(tuỳ chọn) Lý do undo"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                    />
-                    <Button type="submit" size="sm" variant="outline">
-                      Undo
-                    </Button>
-                  </form>
-
-                  <form action={manualAdjustScoreFormAction} className="space-y-2">
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <p className="text-sm font-medium text-slate-700">Điều chỉnh thủ công</p>
-                    <select
-                      name="playerId"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      defaultValue=""
-                      required
-                    >
-                      <option value="" disabled>
-                        Chọn thí sinh
-                      </option>
-                      {players.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        name="roundType"
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        defaultValue={liveSession?.current_round_type ?? 'khoi_dong'}
-                        required
-                      >
-                        {Object.entries(roundLabelMap).map(([key, label]) => (
-                          <option key={key} value={key}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        name="delta"
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        placeholder="Delta"
-                        defaultValue={0}
-                        required
-                      />
-                    </div>
-
-                    <input
-                      name="reason"
-                      placeholder="Lý do điều chỉnh (bắt buộc)"
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      required
-                    />
-                    <Button type="submit" size="sm">
-                      Áp dụng
-                    </Button>
-                  </form>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Audit gần đây</p>
-                  {scoreChangesError ? (
-                    <p className="text-sm text-muted-foreground">
-                      Không tải được audit: {scoreChangesError}. (Nếu DB chưa có bảng `olympia.score_changes`, hãy chạy migration.)
-                    </p>
-                  ) : scoreChanges.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Chưa có log.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {scoreChanges.map((sc) => (
-                        <div key={sc.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
-                          <p className="font-semibold">
-                            Ghế {normalizePlayerSummary(sc.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(sc.match_players)?.display_name ?? sc.player_id}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {sc.created_at ? new Date(sc.created_at).toLocaleTimeString('vi-VN') : '—'} · {roundLabelMap[sc.round_type] ?? sc.round_type} · {sc.source}
-                            {typeof sc.applied_delta === 'number' ? ` · ${sc.applied_delta >= 0 ? '+' : ''}${sc.applied_delta}` : ''}
-                            {sc.reverted_at ? ' · (đã undo)' : ''}
-                          </p>
-                          {sc.reason ? <p className="mt-1">Lý do: {sc.reason}</p> : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {players.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Danh sách thí sinh</CardTitle>
-                <CardDescription>Các thí sinh tham gia trận này</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-lg border border-slate-200 overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-slate-50">
-                        <TableHead>Ghế</TableHead>
-                        <TableHead>Tên thí sinh</TableHead>
-                        <TableHead className="text-right">Điểm</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {players.map((player) => {
-                        const score = scores.find((s) => s.playerId === player.id)
-                        return (
-                          <TableRow key={player.id}>
-                            <TableCell className="font-medium">{player.seat_index ?? '—'}</TableCell>
-                            <TableCell>{player.display_name ?? '—'}</TableCell>
-                            <TableCell className="text-right font-semibold">{score?.totalScore ?? 0}</TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          {scores.length > 0 && (
-            <LiveScoreboard
-              matchId={match.id}
-              scores={scores}
-              title="Xếp hạng trực tiếp"
-              description="Cập nhật điểm số các thí sinh"
-            />
-          )}
-
-          {liveSession?.status !== 'running' && (
-            <Card className="border-amber-200 bg-amber-50">
-              <CardContent className="pt-6">
-                <p className="text-sm text-amber-800">
-                  <strong>Lưu ý:</strong> Bạn cần mở phòng trước khi thay đổi vòng hoặc cập nhật trạng thái câu hỏi.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {liveSession?.status === 'running' && (
-            <Card className="border-green-200 bg-green-50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-green-900">Thông tin phòng</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs">
-                <div>
-                  <p className="text-green-700 font-semibold">Mã tham gia:</p>
-                  <p className="font-mono text-lg text-green-900">{liveSession?.join_code ?? '—'}</p>
-                </div>
-                <div>
-                  <p className="text-green-700 font-semibold">Vòng hiện tại:</p>
-                  <p>{liveSession?.current_round_type ? roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type : 'Chưa đặt'}</p>
-                </div>
-                <div>
-                  <p className="text-green-700 font-semibold">Trạng thái câu hỏi:</p>
-                  <p>{liveSession?.question_state ?? '—'}</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </section>

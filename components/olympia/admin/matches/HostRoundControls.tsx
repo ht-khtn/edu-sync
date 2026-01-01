@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { setLiveSessionRoundAction, setQuestionStateAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { Check } from 'lucide-react'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -42,8 +43,16 @@ function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: 
   const { pending } = useFormStatus()
   const isDisabled = pending || disabled
   return (
-    <Button type="submit" size="sm" className="w-full" disabled={isDisabled}>
-      {pending ? 'Đang cập nhật…' : children}
+    <Button
+      type="submit"
+      size="icon-sm"
+      variant="outline"
+      disabled={isDisabled}
+      title={pending ? 'Đang cập nhật…' : String(children)}
+      aria-label={pending ? 'Đang cập nhật…' : String(children)}
+    >
+      <Check />
+      <span className="sr-only">{pending ? 'Đang cập nhật…' : children}</span>
     </Button>
   )
 }
@@ -73,50 +82,56 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
   }, [questionState.error, questionState.success])
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <form action={roundAction} className="space-y-3 rounded-lg border border-slate-200 p-4">
+    <div className="grid gap-3">
+      <form action={roundAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
-        <Label>Chuyển vòng</Label>
-        <select
-          name="roundType"
-          defaultValue={currentRoundType ?? ''}
-          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          required
-        >
-          <option value="" disabled>
-            Chọn vòng thi
-          </option>
-          {rounds.map((round) => (
-            <option key={round.id} value={round.round_type}>
-              Vòng {round.order_index + 1}: {roundLabelMap[round.round_type] ?? round.round_type}
+        <Label className="sr-only">Chuyển vòng</Label>
+        <div className="flex items-center gap-2">
+          <select
+            name="roundType"
+            defaultValue={currentRoundType ?? ''}
+            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+            required
+            aria-label="Chọn vòng"
+          >
+            <option value="" disabled>
+              Chọn vòng
             </option>
-          ))}
-        </select>
-        <SubmitButton disabled={rounds.length === 0}>Đặt vòng hiện tại</SubmitButton>
+            {rounds.map((round) => (
+              <option key={round.id} value={round.round_type}>
+                Vòng {round.order_index + 1}: {roundLabelMap[round.round_type] ?? round.round_type}
+              </option>
+            ))}
+          </select>
+          <SubmitButton disabled={rounds.length === 0}>Đặt vòng</SubmitButton>
+        </div>
         {roundMessage && !roundState.error ? (
           <p className="text-xs text-green-600">{roundMessage}</p>
         ) : null}
       </form>
 
-      <form action={questionAction} className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <form action={questionAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
-        <Label>Trạng thái câu hỏi</Label>
-        <select
-          name="questionState"
-          defaultValue={currentQuestionState ?? ''}
-          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-          required
-        >
-          <option value="" disabled>
-            Chọn trạng thái
-          </option>
-          {Object.entries(questionStateLabel).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
+        <Label className="sr-only">Trạng thái câu hỏi</Label>
+        <div className="flex items-center gap-2">
+          <select
+            name="questionState"
+            defaultValue={currentQuestionState ?? ''}
+            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+            required
+            aria-label="Trạng thái câu hỏi"
+          >
+            <option value="" disabled>
+              Trạng thái
             </option>
-          ))}
-        </select>
-        <SubmitButton disabled={!currentRoundType}>Cập nhật trạng thái</SubmitButton>
+            {Object.entries(questionStateLabel).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <SubmitButton disabled={!currentRoundType}>Cập nhật</SubmitButton>
+        </div>
         {questionMessage && !questionState.error ? (
           <p className="text-xs text-green-600">{questionMessage}</p>
         ) : null}

@@ -64,11 +64,6 @@ const questionSetUploadSchema = z.object({
   name: z.string().min(3, "Tên bộ đề tối thiểu 3 ký tự"),
 });
 
-const updateMatchQuestionSetsSchema = z.object({
-  matchId: z.string().uuid("ID trận không hợp lệ."),
-  questionSetIds: z.array(z.string().uuid()).default([]),
-});
-
 const advanceQuestionSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   direction: z.enum(["next", "prev"]).default("next"),
@@ -93,6 +88,19 @@ type ParsedQuestionSetItem = {
   audio_url: string | null;
   order_index: number;
 };
+
+/**
+ * Map question code prefix to round_type.
+ * KD* → khoi_dong, VCNV* → vcnv, TT* → tang_toc, VD* → ve_dich
+ */
+function parseQuestionRoundType(code: string): string | null {
+  const upper = code.toUpperCase().trim();
+  if (upper.startsWith("KD")) return "khoi_dong";
+  if (upper.startsWith("VCNV") || upper.startsWith("CNV")) return "vcnv";
+  if (upper.startsWith("TT")) return "tang_toc";
+  if (upper.startsWith("VD")) return "ve_dich";
+  return null;
+}
 
 /**
  * Parses code format to extract round/question info.
@@ -3159,6 +3167,84 @@ export async function updateMatchAction(_: ActionState, formData: FormData): Pro
   }
 }
 
+/**
+ * Generate round_questions from question_set_items based on code prefix.
+ * Partitions items into 4 rounds (khoi_dong, vcnv, tang_toc, ve_dich).
+ */
+async function generateRoundQuestionsFromSetsAction(matchId: string, questionSetIds: string[]) {
+  try {
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    // Fetch all match_rounds for this match
+    const { data: roundsData, error: roundsError } = await olympia
+      .from("match_rounds")
+      .select("id, round_type")
+      .eq("match_id", matchId);
+    if (roundsError) throw roundsError;
+    if (!roundsData || roundsData.length === 0) return; // No rounds yet
+
+    const roundMap = new Map(roundsData.map((r) => [r.round_type, r.id]));
+
+    // Fetch all question_set_items from the selected sets
+    const { data: itemsData, error: itemsError } = await olympia
+      .from("question_set_items")
+      .select("id, code, question_text, answer_text, note, order_index")
+      .in("question_set_id", questionSetIds)
+      .order("order_index", { ascending: true });
+    if (itemsError) throw itemsError;
+    if (!itemsData || itemsData.length === 0) return; // No items
+
+    // Clear existing round_questions for this match
+    const { error: deleteError } = await olympia
+      .from("round_questions")
+      .delete()
+      .in("match_round_id", Array.from(roundMap.values()));
+    if (deleteError) throw deleteError;
+
+    // Partition items by round_type (based on code prefix)
+    const roundPartitions = new Map<string, typeof itemsData>();
+    for (const item of itemsData) {
+      const roundType = parseQuestionRoundType(item.code);
+      if (!roundType) continue; // Skip items with unrecognized code
+      if (!roundPartitions.has(roundType)) {
+        roundPartitions.set(roundType, []);
+      }
+      roundPartitions.get(roundType)!.push(item);
+    }
+
+    // Insert round_questions for each round
+    for (const [roundType, items] of roundPartitions.entries()) {
+      const roundId = roundMap.get(roundType);
+      if (!roundId) continue;
+
+      const roundQuestionsPayload = items.map((item, idx) => ({
+        match_round_id: roundId,
+        question_set_item_id: item.id,
+        order_index: idx,
+        question_text: item.question_text,
+        answer_text: item.answer_text,
+        note: item.note,
+        target_player_id: null,
+        meta: {},
+        question_id: null, // Deprecated, kept for backward compatibility
+      }));
+
+      const { error: insertError } = await olympia
+        .from("round_questions")
+        .insert(roundQuestionsPayload);
+      if (insertError) console.warn("[Olympia] Failed to insert round_questions:", insertError);
+    }
+  } catch (err) {
+    console.error("[Olympia] generateRoundQuestionsFromSets error:", err);
+  }
+}
+
+const updateMatchQuestionSetsSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  questionSetIds: z.array(z.string().uuid()).default([]),
+});
+
 export async function updateMatchQuestionSetsAction(
   _: ActionState,
   formData: FormData
@@ -3208,6 +3294,9 @@ export async function updateMatchQuestionSetsAction(
       const { error: insertError } = await olympia.from("match_question_sets").insert(payload);
       if (insertError) return { error: insertError.message };
     }
+
+    // Auto-generate round_questions from question_set_items
+    await generateRoundQuestionsFromSetsAction(matchId, uniqueSetIds);
 
     revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);

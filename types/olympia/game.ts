@@ -93,6 +93,15 @@ export type ObstacleGuessRow = {
   attempted_at: string;
 };
 
+export type StarUseRow = {
+  id: string;
+  match_id: string;
+  round_question_id: string;
+  player_id: string;
+  outcome: string | null;
+  declared_at: string;
+};
+
 export type GameSessionPayload = {
   session: LiveSessionRow;
   match: MatchRow;
@@ -100,6 +109,7 @@ export type GameSessionPayload = {
   scores: ScoreRow[];
   roundQuestions: RoundQuestionRow[];
   buzzerEvents: BuzzerEventRow[];
+  starUses?: StarUseRow[];
   obstacle?: ObstacleRow | null;
   obstacleTiles?: ObstacleTileRow[];
   obstacleGuesses?: ObstacleGuessRow[];

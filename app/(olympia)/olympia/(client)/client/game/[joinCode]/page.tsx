@@ -68,7 +68,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         console.warn('[Olympia] load players failed', playersError.message)
     }
 
-    const [{ data: scores }, { data: roundQuestions }, obstacleBundle] = await Promise.all([
+    const [{ data: scores }, { data: roundQuestions }, { data: buzzerEvents }, { data: starUses }, obstacleBundle] = await Promise.all([
         olympia
             .from('match_scores')
             .select('id, match_id, player_id, round_type, points')
@@ -78,6 +78,18 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
             .select('id, match_round_id, question_id, order_index, target_player_id, meta, match_rounds!inner(match_id, round_type)')
             .eq('match_rounds.match_id', session.match_id)
             .order('order_index', { ascending: true }),
+        session.current_round_question_id
+            ? olympia
+                .from('buzzer_events')
+                .select('id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at')
+                .eq('round_question_id', session.current_round_question_id)
+                .order('occurred_at', { ascending: false })
+                .limit(20)
+            : Promise.resolve({ data: [] }),
+        olympia
+            .from('star_uses')
+            .select('id, match_id, round_question_id, player_id, outcome, declared_at')
+            .eq('match_id', session.match_id),
         session.current_round_id
             ? (async () => {
                 const { data: obstacle } = await olympia
@@ -113,7 +125,8 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         players: players ?? [],
         scores: scores ?? [],
         roundQuestions: roundQuestions ?? [],
-        buzzerEvents: [],
+        buzzerEvents: buzzerEvents ?? [],
+        starUses: starUses ?? [],
         obstacle: obstacleBundle.obstacle,
         obstacleTiles: obstacleBundle.tiles,
         obstacleGuesses: obstacleBundle.guesses,

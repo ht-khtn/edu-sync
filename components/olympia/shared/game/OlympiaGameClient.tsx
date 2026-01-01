@@ -55,7 +55,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     session,
     players,
     scores,
+    roundQuestions,
     buzzerEvents,
+    starUses,
     obstacle,
     obstacleTiles,
     obstacleGuesses,
@@ -64,6 +66,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     roundType,
     statusMessage,
     isRealtimeReady,
+    viewerUserId,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
   const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
@@ -93,12 +96,64 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
   }, [players, scores])
 
   const questionTitle = roundLabel[roundType] ?? roundType
-  const questionStateText = questionStateLabel[questionState] ?? questionState
+  const isVeDich = roundType === 've_dich'
+  const isStealWindow = isVeDich && questionState === 'answer_revealed'
+  const questionStateText =
+    isStealWindow ? 'Cửa sổ cướp' : (questionStateLabel[questionState] ?? questionState)
   const isGuest = Boolean(allowGuestFallback)
   const disableInteractions = isGuest
   const answerFeedback = answerState.error ?? answerState.success
   const cnvGuessFeedback = cnvGuessState.error ?? cnvGuessState.success
   const buzzerFeedback = buzzerState.error ?? buzzerState.success
+
+  const currentQuestionId = session.current_round_question_id
+  const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
+  const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
+  const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
+  const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
+  const isViewerTarget = Boolean(viewerPlayer?.id && targetPlayerId && viewerPlayer.id === targetPlayerId)
+
+  const veDichValueRaw =
+    currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
+      ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
+      : undefined
+  const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : null
+
+  const starEnabled =
+    Boolean(
+      isVeDich &&
+      currentQuestionId &&
+      targetPlayerId &&
+      (starUses ?? []).some((s) => s.round_question_id === currentQuestionId && s.player_id === targetPlayerId)
+    )
+
+  const stealWinnerPlayerId =
+    isStealWindow && currentQuestionId
+      ? (buzzerEvents
+        .filter((e) => e.round_question_id === currentQuestionId)
+        .find((e) => (e.event_type ?? 'steal') === 'steal' && e.result === 'win')
+        ?.player_id ?? null)
+      : null
+  const isViewerStealWinner = Boolean(viewerPlayer?.id && stealWinnerPlayerId && viewerPlayer.id === stealWinnerPlayerId)
+
+  const canSubmitVeDich =
+    !disableInteractions &&
+    Boolean(
+      viewerPlayer?.id &&
+      currentQuestionId &&
+      ((questionState === 'showing' && isViewerTarget) || (isStealWindow && isViewerStealWinner))
+    )
+  const disableAnswerSubmit = isVeDich ? !canSubmitVeDich : disableInteractions
+
+  const canBuzzVeDich =
+    !disableInteractions &&
+    Boolean(
+      viewerPlayer?.id &&
+      isStealWindow &&
+      !isViewerTarget &&
+      !viewerPlayer?.is_disqualified_obstacle
+    )
+  const disableBuzz = isVeDich ? !canBuzzVeDich : disableInteractions
 
   return (
     <div className="grid gap-4 lg:gap-6 lg:grid-cols-4 auto-rows-max lg:auto-rows-auto">
@@ -117,6 +172,28 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isVeDich && currentRoundQuestion ? (
+              <div className="rounded-xl border bg-white p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase text-slate-500">Về đích</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    Trả lời chính: {targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'} · ${targetPlayer.display_name ?? '—'}` : '—'}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Giá trị: {veDichValue === 30 ? 30 : 20}
+                  </Badge>
+                  {starEnabled ? (
+                    <Badge className="text-xs">STAR</Badge>
+                  ) : null}
+                </div>
+                {isStealWindow ? (
+                  <p className="text-xs text-amber-700">
+                    Cửa sổ cướp đang mở. {stealWinnerPlayerId ? `Winner: ${stealWinnerPlayerId}` : 'Chờ tín hiệu buzzer thắng.'}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {roundType === 'vcnv' && obstacle ? (
               <div className="rounded-xl border bg-white p-4 space-y-3">
                 <p className="text-xs font-semibold uppercase text-slate-500">CNV · Chướng ngại vật</p>
@@ -190,12 +267,12 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                       name="notes"
                       placeholder="Nhập ghi chú hoặc lập luận"
                       rows={6}
-                      disabled={disableInteractions}
+                      disabled={disableAnswerSubmit}
                       className="resize-none"
                     />
-                    <Input name="answer" placeholder="Đáp án cuối cùng" disabled={disableInteractions} />
+                    <Input name="answer" placeholder="Đáp án cuối cùng" disabled={disableAnswerSubmit} />
                     <div className="flex gap-3">
-                      <FormSubmitButton disabled={disableInteractions}>Gửi đáp án</FormSubmitButton>
+                      <FormSubmitButton disabled={disableAnswerSubmit}>Gửi đáp án</FormSubmitButton>
                     </div>
                     {answerFeedback ? (
                       <p className={cn('text-xs', answerState.error ? 'text-destructive' : 'text-emerald-600')}>
@@ -204,7 +281,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                     ) : null}
                     <p className="text-xs text-muted-foreground">
                       {/* TODO: route data vào scoring service thay vì chỉ log (stub). */}
-                      Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.
+                      {isVeDich
+                        ? 'Về đích: chỉ thí sinh được chọn (hoặc winner cướp) mới gửi được.'
+                        : 'Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.'}
                     </p>
                   </form>
 
@@ -231,7 +310,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
 
                   <form action={buzzerAction} className="space-y-2">
                     <input type="hidden" name="sessionId" value={session.id} />
-                    <FormSubmitButton variant="outline" disabled={disableInteractions}>
+                    <FormSubmitButton variant="outline" disabled={disableBuzz}>
                       Bấm chuông
                     </FormSubmitButton>
                     {buzzerFeedback ? (
@@ -241,7 +320,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                     ) : null}
                     <p className="text-[11px] text-muted-foreground">
                       {/* TODO: dispatch triggerBuzzerAction tới realtime channel + lock seat. */}
-                      Chức năng hiện ghi nhận yêu cầu và sẽ được đồng bộ với host console trong bản kế tiếp.
+                      {isVeDich
+                        ? 'Về đích: chỉ bấm chuông khi host mở cửa sổ cướp.'
+                        : 'Chức năng hiện ghi nhận yêu cầu và sẽ được đồng bộ với host console trong bản kế tiếp.'}
                     </p>
                   </form>
 

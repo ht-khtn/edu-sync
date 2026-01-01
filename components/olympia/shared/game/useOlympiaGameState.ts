@@ -16,6 +16,7 @@ import type {
   ObstacleTileRow,
   RoundQuestionRow,
   ScoreRow,
+  StarUseRow,
 } from "@/types/olympia/game";
 
 type UseOlympiaGameStateArgs = {
@@ -50,6 +51,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [session, setSession] = useState(initialData.session);
   const [scores, setScores] = useState(initialData.scores);
   const [roundQuestions, setRoundQuestions] = useState(initialData.roundQuestions);
+  const [starUses, setStarUses] = useState<StarUseRow[]>(initialData.starUses ?? []);
   const [players] = useState(initialData.players);
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
   const [obstacle, setObstacle] = useState<ObstacleRow | null>(initialData.obstacle ?? null);
@@ -152,6 +154,37 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
                 } else {
                   next[idx] = { ...next[idx], ...nextScore };
                 }
+                return next;
+              });
+            }
+          )
+          // Về đích: theo dõi Star (upsert/delete).
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "olympia", table: "star_uses" },
+            (payload) => {
+              const row = (payload.new ?? payload.old) as StarUseRow | null;
+              if (!row) return;
+              if ((row.match_id ?? matchId) !== matchId) return;
+
+              const isDelete =
+                (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
+              setStarUses((prev) => {
+                const idx = prev.findIndex(
+                  (s) =>
+                    s.id === row.id ||
+                    (s.round_question_id === row.round_question_id && s.player_id === row.player_id)
+                );
+                if (isDelete) {
+                  if (idx === -1) return prev;
+                  const next = [...prev];
+                  next.splice(idx, 1);
+                  return next;
+                }
+
+                if (idx === -1) return [row, ...prev];
+                const next = [...prev];
+                next[idx] = { ...next[idx], ...row };
                 return next;
               });
             }
@@ -276,6 +309,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     scores,
     roundQuestions,
     buzzerEvents,
+    starUses,
     obstacle,
     obstacleTiles,
     obstacleGuesses,

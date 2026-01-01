@@ -1,29 +1,32 @@
-import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export type ProxySession = {
-  userId: string | null
-  isAuthenticated: boolean
-  hasAdminRole: boolean
-  hasOlympiaRole: boolean
-  roles: string[]
-}
+  userId: string | null;
+  isAuthenticated: boolean;
+  hasAdminRole: boolean;
+  hasOlympiaRole: boolean;
+  roles: string[];
+};
 
 /**
  * Lightweight session check for proxy/middleware
  * Does NOT do heavy DB queries - only checks auth cookies
  */
-export async function getProxySession(request: NextRequest): Promise<ProxySession> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+export async function getProxySession(
+  request: NextRequest,
+  accessTokenOverride?: string | null
+): Promise<ProxySession> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  let userId: string | null = null
-  let roles: string[] = []
+  let userId: string | null = null;
+  let roles: string[] = [];
 
   try {
     // Extract auth token from cookies
-    const authCookie = request.cookies.get('sb-access-token')?.value
-    
+    const authCookie = accessTokenOverride ?? request.cookies.get("sb-access-token")?.value;
+
     // Fast path: no auth cookie = not authenticated
     if (!authCookie) {
       return {
@@ -32,40 +35,40 @@ export async function getProxySession(request: NextRequest): Promise<ProxySessio
         hasAdminRole: false,
         hasOlympiaRole: false,
         roles: [],
-      }
+      };
     }
-    
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         headers: { Authorization: `Bearer ${authCookie}` },
       },
-    })
+    });
 
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser();
 
     if (user?.id) {
-      userId = user.id
+      userId = user.id;
 
       // Single optimized query with JOIN to get roles directly
       const { data: userRoles } = await supabase
-        .from('user_roles')
-        .select('role_id, users!inner(auth_uid)')
-        .eq('users.auth_uid', user.id)
+        .from("user_roles")
+        .select("role_id, users!inner(auth_uid)")
+        .eq("users.auth_uid", user.id);
 
       if (Array.isArray(userRoles)) {
-        roles = userRoles.map((r) => r.role_id?.toUpperCase() || '').filter(Boolean)
+        roles = userRoles.map((r) => r.role_id?.toUpperCase() || "").filter(Boolean);
       }
     }
   } catch (error) {
     // Silent fail - treat as unauthenticated
-    console.error('[proxy-auth] Error getting session:', error)
+    console.error("[proxy-auth] Error getting session:", error);
   }
 
-  const isAuthenticated = !!userId
-  const hasAdminRole = roles.includes('AD') || roles.includes('MOD') || roles.includes('CC')
-  const hasOlympiaRole = roles.includes('HOST') || roles.includes('PLAYER')
+  const isAuthenticated = !!userId;
+  const hasAdminRole = roles.includes("AD") || roles.includes("MOD") || roles.includes("CC");
+  const hasOlympiaRole = roles.includes("HOST") || roles.includes("PLAYER");
 
   return {
     userId,
@@ -73,32 +76,32 @@ export async function getProxySession(request: NextRequest): Promise<ProxySessio
     hasAdminRole,
     hasOlympiaRole,
     roles,
-  }
+  };
 }
 
 export function isProtectedAdminRoute(pathname: string): boolean {
-  return pathname.startsWith('/admin')
+  return pathname.startsWith("/admin");
 }
 
 export function isProtectedClientRoute(pathname: string): boolean {
-  return pathname.startsWith('/client')
+  return pathname.startsWith("/client");
 }
 
 export function isProtectedOlympiaRoute(pathname: string): boolean {
-  return pathname.startsWith('/olympia')
+  return pathname.startsWith("/olympia");
 }
 
 export function isLoginRoute(pathname: string): boolean {
-  return pathname === '/login'
+  return pathname === "/login";
 }
 
 export function getDashboardForUser(session: ProxySession): string {
   // Priority: Admin > Olympia > Client
   if (session.hasAdminRole) {
-    return '/admin'
+    return "/admin";
   }
   if (session.hasOlympiaRole) {
-    return '/olympia'
+    return "/olympia";
   }
-  return '/client'
+  return "/client";
 }

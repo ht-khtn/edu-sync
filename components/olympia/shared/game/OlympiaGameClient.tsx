@@ -344,14 +344,14 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                 <Button
                   type="submit"
                   disabled={disableBuzz}
-                  className="h-10 px-6"
+                  className="h-10 px-6 bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300text-white "
                   variant={isKhoiDong && !targetPlayerId ? 'default' : 'outline'}
                 >
                   Bấm chuông
                 </Button>
               </form>
 
-              <Button size="sm" variant="outline" onClick={refreshFromServer}>
+              <Button size="sm" variant="outline" className="bg-slate-900/70 border-slate-600 text-white" onClick={refreshFromServer}>
                 Làm mới
               </Button>
             </div>

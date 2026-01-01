@@ -202,7 +202,7 @@ export default async function OlympiaQuestionBankPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {Array.isArray(question.question_sets)
                         ? question.question_sets[0]?.name ?? '—'
-                        : question.question_sets?.name ?? '—'}
+                        : (question.question_sets as Record<string, string> | null)?.name ?? '—'}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(question.created_at)}</TableCell>
                   </TableRow>

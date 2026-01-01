@@ -631,7 +631,7 @@ export async function lookupJoinCodeAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    const { authUid } = await getServerAuthContext();
+    const { authUid, supabase } = await getServerAuthContext();
     if (!authUid) return { error: "Bạn cần đăng nhập để tham gia phòng." };
 
     const parsed = joinSchema.safeParse({
@@ -642,7 +642,19 @@ export async function lookupJoinCodeAction(
       return { error: parsed.error.issues[0]?.message ?? "Mã tham gia không hợp lệ." };
     }
 
-    const supabase = await getServerSupabase();
+    // Get public.users.id from auth_uid (needed for FK constraint in session_verifications)
+    const { data: userRecord, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("auth_uid", authUid)
+      .maybeSingle();
+
+    if (userError) return { error: userError.message };
+    if (!userRecord) {
+      // User record does not exist yet - may be due to trigger delay, skip session verification for now
+      console.warn("[Olympia] User record not found for auth_uid:", authUid);
+    }
+
     const olympia = supabase.schema("olympia");
     const { data, error } = await olympia
       .from("live_sessions")
@@ -666,20 +678,22 @@ export async function lookupJoinCodeAction(
       }
     }
 
-    // Record verification on server for cross-device persistence
-    const { error: verifyError } = await olympia.from("session_verifications").upsert(
-      {
-        session_id: data.id,
-        user_id: authUid,
-        verified_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      },
-      { onConflict: "session_id,user_id" }
-    );
+    // Record verification on server for cross-device persistence (only if user record exists)
+    if (userRecord?.id) {
+      const { error: verifyError } = await olympia.from("session_verifications").upsert(
+        {
+          session_id: data.id,
+          user_id: userRecord.id,
+          verified_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+        { onConflict: "session_id,user_id" }
+      );
 
-    if (verifyError) {
-      console.error("[Olympia] Failed to record session verification:", verifyError);
-      // Continue anyway - verification is secondary
+      if (verifyError) {
+        console.error("[Olympia] Failed to record session verification:", verifyError);
+        // Continue anyway - verification is secondary
+      }
     }
 
     return {

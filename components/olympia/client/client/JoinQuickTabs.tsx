@@ -53,12 +53,10 @@ export function JoinQuickTabs() {
 
     // Handle MC success
     useEffect(() => {
-        if (mcState.success && (mcState.data?.matchCode || mcState.data?.matchId)) {
+        if (mcState.success && mcState.data?.joinCode) {
             toast.success('Đã xác nhận mật khẩu MC.')
             setTimeout(() => {
-                // prefer matchCode returned by the action; fallback to matchId if necessary
-                const routeId = mcState.data?.matchCode ?? mcState.data?.matchId
-                router.push(`/olympia/client/watch/${routeId}`)
+                router.push(`/olympia/mc/${mcState.data?.joinCode}`)
             }, 500)
         } else if (mcState.error) {
             toast.error(mcState.error)

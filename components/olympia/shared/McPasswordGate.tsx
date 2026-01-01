@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { useActionState } from 'react'
 import { verifyMcPasswordAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -10,10 +11,11 @@ import { cn } from '@/utils/cn'
 const initialState: ActionState = { error: null, success: null }
 
 type McPasswordGateProps = {
-  matchId: string
+  joinCode: string
+  children?: ReactNode
 }
 
-export function McPasswordGate({ matchId }: McPasswordGateProps) {
+export function McPasswordGate({ joinCode, children }: McPasswordGateProps) {
   const [unlocked, setUnlocked] = useState(false)
   const [state, formAction] = useActionState(
     async (prev: ActionState, formData: FormData) => {
@@ -28,19 +30,19 @@ export function McPasswordGate({ matchId }: McPasswordGateProps) {
   const hasMessage = state.error || state.success
 
   if (unlocked) {
-    return (
+    return children ? (
+      <>{children}</>
+    ) : (
       <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
         <p className="font-semibold">Đã mở khóa chế độ MC</p>
-        <p className="mt-1 text-xs">
-          Từ giờ bạn sẽ thấy đầy đủ trạng thái câu hỏi, điểm số và log realtime (UI sẽ cập nhật khi hoàn thiện console watch).
-        </p>
+        <p className="mt-1 text-xs">Bạn có thể xem màn hình MC ngay trên trang này.</p>
       </div>
     )
   }
 
   return (
     <form action={formAction} className="space-y-3">
-      <input type="hidden" name="matchId" value={matchId} />
+      <input type="hidden" name="joinCode" value={joinCode} />
       <div>
         <label htmlFor="mcPassword" className="text-sm font-medium">
           Nhập mật khẩu MC

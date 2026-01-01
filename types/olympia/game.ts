@@ -42,6 +42,25 @@ export type RoundQuestionRow = {
   order_index: number | null;
   target_player_id: string | null;
   meta?: Record<string, unknown> | null;
+  // Tuỳ constraint/foreign key, Supabase có thể trả object hoặc mảng (dù logically là many-to-one).
+  questions?:
+    | {
+        id?: string | null;
+        code?: string | null;
+        category?: string | null;
+        question_text?: string | null;
+        answer_text?: string | null;
+        note?: string | null;
+      }
+    | Array<{
+        id?: string | null;
+        code?: string | null;
+        category?: string | null;
+        question_text?: string | null;
+        answer_text?: string | null;
+        note?: string | null;
+      }>
+    | null;
   // Supabase join có thể trả về object (many-to-one) hoặc mảng (tuỳ select/alias).
   match_rounds?:
     | {

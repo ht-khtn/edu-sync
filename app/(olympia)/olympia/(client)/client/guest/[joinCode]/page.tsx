@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 
 type GuestPageProps = {
     params: {
-        matchId: string
+        joinCode: string
     }
 }
 
@@ -80,7 +80,9 @@ async function getGuestSessionData(
             .eq('match_id', match.id),
         olympia
             .from('round_questions')
-            .select('id, match_round_id, question_id, order_index, target_player_id, meta, match_rounds!inner(match_id, round_type)')
+            .select(
+                'id, match_round_id, question_id, order_index, target_player_id, meta, questions(id, code, category, question_text, answer_text, note), match_rounds!inner(match_id, round_type)'
+            )
             .eq('match_rounds.match_id', match.id)
             .order('order_index', { ascending: true }),
         resolvedSession.current_round_question_id
@@ -147,7 +149,7 @@ async function getGuestSessionData(
 
 export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) {
     const { supabase } = await getServerAuthContext()
-    const { payload, joinCode } = await getGuestSessionData(supabase, params.matchId)
+    const { payload, joinCode } = await getGuestSessionData(supabase, params.joinCode)
     if (!payload) {
         notFound()
     }

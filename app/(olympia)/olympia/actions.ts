@@ -6,7 +6,11 @@ import ExcelJS from "exceljs";
 import { z } from "zod";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
-import { computeKhoiDongCommonScore, computeVcnvFinalScore } from "@/lib/olympia-scoring";
+import {
+  computeKhoiDongCommonScore,
+  computeTangTocAwards,
+  computeVcnvFinalScore,
+} from "@/lib/olympia-scoring";
 
 export type ActionState = {
   error?: string | null;
@@ -655,27 +659,17 @@ export async function verifyMcPasswordAction(
       return { error: "Sai mật khẩu MC." };
     }
 
-    // Resolve match code to return a user-friendly identifier for client routing
-    const { data: matchRow, error: matchRowErr } = await olympia
-      .from("matches")
-      .select("code")
-      .eq("id", session.match_id)
-      .maybeSingle();
-
-    if (matchRowErr) {
-      return { error: matchRowErr.message };
-    }
-
-    const matchCode = matchRow?.code ?? session.match_id;
-
     if (session.status !== "running") {
       return {
         success: "Mật khẩu đúng, nhưng phòng chưa chạy. Bạn vẫn có thể xem chế độ chuẩn bị.",
-        data: { matchCode },
+        data: { joinCode: parsed.data.joinCode, matchId: session.match_id },
       };
     }
 
-    return { success: "Đã mở khóa chế độ xem MC.", data: { matchCode } };
+    return {
+      success: "Đã mở khóa chế độ xem MC.",
+      data: { joinCode: parsed.data.joinCode, matchId: session.match_id },
+    };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể xác thực mật khẩu MC." };
   }
@@ -1271,7 +1265,7 @@ export async function confirmDecisionAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = decisionSchema.safeParse({
@@ -1308,6 +1302,7 @@ export async function confirmDecisionAction(
 
     const currentPoints = scoreRow?.points ?? 0;
     const { delta, nextPoints } = computeKhoiDongCommonScore(decision, currentPoints);
+    const appliedDelta = nextPoints - currentPoints;
 
     if (scoreRow?.id) {
       const { error: updateScoreError } = await olympia
@@ -1326,6 +1321,7 @@ export async function confirmDecisionAction(
     }
 
     // Cập nhật đáp án mới nhất (nếu có) để lưu điểm và trạng thái đúng/sai.
+    let answerId: string | null = null;
     if (session.current_round_question_id) {
       const { data: latestAnswer, error: answerError } = await olympia
         .from("answers")
@@ -1339,6 +1335,7 @@ export async function confirmDecisionAction(
 
       if (answerError) return { error: answerError.message };
       if (latestAnswer?.id) {
+        answerId = latestAnswer.id;
         const { error: updateAnswerError } = await olympia
           .from("answers")
           .update({
@@ -1348,6 +1345,24 @@ export async function confirmDecisionAction(
           .eq("id", latestAnswer.id);
         if (updateAnswerError) return { error: updateAnswerError.message };
       }
+    }
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId: session.match_id,
+      playerId,
+      roundType,
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore: currentPoints,
+      pointsAfter: nextPoints,
+      source: "decision_confirmed",
+      createdBy: appUserId ?? null,
+      roundQuestionId: session.current_round_question_id ?? null,
+      answerId,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(confirmDecision) failed:", auditErr);
     }
 
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
@@ -1507,13 +1522,76 @@ export async function advanceCurrentQuestionFormAction(formData: FormData): Prom
   await advanceCurrentQuestionAction({}, formData);
 }
 
+async function insertScoreChange(params: {
+  olympia: unknown;
+  matchId: string;
+  playerId: string;
+  roundType: string;
+  requestedDelta: number;
+  appliedDelta: number;
+  pointsBefore: number;
+  pointsAfter: number;
+  source: string;
+  reason?: string | null;
+  createdBy?: string | null;
+  roundQuestionId?: string | null;
+  answerId?: string | null;
+  revertOf?: string | null;
+}): Promise<{ error?: string }> {
+  const db = params.olympia as { from: (table: string) => unknown };
+  type DbError = { message: string } | null;
+  type InsertBuilder = {
+    insert: (payload: Record<string, unknown>) => Promise<{ error: DbError }>;
+  };
+
+  try {
+    const q = db.from("score_changes") as unknown as InsertBuilder;
+    const { error } = await q.insert({
+      match_id: params.matchId,
+      player_id: params.playerId,
+      round_type: params.roundType,
+      requested_delta: Math.trunc(params.requestedDelta),
+      applied_delta: Math.trunc(params.appliedDelta),
+      points_before: Math.trunc(params.pointsBefore),
+      points_after: Math.trunc(params.pointsAfter),
+      source: params.source,
+      reason: params.reason ?? null,
+      created_by: params.createdBy ?? null,
+      round_question_id: params.roundQuestionId ?? null,
+      answer_id: params.answerId ?? null,
+      revert_of: params.revertOf ?? null,
+    });
+
+    if (error) {
+      // Không chặn luồng chấm điểm nếu DB chưa migrate bảng audit.
+      if (
+        /score_changes/i.test(error.message) &&
+        /(does not exist|relation)/i.test(error.message)
+      ) {
+        return {};
+      }
+      return { error: error.message };
+    }
+
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể ghi audit score_changes." };
+  }
+}
+
 async function applyRoundDelta(params: {
   olympia: unknown;
   matchId: string;
   playerId: string;
   roundType: string;
   delta: number;
-}): Promise<{ nextPoints: number; error?: string }> {
+}): Promise<{
+  nextPoints: number;
+  pointsBefore: number;
+  pointsAfter: number;
+  appliedDelta: number;
+  error?: string;
+}> {
   const { olympia, matchId, playerId, roundType, delta } = params;
   const db = olympia as {
     from: (table: string) => unknown;
@@ -1546,16 +1624,33 @@ async function applyRoundDelta(params: {
     .eq("round_type", roundType)
     .maybeSingle();
 
-  if (scoreError) return { nextPoints: 0, error: scoreError.message };
+  if (scoreError) {
+    return {
+      nextPoints: 0,
+      pointsBefore: 0,
+      pointsAfter: 0,
+      appliedDelta: 0,
+      error: scoreError.message,
+    };
+  }
   const currentPoints = scoreRow?.points ?? 0;
   const nextPoints = Math.max(0, currentPoints + delta);
+  const appliedDelta = nextPoints - currentPoints;
 
   if (scoreRow?.id) {
     const updateQuery = db.from("match_scores") as unknown as ScoreUpdateQuery;
     const { error: updateError } = await updateQuery
       .update({ points: nextPoints, updated_at: new Date().toISOString() })
       .eq("id", scoreRow.id);
-    if (updateError) return { nextPoints: 0, error: updateError.message };
+    if (updateError) {
+      return {
+        nextPoints: 0,
+        pointsBefore: 0,
+        pointsAfter: 0,
+        appliedDelta: 0,
+        error: updateError.message,
+      };
+    }
   } else {
     const insertQuery = db.from("match_scores") as unknown as ScoreInsertQuery;
     const { error: insertError } = await insertQuery.insert({
@@ -1564,10 +1659,208 @@ async function applyRoundDelta(params: {
       round_type: roundType,
       points: nextPoints,
     });
-    if (insertError) return { nextPoints: 0, error: insertError.message };
+    if (insertError) {
+      return {
+        nextPoints: 0,
+        pointsBefore: 0,
+        pointsAfter: 0,
+        appliedDelta: 0,
+        error: insertError.message,
+      };
+    }
   }
 
-  return { nextPoints };
+  return {
+    nextPoints,
+    pointsBefore: currentPoints,
+    pointsAfter: nextPoints,
+    appliedDelta,
+  };
+}
+
+const manualAdjustScoreSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  playerId: z.string().uuid("ID thí sinh không hợp lệ."),
+  roundType: z.string().min(1, "Thiếu vòng điểm."),
+  delta: z
+    .number({ message: "Delta không hợp lệ." })
+    .int("Delta phải là số nguyên.")
+    .min(-500, "Delta quá nhỏ.")
+    .max(500, "Delta quá lớn."),
+  reason: z.string().min(3, "Cần lý do điều chỉnh (tối thiểu 3 ký tự)."),
+});
+
+export async function manualAdjustScoreAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = manualAdjustScoreSchema.safeParse({
+      matchId: formData.get("matchId"),
+      playerId: formData.get("playerId"),
+      roundType: formData.get("roundType"),
+      delta: Number(formData.get("delta")),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin điều chỉnh điểm." };
+    }
+
+    const { matchId, playerId, roundType, delta, reason } = parsed.data;
+    const {
+      nextPoints,
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({ olympia, matchId, playerId, roundType, delta });
+    if (scoreErr) return { error: scoreErr };
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId,
+      playerId,
+      roundType,
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "manual_adjust",
+      reason,
+      createdBy: appUserId ?? null,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange failed:", auditErr);
+    }
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    return {
+      success: `Đã điều chỉnh điểm (${appliedDelta >= 0 ? "+" : ""}${appliedDelta}). Điểm mới: ${nextPoints}.`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể điều chỉnh điểm." };
+  }
+}
+
+export async function manualAdjustScoreFormAction(formData: FormData): Promise<void> {
+  await manualAdjustScoreAction({}, formData);
+}
+
+const undoLastScoreChangeSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  reason: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val.trim() : null)),
+});
+
+export async function undoLastScoreChangeAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = undoLastScoreChangeSchema.safeParse({
+      matchId: formData.get("matchId"),
+      reason: formData.get("reason"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin undo." };
+    }
+
+    const { data: last, error: lastErr } = await olympia
+      .from("score_changes")
+      .select(
+        "id, match_id, player_id, round_type, requested_delta, applied_delta, points_before, points_after, round_question_id, answer_id, revert_of, reverted_at"
+      )
+      .eq("match_id", parsed.data.matchId)
+      .is("reverted_at", null)
+      .is("revert_of", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastErr) {
+      if (
+        /score_changes/i.test(lastErr.message) &&
+        /(does not exist|relation)/i.test(lastErr.message)
+      ) {
+        return { error: "Chưa có bảng audit score_changes trong DB (cần chạy migration)." };
+      }
+      return { error: lastErr.message };
+    }
+    if (!last) return { error: "Chưa có thay đổi điểm nào để Undo." };
+
+    const revertDelta = -Number((last as { applied_delta?: number | null }).applied_delta ?? 0);
+    const {
+      nextPoints,
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({
+      olympia,
+      matchId: (last as { match_id: string }).match_id,
+      playerId: (last as { player_id: string }).player_id,
+      roundType: (last as { round_type: string }).round_type,
+      delta: revertDelta,
+    });
+    if (scoreErr) return { error: scoreErr };
+
+    const { error: markErr } = await olympia
+      .from("score_changes")
+      .update({ reverted_at: new Date().toISOString(), reverted_by: appUserId ?? null })
+      .eq("id", (last as { id: string }).id);
+    if (markErr) return { error: markErr.message };
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId: (last as { match_id: string }).match_id,
+      playerId: (last as { player_id: string }).player_id,
+      roundType: (last as { round_type: string }).round_type,
+      requestedDelta: revertDelta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "undo",
+      reason: parsed.data.reason,
+      createdBy: appUserId ?? null,
+      roundQuestionId: (last as { round_question_id?: string | null }).round_question_id ?? null,
+      answerId: (last as { answer_id?: string | null }).answer_id ?? null,
+      revertOf: (last as { id: string }).id,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(undo) failed:", auditErr);
+    }
+
+    // Best-effort: nếu có answer_id thì reset points_awarded về 0 để host chấm lại.
+    const answerId = (last as { answer_id?: string | null }).answer_id;
+    if (answerId) {
+      const { error: answerResetErr } = await olympia
+        .from("answers")
+        .update({ points_awarded: 0 })
+        .eq("id", answerId);
+      if (answerResetErr) {
+        console.warn("[Olympia] undo reset answer points_awarded failed:", answerResetErr.message);
+      }
+    }
+
+    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
+    return { success: `Đã Undo thay đổi gần nhất. Điểm mới: ${nextPoints}.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể Undo." };
+  }
+}
+
+export async function undoLastScoreChangeFormAction(formData: FormData): Promise<void> {
+  await undoLastScoreChangeAction({}, formData);
 }
 
 export async function submitObstacleGuessAction(
@@ -1653,7 +1946,7 @@ export async function confirmVcnvRowDecisionAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = vcnvRowDecisionSchema.safeParse({
@@ -1680,7 +1973,13 @@ export async function confirmVcnvRowDecisionAction(
     if (!session.current_round_question_id) return { error: "Chưa có câu hỏi CNV đang hiển thị." };
 
     const delta = decision === "correct" ? 10 : 0;
-    const { nextPoints, error: scoreErr } = await applyRoundDelta({
+    const {
+      nextPoints,
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({
       olympia,
       matchId: session.match_id,
       playerId,
@@ -1709,6 +2008,24 @@ export async function confirmVcnvRowDecisionAction(
         })
         .eq("id", latestAnswer.id);
       if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId: session.match_id,
+      playerId,
+      roundType: "vcnv",
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "vcnv_row_confirm",
+      createdBy: appUserId ?? null,
+      roundQuestionId: session.current_round_question_id,
+      answerId: latestAnswer?.id ?? null,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(vcnv row) failed:", auditErr);
     }
 
     if (decision === "correct" && session.current_round_id) {
@@ -1750,7 +2067,7 @@ export async function confirmObstacleGuessAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = obstacleGuessConfirmSchema.safeParse({
@@ -1818,7 +2135,13 @@ export async function confirmObstacleGuessAction(
     if (openedError) return { error: openedError.message };
 
     const delta = computeVcnvFinalScore(openedCount ?? 0);
-    const { nextPoints, error: scoreErr } = await applyRoundDelta({
+    const {
+      nextPoints,
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({
       olympia,
       matchId,
       playerId: guess.player_id,
@@ -1826,6 +2149,22 @@ export async function confirmObstacleGuessAction(
       delta,
     });
     if (scoreErr) return { error: scoreErr };
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId,
+      playerId: guess.player_id,
+      roundType: "vcnv",
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "vcnv_final_confirm",
+      createdBy: appUserId ?? null,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(vcnv final) failed:", auditErr);
+    }
 
     const { error: openAllError } = await olympia
       .from("obstacle_tiles")
@@ -1958,7 +2297,7 @@ export async function autoScoreTangTocAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = autoScoreTangTocSchema.safeParse({ sessionId: formData.get("sessionId") });
@@ -1986,19 +2325,46 @@ export async function autoScoreTangTocAction(
       .order("submitted_at", { ascending: true });
     if (answersError) return { error: answersError.message };
 
-    const pointsByRank = [40, 30, 20, 10];
-    const winners: Array<{ answerId: string; playerId: string; points: number }> = [];
-    const seen = new Set<string>();
+    // De-dup theo player: lấy đáp án ĐÚNG sớm nhất mỗi người.
+    const byPlayer = new Map<string, { answerId: string; submittedAtMs: number }>();
     for (const a of answers ?? []) {
-      if (seen.has(a.player_id)) continue;
-      const rank = winners.length;
-      if (rank >= pointsByRank.length) break;
-      winners.push({ answerId: a.id, playerId: a.player_id, points: pointsByRank[rank] });
-      seen.add(a.player_id);
+      if (!a.player_id) continue;
+      const submittedAtMs = a.submitted_at ? new Date(a.submitted_at).getTime() : Number.NaN;
+      if (!Number.isFinite(submittedAtMs)) continue;
+      if (!byPlayer.has(a.player_id)) {
+        byPlayer.set(a.player_id, { answerId: a.id, submittedAtMs });
+      }
     }
 
+    const awards = computeTangTocAwards({
+      submissions: Array.from(byPlayer.entries()).map(([playerId, v]) => ({
+        id: playerId,
+        submittedAtMs: v.submittedAtMs,
+      })),
+      thresholdMs: 10,
+      pointsByRank: [40, 30, 20, 10],
+    });
+
+    const winners: Array<{ answerId: string; playerId: string; points: number }> = [];
+    for (const [playerId, v] of byPlayer.entries()) {
+      const points = awards.get(playerId);
+      if (typeof points !== "number") continue;
+      winners.push({ answerId: v.answerId, playerId, points });
+    }
+
+    winners.sort((a, b) => {
+      const ams = byPlayer.get(a.playerId)?.submittedAtMs ?? 0;
+      const bms = byPlayer.get(b.playerId)?.submittedAtMs ?? 0;
+      return ams - bms;
+    });
+
     for (const w of winners) {
-      const { error: scoreErr } = await applyRoundDelta({
+      const {
+        pointsBefore,
+        pointsAfter,
+        appliedDelta,
+        error: scoreErr,
+      } = await applyRoundDelta({
         olympia,
         matchId: session.match_id,
         playerId: w.playerId,
@@ -2012,6 +2378,24 @@ export async function autoScoreTangTocAction(
         .update({ points_awarded: w.points })
         .eq("id", w.answerId);
       if (updateAnswerError) return { error: updateAnswerError.message };
+
+      const { error: auditErr } = await insertScoreChange({
+        olympia,
+        matchId: session.match_id,
+        playerId: w.playerId,
+        roundType: "tang_toc",
+        requestedDelta: w.points,
+        appliedDelta,
+        pointsBefore,
+        pointsAfter,
+        source: "tang_toc_auto",
+        createdBy: appUserId ?? null,
+        roundQuestionId: session.current_round_question_id,
+        answerId: w.answerId,
+      });
+      if (auditErr) {
+        console.warn("[Olympia] insertScoreChange(tang toc) failed:", auditErr);
+      }
     }
 
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
@@ -2220,7 +2604,7 @@ export async function confirmVeDichMainDecisionAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = confirmVeDichMainSchema.safeParse({
@@ -2265,7 +2649,12 @@ export async function confirmVeDichMainDecisionAction(
     const isCorrect = decision === "correct";
     const delta = isCorrect ? value * (starEnabled ? 2 : 1) : 0;
 
-    const { error: scoreErr } = await applyRoundDelta({
+    const {
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({
       olympia,
       matchId: session.match_id,
       playerId: rq.target_player_id,
@@ -2301,6 +2690,24 @@ export async function confirmVeDichMainDecisionAction(
       if (updateAnswerError) return { error: updateAnswerError.message };
     }
 
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId: session.match_id,
+      playerId: rq.target_player_id,
+      roundType: "ve_dich",
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "ve_dich_main_confirm",
+      createdBy: appUserId ?? null,
+      roundQuestionId: rq.id,
+      answerId: latestAnswer?.id ?? null,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(ve dich main) failed:", auditErr);
+    }
+
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);
@@ -2323,7 +2730,7 @@ export async function confirmVeDichStealDecisionAction(
 ): Promise<ActionState> {
   try {
     await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = confirmVeDichStealSchema.safeParse({
@@ -2371,7 +2778,12 @@ export async function confirmVeDichStealDecisionAction(
     const penalty = Math.ceil(value / 2);
     const delta = isCorrect ? value : -penalty;
 
-    const { error: scoreErr } = await applyRoundDelta({
+    const {
+      pointsBefore,
+      pointsAfter,
+      appliedDelta,
+      error: scoreErr,
+    } = await applyRoundDelta({
       olympia,
       matchId: session.match_id,
       playerId: stealWinner.player_id,
@@ -2395,6 +2807,24 @@ export async function confirmVeDichStealDecisionAction(
         .update({ is_correct: isCorrect, points_awarded: delta })
         .eq("id", latestAnswer.id);
       if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    const { error: auditErr } = await insertScoreChange({
+      olympia,
+      matchId: session.match_id,
+      playerId: stealWinner.player_id,
+      roundType: "ve_dich",
+      requestedDelta: delta,
+      appliedDelta,
+      pointsBefore,
+      pointsAfter,
+      source: "ve_dich_steal_confirm",
+      createdBy: appUserId ?? null,
+      roundQuestionId: rq.id,
+      answerId: latestAnswer?.id ?? null,
+    });
+    if (auditErr) {
+      console.warn("[Olympia] insertScoreChange(ve dich steal) failed:", auditErr);
     }
 
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);

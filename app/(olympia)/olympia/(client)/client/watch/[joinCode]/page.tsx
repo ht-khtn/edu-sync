@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 type WatchPageProps = {
   params: {
-    matchId: string
+    joinCode: string
   }
 }
 
@@ -25,7 +25,7 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
   const { data: session, error: sessionError } = await olympia
     .from('live_sessions')
     .select('join_code, status, question_state, current_round_type, match_id')
-    .eq('join_code', params.matchId)
+    .eq('join_code', params.joinCode)
     .maybeSingle()
 
   if (sessionError) {
@@ -40,7 +40,7 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
     match = res.data
     matchError = res.error
   } else {
-    const res = await olympia.from('matches').select('id, name, status, scheduled_at').eq('id', params.matchId).maybeSingle()
+    const res = await olympia.from('matches').select('id, name, status, scheduled_at').eq('id', params.joinCode).maybeSingle()
     match = res.data
     matchError = res.error
   }
@@ -109,7 +109,11 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
             <p className="text-sm text-muted-foreground">
               Unlock toàn quyền quản lý trận: xem đầy đủ trạng thái câu hỏi, điểm số chi tiết, và log realtime.
             </p>
-            <McPasswordGate matchId={match.id} />
+            <McPasswordGate joinCode={session.join_code}>
+              <Button asChild className="w-full">
+                <Link href={`/olympia/mc/${session.join_code}`}>Mở màn hình MC →</Link>
+              </Button>
+            </McPasswordGate>
           </CardContent>
         </Card>
       </div>

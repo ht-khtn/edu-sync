@@ -21,6 +21,7 @@ type OlympiaGameClientProps = {
   initialData: GameSessionPayload
   sessionId: string
   allowGuestFallback?: boolean
+  viewerMode?: 'player' | 'guest' | 'mc'
 }
 
 const roundLabel: Record<string, string> = {
@@ -49,7 +50,7 @@ function FormSubmitButton({ children, disabled, variant }: { children: ReactNode
   )
 }
 
-export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }: OlympiaGameClientProps) {
+export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, viewerMode }: OlympiaGameClientProps) {
   const {
     match,
     session,
@@ -100,8 +101,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
   const isStealWindow = isVeDich && questionState === 'answer_revealed'
   const questionStateText =
     isStealWindow ? 'Cửa sổ cướp' : (questionStateLabel[questionState] ?? questionState)
-  const isGuest = Boolean(allowGuestFallback)
-  const disableInteractions = isGuest
+  const resolvedViewerMode: 'player' | 'guest' | 'mc' = viewerMode ?? (allowGuestFallback ? 'guest' : 'player')
+  const isGuest = resolvedViewerMode === 'guest'
+  const isMc = resolvedViewerMode === 'mc'
+  const disableInteractions = isGuest || isMc
   const answerFeedback = answerState.error ?? answerState.success
   const cnvGuessFeedback = cnvGuessState.error ?? cnvGuessState.success
   const buzzerFeedback = buzzerState.error ?? buzzerState.success
@@ -117,6 +120,15 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
 
   const currentQuestionId = session.current_round_question_id
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
+  const questionRecord = currentRoundQuestion?.questions
+    ? (Array.isArray(currentRoundQuestion.questions)
+      ? currentRoundQuestion.questions[0] ?? null
+      : currentRoundQuestion.questions)
+    : null
+  const questionText = questionRecord?.question_text ?? null
+  const answerText = questionRecord?.answer_text ?? null
+  const noteText = questionRecord?.note ?? null
+  const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden')
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
@@ -257,18 +269,41 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                 <div className="aspect-video w-full overflow-hidden rounded-xl border bg-slate-900/90 text-xs text-white">
                   <div className="flex h-full items-center justify-center text-center">
                     {/* TODO: render question media (image/video) once asset pipeline is ready. */}
-                    <p className="px-6 text-sm text-slate-200">Đang chờ host hiển thị câu hỏi...</p>
+                    {showQuestionText ? (
+                      <p className="px-6 text-sm text-slate-100 whitespace-pre-wrap">{questionText}</p>
+                    ) : (
+                      <p className="px-6 text-sm text-slate-200">Đang chờ host hiển thị câu hỏi...</p>
+                    )}
                   </div>
                 </div>
-                <div className="rounded-xl border bg-slate-50 p-4 text-sm leading-relaxed">
+                <div className="rounded-xl border bg-slate-50 p-4 text-sm leading-relaxed space-y-3">
                   {/* TODO: render host video feed or livestream embed. */}
-                  <p className="text-muted-foreground">
-                    Nội dung câu hỏi sẽ hiển thị ở đây khi host chuyển trạng thái sang “Đang hiển thị”. Các hiệu ứng hình ảnh sẽ được bổ sung
-                    sau.
-                  </p>
+                  {showQuestionText ? (
+                    <p className="text-slate-700">{questionText}</p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      Nội dung câu hỏi sẽ hiển thị ở đây khi host chuyển trạng thái sang “Đang hiển thị”.
+                    </p>
+                  )}
+
+                  {isMc && (answerText || noteText) ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">MC · Đáp án</p>
+                      {answerText ? (
+                        <p className="mt-1 text-sm whitespace-pre-wrap">
+                          <span className="text-muted-foreground">Đáp án:</span> {answerText}
+                        </p>
+                      ) : null}
+                      {noteText ? (
+                        <p className="mt-2 text-sm whitespace-pre-wrap">
+                          <span className="text-muted-foreground">Ghi chú:</span> {noteText}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
-              {!isGuest ? (
+              {!disableInteractions ? (
                 <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
                   <p className="text-xs font-semibold uppercase text-slate-500">Bài làm</p>
                   <form action={answerAction} className="space-y-3">
@@ -344,9 +379,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                 </div>
               ) : (
                 <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase text-slate-500">Chế độ khách</p>
+                  <p className="text-xs font-semibold uppercase text-slate-500">{isMc ? 'Chế độ MC' : 'Chế độ khách'}</p>
                   <p className="text-sm text-muted-foreground">
-                    Bạn đang xem màn hình công khai. Thí sinh vui lòng vào link game và đăng nhập để bấm chuông / gửi đáp án.
+                    {isMc
+                      ? 'Bạn đang xem màn hình MC. Chế độ này chỉ để quan sát (không gửi đáp án / bấm chuông).'
+                      : 'Bạn đang xem màn hình công khai. Thí sinh vui lòng vào link game và đăng nhập để bấm chuông / gửi đáp án.'}
                   </p>
                 </div>
               )}

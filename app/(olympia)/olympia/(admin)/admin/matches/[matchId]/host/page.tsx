@@ -17,6 +17,7 @@ import {
   confirmVcnvRowDecisionFormAction,
   confirmVeDichMainDecisionFormAction,
   confirmVeDichStealDecisionFormAction,
+  manualAdjustScoreFormAction,
   markAnswerCorrectnessFormAction,
   openObstacleTileFormAction,
   openStealWindowFormAction,
@@ -24,6 +25,7 @@ import {
   setRoundQuestionTargetPlayerFormAction,
   setVeDichQuestionValueFormAction,
   toggleStarUseFormAction,
+  undoLastScoreChangeFormAction,
 } from '@/app/(olympia)/olympia/actions'
 
 type PlayerSummary = {
@@ -31,12 +33,17 @@ type PlayerSummary = {
   display_name: string | null
 }
 
+function normalizePlayerSummary(value: PlayerSummary | PlayerSummary[] | null | undefined): PlayerSummary | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
 type WinnerBuzzRow = {
   id: string
   player_id: string | null
   result: string | null
   occurred_at: string | null
-  match_players: PlayerSummary | null
+  match_players: PlayerSummary | PlayerSummary[] | null
 }
 
 type RecentBuzzRow = WinnerBuzzRow
@@ -48,7 +55,23 @@ type RecentAnswerRow = {
   is_correct: boolean | null
   points_awarded: number | null
   submitted_at: string
-  match_players: PlayerSummary | null
+  match_players: PlayerSummary | PlayerSummary[] | null
+}
+
+type ScoreChangeRow = {
+  id: string
+  player_id: string
+  round_type: string
+  requested_delta: number
+  applied_delta: number
+  points_before: number
+  points_after: number
+  source: string
+  reason: string | null
+  created_at: string
+  revert_of: string | null
+  reverted_at: string | null
+  match_players: PlayerSummary | PlayerSummary[] | null
 }
 
 type HostObstacleRow = {
@@ -71,7 +94,7 @@ type HostObstacleGuessRow = {
   is_correct: boolean
   attempt_order: number | null
   attempted_at: string
-  match_players: PlayerSummary | null
+  match_players: PlayerSummary | PlayerSummary[] | null
 }
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
@@ -221,6 +244,23 @@ async function fetchHostData(matchCode: string) {
     }
   }
 
+  let scoreChanges: ScoreChangeRow[] = []
+  let scoreChangesError: string | null = null
+  const { data: scoreChangesData, error: scoreChangesErr } = await olympia
+    .from('score_changes')
+    .select(
+      'id, player_id, round_type, requested_delta, applied_delta, points_before, points_after, source, reason, created_at, revert_of, reverted_at, match_players(seat_index, display_name)'
+    )
+    .eq('match_id', realMatchId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (scoreChangesErr) {
+    scoreChangesError = scoreChangesErr.message
+  } else {
+    scoreChanges = (scoreChangesData as unknown as ScoreChangeRow[] | null) ?? []
+  }
+
   return {
     match,
     liveSession,
@@ -238,6 +278,8 @@ async function fetchHostData(matchCode: string) {
     winnerBuzz: (winnerBuzz as WinnerBuzzRow | null) ?? null,
     recentBuzzes: (recentBuzzes as RecentBuzzRow[]) ?? [],
     recentAnswers: (recentAnswers as RecentAnswerRow[]) ?? [],
+    scoreChanges,
+    scoreChangesError,
     obstacle,
     obstacleTiles,
     obstacleGuesses,
@@ -258,7 +300,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores, roundQuestions, currentRoundQuestion, isStarEnabled, winnerBuzz, recentBuzzes, recentAnswers, obstacle, obstacleTiles, obstacleGuesses } = data
+  const { match, liveSession, rounds, players, scores, roundQuestions, currentRoundQuestion, isStarEnabled, winnerBuzz, recentBuzzes, recentAnswers, scoreChanges, scoreChangesError, obstacle, obstacleTiles, obstacleGuesses } = data
   const currentRoundId = liveSession?.current_round_id
   const currentRoundQuestions = currentRoundId
     ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
@@ -439,7 +481,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                     {winnerBuzz ? (
                       <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
                         <p className="font-semibold">
-                          Ghế {winnerBuzz.match_players?.seat_index ?? '—'}: {winnerBuzz.match_players?.display_name ?? '—'}
+                          Ghế {normalizePlayerSummary(winnerBuzz.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(winnerBuzz.match_players)?.display_name ?? '—'}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {winnerBuzz.occurred_at ? new Date(winnerBuzz.occurred_at).toLocaleTimeString('vi-VN') : '—'}
@@ -459,7 +501,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                         {recentBuzzes.map((e) => (
                           <div key={e.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
                             <p>
-                              Ghế {e.match_players?.seat_index ?? '—'}: {e.match_players?.display_name ?? e.player_id ?? '—'}
+                              Ghế {normalizePlayerSummary(e.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(e.match_players)?.display_name ?? e.player_id ?? '—'}
                             </p>
                             <p className="text-muted-foreground">
                               {e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString('vi-VN') : '—'} · {e.result ?? '—'}
@@ -480,7 +522,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                       {recentAnswers.map((a) => (
                         <div key={a.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
                           <p className="font-semibold">
-                            Ghế {a.match_players?.seat_index ?? '—'}: {a.match_players?.display_name ?? a.player_id ?? '—'}
+                            Ghế {normalizePlayerSummary(a.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(a.match_players)?.display_name ?? a.player_id ?? '—'}
                           </p>
                           <p className="text-muted-foreground">
                             {a.submitted_at ? new Date(a.submitted_at).toLocaleTimeString('vi-VN') : '—'}
@@ -724,7 +766,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                       {obstacleGuesses.map((g) => (
                         <div key={g.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
                           <p className="font-semibold">
-                            Ghế {g.match_players?.seat_index ?? '—'}: {g.match_players?.display_name ?? g.player_id}
+                            Ghế {normalizePlayerSummary(g.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(g.match_players)?.display_name ?? g.player_id}
                           </p>
                           <p className="text-muted-foreground">
                             {g.attempted_at ? new Date(g.attempted_at).toLocaleTimeString('vi-VN') : '—'}
@@ -809,6 +851,111 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                     <p className="text-xs text-muted-foreground">Cần mở phòng live để thao tác chấm điểm.</p>
                   ) : null}
                 </form>
+              </CardContent>
+            </Card>
+          )}
+
+          {players.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Audit · Undo · Điều chỉnh điểm</CardTitle>
+                <CardDescription>Undo 1 bước (thay đổi điểm gần nhất) và điều chỉnh thủ công (bắt buộc lý do).</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <form action={undoLastScoreChangeFormAction} className="space-y-2">
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <p className="text-sm font-medium text-slate-700">Undo thay đổi gần nhất</p>
+                    <input
+                      name="reason"
+                      placeholder="(tuỳ chọn) Lý do undo"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                    <Button type="submit" size="sm" variant="outline">
+                      Undo
+                    </Button>
+                  </form>
+
+                  <form action={manualAdjustScoreFormAction} className="space-y-2">
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <p className="text-sm font-medium text-slate-700">Điều chỉnh thủ công</p>
+                    <select
+                      name="playerId"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      defaultValue=""
+                      required
+                    >
+                      <option value="" disabled>
+                        Chọn thí sinh
+                      </option>
+                      {players.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        name="roundType"
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        defaultValue={liveSession?.current_round_type ?? 'khoi_dong'}
+                        required
+                      >
+                        {Object.entries(roundLabelMap).map(([key, label]) => (
+                          <option key={key} value={key}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        name="delta"
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        placeholder="Delta"
+                        defaultValue={0}
+                        required
+                      />
+                    </div>
+
+                    <input
+                      name="reason"
+                      placeholder="Lý do điều chỉnh (bắt buộc)"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      required
+                    />
+                    <Button type="submit" size="sm">
+                      Áp dụng
+                    </Button>
+                  </form>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Audit gần đây</p>
+                  {scoreChangesError ? (
+                    <p className="text-sm text-muted-foreground">
+                      Không tải được audit: {scoreChangesError}. (Nếu DB chưa có bảng `olympia.score_changes`, hãy chạy migration.)
+                    </p>
+                  ) : scoreChanges.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có log.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {scoreChanges.map((sc) => (
+                        <div key={sc.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
+                          <p className="font-semibold">
+                            Ghế {normalizePlayerSummary(sc.match_players)?.seat_index ?? '—'}: {normalizePlayerSummary(sc.match_players)?.display_name ?? sc.player_id}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {sc.created_at ? new Date(sc.created_at).toLocaleTimeString('vi-VN') : '—'} · {roundLabelMap[sc.round_type] ?? sc.round_type} · {sc.source}
+                            {typeof sc.applied_delta === 'number' ? ` · ${sc.applied_delta >= 0 ? '+' : ''}${sc.applied_delta}` : ''}
+                            {sc.reverted_at ? ' · (đã undo)' : ''}
+                          </p>
+                          {sc.reason ? <p className="mt-1">Lý do: {sc.reason}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}

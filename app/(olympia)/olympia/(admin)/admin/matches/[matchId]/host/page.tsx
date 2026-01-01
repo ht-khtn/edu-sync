@@ -15,9 +15,15 @@ import {
   confirmDecisionFormAction,
   confirmObstacleGuessFormAction,
   confirmVcnvRowDecisionFormAction,
+  confirmVeDichMainDecisionFormAction,
+  confirmVeDichStealDecisionFormAction,
   markAnswerCorrectnessFormAction,
   openObstacleTileFormAction,
+  openStealWindowFormAction,
   setCurrentQuestionFormAction,
+  setRoundQuestionTargetPlayerFormAction,
+  setVeDichQuestionValueFormAction,
+  toggleStarUseFormAction,
 } from '@/app/(olympia)/olympia/actions'
 
 type PlayerSummary = {
@@ -136,12 +142,25 @@ async function fetchHostData(matchCode: string) {
 
   const { data: roundQuestions } = await olympia
     .from('round_questions')
-    .select('id, match_round_id, order_index, question_id, match_rounds!inner(match_id, round_type)')
+    .select('id, match_round_id, order_index, question_id, target_player_id, meta, match_rounds!inner(match_id, round_type)')
     .eq('match_rounds.match_id', realMatchId)
     .order('order_index', { ascending: true })
     .order('id', { ascending: true })
 
   const currentQuestionId = liveSession?.current_round_question_id
+
+  const currentRoundQuestion = currentQuestionId ? roundQuestions?.find((q) => q.id === currentQuestionId) ?? null : null
+
+  const { data: currentStar } =
+    currentQuestionId && currentRoundQuestion?.target_player_id
+      ? await olympia
+        .from('star_uses')
+        .select('id')
+        .eq('match_id', realMatchId)
+        .eq('round_question_id', currentQuestionId)
+        .eq('player_id', currentRoundQuestion.target_player_id)
+        .maybeSingle()
+      : { data: null }
 
   const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all([
     currentQuestionId
@@ -214,6 +233,8 @@ async function fetchHostData(matchCode: string) {
       totalScore: scoreLookup.get(p.id) ?? 0,
     })),
     roundQuestions: roundQuestions ?? [],
+    currentRoundQuestion,
+    isStarEnabled: Boolean(currentStar?.id),
     winnerBuzz: (winnerBuzz as WinnerBuzzRow | null) ?? null,
     recentBuzzes: (recentBuzzes as RecentBuzzRow[]) ?? [],
     recentAnswers: (recentAnswers as RecentAnswerRow[]) ?? [],
@@ -237,12 +258,20 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores, roundQuestions, winnerBuzz, recentBuzzes, recentAnswers, obstacle, obstacleTiles, obstacleGuesses } = data
+  const { match, liveSession, rounds, players, scores, roundQuestions, currentRoundQuestion, isStarEnabled, winnerBuzz, recentBuzzes, recentAnswers, obstacle, obstacleTiles, obstacleGuesses } = data
   const currentRoundId = liveSession?.current_round_id
   const currentRoundQuestions = currentRoundId
     ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
     : roundQuestions
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
+
+  const isVeDich = liveSession?.current_round_type === 've_dich'
+  const veDichValueRaw =
+    currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
+      ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
+      : undefined
+  const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : undefined
+  const veDichValueText = veDichValue === 20 || veDichValue === 30 ? String(veDichValue) : ''
 
   return (
     <section className="space-y-6">
@@ -495,6 +524,115 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                     <p className="mt-2 text-xs text-muted-foreground">Chỉ tính các đáp án đã được đánh dấu ĐÚNG theo thứ tự gửi.</p>
                   </div>
                 ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {isVeDich && liveSession?.current_round_question_id ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Về đích · Điều khiển</CardTitle>
+                <CardDescription>Chọn người trả lời chính, giá trị 20/30, Star, mở cửa cướp và chấm điểm.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <form action={setRoundQuestionTargetPlayerFormAction} className="space-y-2">
+                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                    <p className="text-sm text-slate-700">Người trả lời chính</p>
+                    <select
+                      name="playerId"
+                      defaultValue={currentRoundQuestion?.target_player_id ?? ''}
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      required
+                    >
+                      <option value="" disabled>
+                        Chọn thí sinh
+                      </option>
+                      {players.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
+                        </option>
+                      ))}
+                    </select>
+                    <Button type="submit" size="sm">
+                      Lưu
+                    </Button>
+                  </form>
+
+                  <form action={setVeDichQuestionValueFormAction} className="space-y-2">
+                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                    <p className="text-sm text-slate-700">Giá trị câu hỏi</p>
+                    <select
+                      name="value"
+                      defaultValue={veDichValueText}
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      required
+                    >
+                      <option value="" disabled>
+                        Chọn 20/30
+                      </option>
+                      <option value="20">20</option>
+                      <option value="30">30</option>
+                    </select>
+                    <Button type="submit" size="sm">
+                      Lưu
+                    </Button>
+                  </form>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <form action={toggleStarUseFormAction}>
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                    <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
+                    {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
+                    <Button type="submit" size="sm" variant={isStarEnabled ? 'default' : 'secondary'} disabled={!currentRoundQuestion?.target_player_id}>
+                      {isStarEnabled ? 'Tắt Star' : 'Bật Star'}
+                    </Button>
+                  </form>
+
+                  <form action={openStealWindowFormAction}>
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <input type="hidden" name="durationMs" value={5000} />
+                    <Button type="submit" size="sm" variant="outline">
+                      Mở cửa cướp (5s)
+                    </Button>
+                  </form>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <form action={confirmVeDichMainDecisionFormAction} className="space-y-2">
+                    <input type="hidden" name="sessionId" value={liveSession.id} />
+                    <p className="text-sm text-slate-700">Chấm người trả lời chính</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" size="sm" name="decision" value="correct">
+                        Đúng
+                      </Button>
+                      <Button type="submit" size="sm" name="decision" value="wrong" variant="secondary">
+                        Sai
+                      </Button>
+                      <Button type="submit" size="sm" name="decision" value="timeout" variant="secondary">
+                        Hết giờ
+                      </Button>
+                    </div>
+                  </form>
+
+                  <form action={confirmVeDichStealDecisionFormAction} className="space-y-2">
+                    <input type="hidden" name="sessionId" value={liveSession.id} />
+                    <p className="text-sm text-slate-700">Chấm người cướp (winner buzzer)</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" size="sm" name="decision" value="correct">
+                        Đúng
+                      </Button>
+                      <Button type="submit" size="sm" name="decision" value="wrong" variant="secondary">
+                        Sai (phạt 1/2)
+                      </Button>
+                      <Button type="submit" size="sm" name="decision" value="timeout" variant="secondary">
+                        Hết giờ
+                      </Button>
+                    </div>
+                  </form>
+                </div>
               </CardContent>
             </Card>
           ) : null}

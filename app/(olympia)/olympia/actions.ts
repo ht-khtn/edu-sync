@@ -363,6 +363,44 @@ const autoScoreTangTocSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
 });
 
+const veDichValueSchema = z.object({
+  roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
+  value: z
+    .number()
+    .int()
+    .refine((v) => v === 20 || v === 30, "Giá trị câu chỉ nhận 20 hoặc 30."),
+});
+
+const setRoundQuestionTargetSchema = z.object({
+  roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
+  playerId: z.string().uuid("Thí sinh không hợp lệ."),
+});
+
+const toggleStarSchema = z.object({
+  matchId: z.string().uuid("Trận không hợp lệ."),
+  roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
+  playerId: z.string().uuid("Thí sinh không hợp lệ."),
+  enabled: z
+    .string()
+    .optional()
+    .transform((val) => val === "1"),
+});
+
+const openStealWindowSchema = z.object({
+  matchId: z.string().uuid("Trận không hợp lệ."),
+  durationMs: z.number().int().min(1000).max(120000).optional().default(5000),
+});
+
+const confirmVeDichMainSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  decision: z.enum(["correct", "wrong", "timeout"]),
+});
+
+const confirmVeDichStealSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  decision: z.enum(["correct", "wrong", "timeout"]),
+});
+
 function generateJoinCode() {
   return `OLY-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
@@ -1035,7 +1073,7 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     const sessionId = parsed.data.sessionId;
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status, match_id, current_round_question_id")
+      .select("id, status, match_id, current_round_question_id, current_round_type, question_state")
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -1068,8 +1106,29 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
 
     // Khởi động lượt cá nhân: nếu round_questions.target_player_id có giá trị,
     // chỉ thí sinh đó mới được gửi đáp án.
+    // Ngoại lệ: Về đích mở cửa cướp (question_state='answer_revealed') → chỉ steal-winner mới được trả lời.
     if (roundQuestion.target_player_id && roundQuestion.target_player_id !== playerRow.id) {
-      return { error: "Đây là lượt cá nhân, bạn không phải người được chọn." };
+      if (
+        session.current_round_type === "ve_dich" &&
+        session.question_state === "answer_revealed"
+      ) {
+        const { data: stealWinner, error: stealError } = await olympia
+          .from("buzzer_events")
+          .select("player_id, result")
+          .eq("round_question_id", roundQuestion.id)
+          .eq("event_type", "steal")
+          .eq("result", "win")
+          .order("occurred_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (stealError) return { error: stealError.message };
+        if (!stealWinner?.player_id) return { error: "Chưa có người giành quyền cướp." };
+        if (stealWinner.player_id !== playerRow.id) {
+          return { error: "Bạn không có quyền trả lời cướp câu này." };
+        }
+      } else {
+        return { error: "Đây là lượt cá nhân, bạn không phải người được chọn." };
+      }
     }
 
     const submittedAt = new Date().toISOString();
@@ -1113,7 +1172,7 @@ export async function triggerBuzzerAction(
 
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status, match_id, current_round_question_id, question_state")
+      .select("id, status, match_id, current_round_question_id, question_state, current_round_type")
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
 
@@ -1124,13 +1183,17 @@ export async function triggerBuzzerAction(
     }
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
     if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
-    if (session.question_state !== "showing") {
-      return { error: "Host chưa mở câu hỏi để nhận buzzer." };
+
+    const isVeDichStealWindow =
+      session.current_round_type === "ve_dich" && session.question_state === "answer_revealed";
+    const canBuzzNow = session.question_state === "showing" || isVeDichStealWindow;
+    if (!canBuzzNow) {
+      return { error: "Host chưa mở câu hỏi/cửa cướp để nhận buzzer." };
     }
 
     const { data: playerRow, error: playerError } = await olympia
       .from("match_players")
-      .select("id")
+      .select("id, is_disqualified_obstacle")
       .eq("match_id", session.match_id)
       .eq("participant_id", appUserId)
       .maybeSingle();
@@ -1146,14 +1209,26 @@ export async function triggerBuzzerAction(
       .maybeSingle();
     if (rqError) return { error: rqError.message };
     if (rq?.target_player_id) {
-      return { error: "Câu này là lượt cá nhân, không dùng buzzer." };
+      if (session.current_round_type === "ve_dich" && isVeDichStealWindow) {
+        if (rq.target_player_id === playerRow.id) {
+          return { error: "Bạn là người đang trả lời chính, không thể bấm cướp." };
+        }
+        if (playerRow.is_disqualified_obstacle) {
+          return { error: "Bạn đang bị loại khỏi quyền cướp." };
+        }
+      } else {
+        return { error: "Câu này là lượt cá nhân, không dùng buzzer." };
+      }
     }
+
+    const eventType = isVeDichStealWindow ? "steal" : "buzz";
 
     // Nếu đã có người thắng, không cho nhận thêm.
     const { data: firstBuzz, error: buzzError } = await olympia
       .from("buzzer_events")
       .select("id, player_id, result, occurred_at")
       .eq("round_question_id", session.current_round_question_id)
+      .eq("event_type", eventType)
       .order("occurred_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -1173,7 +1248,7 @@ export async function triggerBuzzerAction(
       match_id: session.match_id,
       round_question_id: session.current_round_question_id,
       player_id: playerRow.id,
-      event_type: "buzz",
+      event_type: eventType,
       result: isWinner ? "win" : "lose",
       occurred_at: now,
     });
@@ -1953,6 +2028,391 @@ export async function autoScoreTangTocAction(
 
 export async function autoScoreTangTocFormAction(formData: FormData): Promise<void> {
   await autoScoreTangTocAction({}, formData);
+}
+
+export async function setVeDichQuestionValueAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = veDichValueSchema.safeParse({
+      roundQuestionId: formData.get("roundQuestionId"),
+      value: Number(formData.get("value")),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin giá trị câu." };
+    }
+
+    const { data: rq, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, meta")
+      .eq("id", parsed.data.roundQuestionId)
+      .maybeSingle();
+    if (rqError) return { error: rqError.message };
+    if (!rq) return { error: "Không tìm thấy câu hỏi." };
+
+    const currentMeta = (rq.meta ?? {}) as Record<string, unknown>;
+    const nextMeta = {
+      ...currentMeta,
+      ve_dich_value: parsed.data.value,
+    };
+
+    const { error: updateError } = await olympia
+      .from("round_questions")
+      .update({ meta: nextMeta })
+      .eq("id", rq.id);
+    if (updateError) return { error: updateError.message };
+
+    return { success: "Đã cập nhật giá trị câu Về đích." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật giá trị câu." };
+  }
+}
+
+export async function setVeDichQuestionValueFormAction(formData: FormData): Promise<void> {
+  await setVeDichQuestionValueAction({}, formData);
+}
+
+export async function setRoundQuestionTargetPlayerAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = setRoundQuestionTargetSchema.safeParse({
+      roundQuestionId: formData.get("roundQuestionId"),
+      playerId: formData.get("playerId"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin target." };
+    }
+
+    const { error } = await olympia
+      .from("round_questions")
+      .update({ target_player_id: parsed.data.playerId })
+      .eq("id", parsed.data.roundQuestionId);
+    if (error) return { error: error.message };
+
+    return { success: "Đã cập nhật thí sinh trả lời chính." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật target." };
+  }
+}
+
+export async function setRoundQuestionTargetPlayerFormAction(formData: FormData): Promise<void> {
+  await setRoundQuestionTargetPlayerAction({}, formData);
+}
+
+export async function toggleStarUseAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = toggleStarSchema.safeParse({
+      matchId: formData.get("matchId"),
+      roundQuestionId: formData.get("roundQuestionId"),
+      playerId: formData.get("playerId"),
+      enabled: formData.get("enabled"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin Star." };
+    }
+
+    if (!parsed.data.enabled) {
+      const { error: delError } = await olympia
+        .from("star_uses")
+        .delete()
+        .eq("match_id", parsed.data.matchId)
+        .eq("round_question_id", parsed.data.roundQuestionId)
+        .eq("player_id", parsed.data.playerId);
+      if (delError) return { error: delError.message };
+      return { success: "Đã tắt Star." };
+    }
+
+    const { error: upsertError } = await olympia.from("star_uses").upsert(
+      {
+        match_id: parsed.data.matchId,
+        round_question_id: parsed.data.roundQuestionId,
+        player_id: parsed.data.playerId,
+        outcome: null,
+        declared_at: new Date().toISOString(),
+      },
+      { onConflict: "round_question_id,player_id" }
+    );
+    if (upsertError) return { error: upsertError.message };
+
+    return { success: "Đã bật Star." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật Star." };
+  }
+}
+
+export async function toggleStarUseFormAction(formData: FormData): Promise<void> {
+  await toggleStarUseAction({}, formData);
+}
+
+export async function openStealWindowAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = openStealWindowSchema.safeParse({
+      matchId: formData.get("matchId"),
+      durationMs: formData.get("durationMs") ? Number(formData.get("durationMs")) : undefined,
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin mở cửa cướp." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status, current_round_type")
+      .eq("match_id", parsed.data.matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (session.current_round_type !== "ve_dich") return { error: "Hiện không ở vòng Về đích." };
+
+    const deadline = new Date(Date.now() + parsed.data.durationMs).toISOString();
+    const { error: updateError } = await olympia
+      .from("live_sessions")
+      .update({ question_state: "answer_revealed", timer_deadline: deadline })
+      .eq("id", session.id);
+    if (updateError) return { error: updateError.message };
+
+    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
+    return { success: "Đã mở cửa cướp (5s)." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể mở cửa cướp." };
+  }
+}
+
+export async function openStealWindowFormAction(formData: FormData): Promise<void> {
+  await openStealWindowAction({}, formData);
+}
+
+async function getVeDichValueFromRoundQuestionMeta(meta: unknown): Promise<number> {
+  if (!meta || typeof meta !== "object") return 20;
+  const raw = (meta as Record<string, unknown>).ve_dich_value;
+  const val = typeof raw === "number" ? raw : Number(raw);
+  return val === 30 ? 30 : 20;
+}
+
+export async function confirmVeDichMainDecisionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = confirmVeDichMainSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      decision: formData.get("decision"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm Về đích." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (session.current_round_type !== "ve_dich") return { error: "Hiện không ở vòng Về đích." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi Về đích." };
+
+    const { data: rq, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, target_player_id, meta")
+      .eq("id", session.current_round_question_id)
+      .maybeSingle();
+    if (rqError) return { error: rqError.message };
+    if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
+    if (!rq.target_player_id) return { error: "Chưa đặt thí sinh trả lời chính." };
+
+    const value = await getVeDichValueFromRoundQuestionMeta(rq.meta);
+    const { data: starRow } = await olympia
+      .from("star_uses")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("round_question_id", rq.id)
+      .eq("player_id", rq.target_player_id)
+      .maybeSingle();
+    const starEnabled = Boolean(starRow?.id);
+
+    const decision = parsed.data.decision;
+    const isCorrect = decision === "correct";
+    const delta = isCorrect ? value * (starEnabled ? 2 : 1) : 0;
+
+    const { error: scoreErr } = await applyRoundDelta({
+      olympia,
+      matchId: session.match_id,
+      playerId: rq.target_player_id,
+      roundType: "ve_dich",
+      delta,
+    });
+    if (scoreErr) return { error: scoreErr };
+
+    if (starEnabled) {
+      const { error: starUpdateError } = await olympia
+        .from("star_uses")
+        .update({ outcome: isCorrect ? "applied" : "wasted" })
+        .eq("match_id", session.match_id)
+        .eq("round_question_id", rq.id)
+        .eq("player_id", rq.target_player_id);
+      if (starUpdateError) return { error: starUpdateError.message };
+    }
+
+    const { data: latestAnswer } = await olympia
+      .from("answers")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("player_id", rq.target_player_id)
+      .eq("round_question_id", rq.id)
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestAnswer?.id) {
+      const { error: updateAnswerError } = await olympia
+        .from("answers")
+        .update({ is_correct: isCorrect, points_awarded: delta })
+        .eq("id", latestAnswer.id);
+      if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    if (session.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+      revalidatePath(`/olympia/client/guest/${session.join_code}`);
+    }
+
+    return { success: isCorrect ? `Đã chấm ĐÚNG (+${delta}).` : "Đã chấm SAI/HẾT GIỜ (0)." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chấm Về đích." };
+  }
+}
+
+export async function confirmVeDichMainDecisionFormAction(formData: FormData): Promise<void> {
+  await confirmVeDichMainDecisionAction({}, formData);
+}
+
+export async function confirmVeDichStealDecisionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = confirmVeDichStealSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      decision: formData.get("decision"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm cướp." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+    if (session.current_round_type !== "ve_dich") return { error: "Hiện không ở vòng Về đích." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi Về đích." };
+
+    const { data: rq, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, meta")
+      .eq("id", session.current_round_question_id)
+      .maybeSingle();
+    if (rqError) return { error: rqError.message };
+    if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
+
+    const { data: stealWinner, error: stealError } = await olympia
+      .from("buzzer_events")
+      .select("player_id")
+      .eq("round_question_id", rq.id)
+      .eq("event_type", "steal")
+      .eq("result", "win")
+      .order("occurred_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (stealError) return { error: stealError.message };
+    if (!stealWinner?.player_id) return { error: "Chưa có người giành quyền cướp." };
+
+    const value = await getVeDichValueFromRoundQuestionMeta(rq.meta);
+    const decision = parsed.data.decision;
+    const isCorrect = decision === "correct";
+    const penalty = Math.ceil(value / 2);
+    const delta = isCorrect ? value : -penalty;
+
+    const { error: scoreErr } = await applyRoundDelta({
+      olympia,
+      matchId: session.match_id,
+      playerId: stealWinner.player_id,
+      roundType: "ve_dich",
+      delta,
+    });
+    if (scoreErr) return { error: scoreErr };
+
+    const { data: latestAnswer } = await olympia
+      .from("answers")
+      .select("id")
+      .eq("match_id", session.match_id)
+      .eq("player_id", stealWinner.player_id)
+      .eq("round_question_id", rq.id)
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestAnswer?.id) {
+      const { error: updateAnswerError } = await olympia
+        .from("answers")
+        .update({ is_correct: isCorrect, points_awarded: delta })
+        .eq("id", latestAnswer.id);
+      if (updateAnswerError) return { error: updateAnswerError.message };
+    }
+
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    if (session.join_code) {
+      revalidatePath(`/olympia/client/game/${session.join_code}`);
+      revalidatePath(`/olympia/client/guest/${session.join_code}`);
+    }
+
+    return {
+      success: isCorrect ? `Cướp ĐÚNG (+${value}).` : `Cướp SAI/HẾT GIỜ (-${penalty}).`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chấm cướp." };
+  }
+}
+
+export async function confirmVeDichStealDecisionFormAction(formData: FormData): Promise<void> {
+  await confirmVeDichStealDecisionAction({}, formData);
 }
 
 const participantSchema = z.object({

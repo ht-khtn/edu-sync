@@ -9,7 +9,32 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
-import { confirmDecisionFormAction, setCurrentQuestionFormAction } from '@/app/(olympia)/olympia/actions'
+import { advanceCurrentQuestionFormAction, confirmDecisionFormAction, setCurrentQuestionFormAction } from '@/app/(olympia)/olympia/actions'
+
+type PlayerSummary = {
+  seat_index: number | null
+  display_name: string | null
+}
+
+type WinnerBuzzRow = {
+  id: string
+  player_id: string | null
+  result: string | null
+  occurred_at: string | null
+  match_players: PlayerSummary | null
+}
+
+type RecentBuzzRow = WinnerBuzzRow
+
+type RecentAnswerRow = {
+  id: string
+  player_id: string
+  answer_text: string | null
+  is_correct: boolean | null
+  points_awarded: number | null
+  submitted_at: string
+  match_players: PlayerSummary | null
+}
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
@@ -80,6 +105,37 @@ async function fetchHostData(matchCode: string) {
     .order('order_index', { ascending: true })
     .order('id', { ascending: true })
 
+  const currentQuestionId = liveSession?.current_round_question_id
+
+  const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all([
+    currentQuestionId
+      ? olympia
+        .from('buzzer_events')
+        .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
+        .eq('round_question_id', currentQuestionId)
+        .eq('result', 'win')
+        .order('occurred_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      : Promise.resolve({ data: null }),
+    currentQuestionId
+      ? olympia
+        .from('buzzer_events')
+        .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
+        .eq('round_question_id', currentQuestionId)
+        .order('occurred_at', { ascending: false })
+        .limit(10)
+      : Promise.resolve({ data: [] }),
+    currentQuestionId
+      ? olympia
+        .from('answers')
+        .select('id, player_id, answer_text, is_correct, points_awarded, submitted_at, match_players(seat_index, display_name)')
+        .eq('round_question_id', currentQuestionId)
+        .order('submitted_at', { ascending: false })
+        .limit(10)
+      : Promise.resolve({ data: [] }),
+  ])
+
   return {
     match,
     liveSession,
@@ -92,6 +148,9 @@ async function fetchHostData(matchCode: string) {
       totalScore: scoreLookup.get(p.id) ?? 0,
     })),
     roundQuestions: roundQuestions ?? [],
+    winnerBuzz: (winnerBuzz as WinnerBuzzRow | null) ?? null,
+    recentBuzzes: (recentBuzzes as RecentBuzzRow[]) ?? [],
+    recentAnswers: (recentAnswers as RecentAnswerRow[]) ?? [],
   }
 }
 
@@ -109,7 +168,7 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, liveSession, rounds, players, scores, roundQuestions } = data
+  const { match, liveSession, rounds, players, scores, roundQuestions, winnerBuzz, recentBuzzes, recentAnswers } = data
   const currentRoundId = liveSession?.current_round_id
   const currentRoundQuestions = currentRoundId
     ? roundQuestions.filter((q) => q.match_round_id === currentRoundId)
@@ -214,6 +273,128 @@ export default async function OlympiaHostConsolePage({ params }: { params: Promi
                     Hiển thị câu
                   </Button>
                 </form>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {liveSession?.id ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Điều hướng nhanh</CardTitle>
+                <CardDescription>Chuyển câu trong vòng hiện tại (tuỳ chọn hiển thị luôn).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form action={advanceCurrentQuestionFormAction} className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <input type="hidden" name="matchId" value={match.id} />
+                  <div className="w-full md:w-28 space-y-1">
+                    <p className="text-sm text-slate-700">Hướng</p>
+                    <select
+                      name="direction"
+                      defaultValue="next"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="prev">Trước</option>
+                      <option value="next">Sau</option>
+                    </select>
+                  </div>
+                  <div className="w-full md:w-32 space-y-1">
+                    <p className="text-sm text-slate-700">Thời gian (ms)</p>
+                    <input
+                      type="number"
+                      name="durationMs"
+                      min={1000}
+                      max={120000}
+                      defaultValue={5000}
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" name="autoShow" value="1" defaultChecked />
+                    Hiển thị luôn
+                  </label>
+                  <Button type="submit" className="md:w-auto w-full">
+                    Chuyển câu
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {liveSession?.current_round_question_id ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Trạng thái câu hiện tại</CardTitle>
+                <CardDescription>Theo dõi buzzer và đáp án gần nhất (top 10).</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <p>
+                    <span className="text-muted-foreground">RoundQuestion:</span>{' '}
+                    <span className="font-mono">{liveSession.current_round_question_id}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">question_state: {liveSession.question_state ?? '—'}</p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Buzzer winner</p>
+                    {winnerBuzz ? (
+                      <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+                        <p className="font-semibold">
+                          Ghế {winnerBuzz.match_players?.seat_index ?? '—'}: {winnerBuzz.match_players?.display_name ?? '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {winnerBuzz.occurred_at ? new Date(winnerBuzz.occurred_at).toLocaleTimeString('vi-VN') : '—'}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Chưa có winner.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Buzzer gần đây</p>
+                    {recentBuzzes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Chưa có buzzer.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {recentBuzzes.map((e) => (
+                          <div key={e.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
+                            <p>
+                              Ghế {e.match_players?.seat_index ?? '—'}: {e.match_players?.display_name ?? e.player_id ?? '—'}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString('vi-VN') : '—'} · {e.result ?? '—'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Đáp án gần đây</p>
+                  {recentAnswers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có đáp án.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {recentAnswers.map((a) => (
+                        <div key={a.id} className="rounded-md border border-slate-100 bg-white px-3 py-2 text-xs">
+                          <p className="font-semibold">
+                            Ghế {a.match_players?.seat_index ?? '—'}: {a.match_players?.display_name ?? a.player_id ?? '—'}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {a.submitted_at ? new Date(a.submitted_at).toLocaleTimeString('vi-VN') : '—'}
+                            {typeof a.is_correct === 'boolean' ? ` · ${a.is_correct ? 'ĐÚNG' : 'SAI'}` : ''}
+                            {typeof a.points_awarded === 'number' ? ` · ${a.points_awarded >= 0 ? '+' : ''}${a.points_awarded}` : ''}
+                          </p>
+                          {a.answer_text ? <p className="mt-1">{a.answer_text}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ) : null}

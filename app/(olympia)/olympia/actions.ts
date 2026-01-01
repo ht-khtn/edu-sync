@@ -65,6 +65,16 @@ const updateMatchQuestionSetsSchema = z.object({
   questionSetIds: z.array(z.string().uuid()).default([]),
 });
 
+const advanceQuestionSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  direction: z.enum(["next", "prev"]).default("next"),
+  durationMs: z.number().int().min(1000).max(120000).optional().default(5000),
+  autoShow: z
+    .string()
+    .optional()
+    .transform((val) => val === "1"),
+});
+
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 type ParsedQuestionSetItem = {
@@ -1017,12 +1027,18 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
 
     const { data: roundQuestion, error: rqError } = await olympia
       .from("round_questions")
-      .select("id, match_round_id")
+      .select("id, match_round_id, target_player_id")
       .eq("id", session.current_round_question_id)
       .maybeSingle();
 
     if (rqError) return { error: rqError.message };
     if (!roundQuestion) return { error: "Không tìm thấy câu hỏi hiện tại." };
+
+    // Khởi động lượt cá nhân: nếu round_questions.target_player_id có giá trị,
+    // chỉ thí sinh đó mới được gửi đáp án.
+    if (roundQuestion.target_player_id && roundQuestion.target_player_id !== playerRow.id) {
+      return { error: "Đây là lượt cá nhân, bạn không phải người được chọn." };
+    }
 
     const submittedAt = new Date().toISOString();
     const { error: insertError } = await olympia.from("answers").insert({
@@ -1089,6 +1105,17 @@ export async function triggerBuzzerAction(
 
     if (playerError) return { error: playerError.message };
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    // Khởi động lượt cá nhân: không cho bấm chuông.
+    const { data: rq, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, target_player_id")
+      .eq("id", session.current_round_question_id)
+      .maybeSingle();
+    if (rqError) return { error: rqError.message };
+    if (rq?.target_player_id) {
+      return { error: "Câu này là lượt cá nhân, không dùng buzzer." };
+    }
 
     // Nếu đã có người thắng, không cho nhận thêm.
     const { data: firstBuzz, error: buzzError } = await olympia
@@ -1294,6 +1321,83 @@ export async function setCurrentQuestionAction(
 // Wrapper dùng trực tiếp cho <form action={...}> trong Server Component.
 export async function setCurrentQuestionFormAction(formData: FormData): Promise<void> {
   await setCurrentQuestionAction({}, formData);
+}
+
+export async function advanceCurrentQuestionAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = advanceQuestionSchema.safeParse({
+      matchId: formData.get("matchId"),
+      direction: formData.get("direction") ?? "next",
+      durationMs: formData.get("durationMs") ? Number(formData.get("durationMs")) : undefined,
+      autoShow: formData.get("autoShow"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin điều hướng câu hỏi." };
+    }
+
+    const { matchId, direction, durationMs, autoShow } = parsed.data;
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status, current_round_id, current_round_question_id")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (!session.current_round_id) return { error: "Chưa chọn vòng hiện tại." };
+
+    const { data: questions, error: qError } = await olympia
+      .from("round_questions")
+      .select("id, order_index")
+      .eq("match_round_id", session.current_round_id)
+      .order("order_index", { ascending: true });
+    if (qError) return { error: qError.message };
+    const list = questions ?? [];
+    if (list.length === 0) return { error: "Vòng này chưa có câu hỏi." };
+
+    const currentIdx = session.current_round_question_id
+      ? list.findIndex((q) => q.id === session.current_round_question_id)
+      : -1;
+
+    const nextIdx =
+      direction === "next"
+        ? Math.min(list.length - 1, currentIdx + 1)
+        : Math.max(0, currentIdx - 1);
+
+    const nextQuestion = list[nextIdx];
+    if (!nextQuestion) return { error: "Không tìm thấy câu tiếp theo." };
+
+    const timerDeadline = autoShow ? new Date(Date.now() + durationMs).toISOString() : null;
+
+    const { error: updateError } = await olympia
+      .from("live_sessions")
+      .update({
+        current_round_question_id: nextQuestion.id,
+        question_state: autoShow ? "showing" : "hidden",
+        timer_deadline: timerDeadline,
+      })
+      .eq("id", session.id);
+
+    if (updateError) return { error: updateError.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    return { success: autoShow ? "Đã chuyển & hiển thị câu mới." : "Đã chuyển sang câu mới." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chuyển câu hỏi." };
+  }
+}
+
+export async function advanceCurrentQuestionFormAction(formData: FormData): Promise<void> {
+  await advanceCurrentQuestionAction({}, formData);
 }
 
 const participantSchema = z.object({

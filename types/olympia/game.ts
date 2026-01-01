@@ -66,6 +66,33 @@ export type BuzzerEventRow = {
   created_at?: string | null;
 };
 
+export type ObstacleRow = {
+  id: string;
+  match_round_id: string;
+  title: string | null;
+  final_keyword: string;
+  image_url: string | null;
+  meta?: Record<string, unknown> | null;
+};
+
+export type ObstacleTileRow = {
+  id: string;
+  obstacle_id: string;
+  round_question_id: string | null;
+  position_index: number;
+  is_open: boolean;
+};
+
+export type ObstacleGuessRow = {
+  id: string;
+  obstacle_id: string;
+  player_id: string;
+  guess_text: string;
+  is_correct: boolean;
+  attempt_order: number | null;
+  attempted_at: string;
+};
+
 export type GameSessionPayload = {
   session: LiveSessionRow;
   match: MatchRow;
@@ -73,6 +100,9 @@ export type GameSessionPayload = {
   scores: ScoreRow[];
   roundQuestions: RoundQuestionRow[];
   buzzerEvents: BuzzerEventRow[];
+  obstacle?: ObstacleRow | null;
+  obstacleTiles?: ObstacleTileRow[];
+  obstacleGuesses?: ObstacleGuessRow[];
   serverTimestamp: string;
   viewerUserId: string | null;
 };

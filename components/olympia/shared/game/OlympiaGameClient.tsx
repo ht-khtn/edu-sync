@@ -56,6 +56,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
     players,
     scores,
     buzzerEvents,
+    obstacle,
+    obstacleTiles,
+    obstacleGuesses,
     timerLabel,
     questionState,
     roundType,
@@ -112,6 +115,54 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {roundType === 'vcnv' && obstacle ? (
+              <div className="rounded-xl border bg-white p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase text-slate-500">CNV · Chướng ngại vật</p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Tiêu đề:</span> {obstacle.title ?? '—'}
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {(obstacleTiles ?? []).length > 0 ? (
+                    obstacleTiles
+                      .slice()
+                      .sort((a, b) => a.position_index - b.position_index)
+                      .map((t) => (
+                        <div
+                          key={t.id}
+                          className={cn(
+                            'rounded-md border px-2 py-3 text-center text-xs font-mono',
+                            t.is_open ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+                          )}
+                        >
+                          {t.position_index}
+                          <div className="text-[10px] mt-1">{t.is_open ? 'MỞ' : 'ĐÓNG'}</div>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="col-span-5 text-sm text-muted-foreground">Chưa có dữ liệu ô CNV.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Lượt đoán gần đây</p>
+                  {(obstacleGuesses ?? []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có lượt đoán.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {obstacleGuesses.slice(0, 5).map((g) => (
+                        <div key={g.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                          <p className="font-semibold">{g.player_id}</p>
+                          <p className="text-muted-foreground">
+                            {g.attempted_at ? new Date(g.attempted_at).toLocaleTimeString('vi-VN') : '—'} · {g.is_correct ? 'ĐÚNG' : 'CHƯA/SAI'}
+                          </p>
+                          <p className="mt-1">{g.guess_text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
               <div className="space-y-3">
                 <div className="aspect-video w-full overflow-hidden rounded-xl border bg-slate-900/90 text-xs text-white">
@@ -128,56 +179,65 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                   </p>
                 </div>
               </div>
-              <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase text-slate-500">Bài làm</p>
-                <form action={answerAction} className="space-y-3">
-                  <input type="hidden" name="sessionId" value={session.id} />
-                  <Textarea
-                    name="notes"
-                    placeholder="Nhập ghi chú hoặc lập luận"
-                    rows={6}
-                    disabled={disableInteractions}
-                    className="resize-none"
-                  />
-                  <Input name="answer" placeholder="Đáp án cuối cùng" disabled={disableInteractions} />
-                  <div className="flex gap-3">
-                    <FormSubmitButton disabled={disableInteractions}>Gửi đáp án</FormSubmitButton>
-                  </div>
-                  {answerFeedback ? (
-                    <p className={cn('text-xs', answerState.error ? 'text-destructive' : 'text-emerald-600')}>
-                      {answerFeedback}
+              {!isGuest ? (
+                <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Bài làm</p>
+                  <form action={answerAction} className="space-y-3">
+                    <input type="hidden" name="sessionId" value={session.id} />
+                    <Textarea
+                      name="notes"
+                      placeholder="Nhập ghi chú hoặc lập luận"
+                      rows={6}
+                      disabled={disableInteractions}
+                      className="resize-none"
+                    />
+                    <Input name="answer" placeholder="Đáp án cuối cùng" disabled={disableInteractions} />
+                    <div className="flex gap-3">
+                      <FormSubmitButton disabled={disableInteractions}>Gửi đáp án</FormSubmitButton>
+                    </div>
+                    {answerFeedback ? (
+                      <p className={cn('text-xs', answerState.error ? 'text-destructive' : 'text-emerald-600')}>
+                        {answerFeedback}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-muted-foreground">
+                      {/* TODO: route data vào scoring service thay vì chỉ log (stub). */}
+                      Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.
                     </p>
-                  ) : null}
-                  <p className="text-xs text-muted-foreground">
-                    {/* TODO: route data vào scoring service thay vì chỉ log (stub). */}
-                    Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.
-                  </p>
-                </form>
+                  </form>
 
-                <Separator />
+                  <Separator />
 
-                <form action={buzzerAction} className="space-y-2">
-                  <input type="hidden" name="sessionId" value={session.id} />
-                  <FormSubmitButton variant="outline" disabled={disableInteractions}>
-                    Bấm chuông
-                  </FormSubmitButton>
-                  {buzzerFeedback ? (
-                    <p className={cn('text-xs', buzzerState.error ? 'text-destructive' : 'text-emerald-600')}>
-                      {buzzerFeedback}
+                  <form action={buzzerAction} className="space-y-2">
+                    <input type="hidden" name="sessionId" value={session.id} />
+                    <FormSubmitButton variant="outline" disabled={disableInteractions}>
+                      Bấm chuông
+                    </FormSubmitButton>
+                    {buzzerFeedback ? (
+                      <p className={cn('text-xs', buzzerState.error ? 'text-destructive' : 'text-emerald-600')}>
+                        {buzzerFeedback}
+                      </p>
+                    ) : null}
+                    <p className="text-[11px] text-muted-foreground">
+                      {/* TODO: dispatch triggerBuzzerAction tới realtime channel + lock seat. */}
+                      Chức năng hiện ghi nhận yêu cầu và sẽ được đồng bộ với host console trong bản kế tiếp.
                     </p>
-                  ) : null}
-                  <p className="text-[11px] text-muted-foreground">
-                    {/* TODO: dispatch triggerBuzzerAction tới realtime channel + lock seat. */}
-                    Chức năng hiện ghi nhận yêu cầu và sẽ được đồng bộ với host console trong bản kế tiếp.
-                  </p>
-                </form>
+                  </form>
 
-                {isGuest ? (
-                  <Alert>
-                    <AlertDescription>Bạn cần đăng nhập để gửi đáp án hoặc bấm chuông.</AlertDescription>
-                  </Alert>
-                ) : null}
-              </div>
+                  {isGuest ? (
+                    <Alert>
+                      <AlertDescription>Bạn cần đăng nhập để gửi đáp án hoặc bấm chuông.</AlertDescription>
+                    </Alert>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Chế độ khách</p>
+                  <p className="text-sm text-muted-foreground">
+                    Bạn đang xem màn hình công khai. Thí sinh vui lòng vào link game và đăng nhập để bấm chuông / gửi đáp án.
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

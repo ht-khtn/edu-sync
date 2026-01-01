@@ -11,6 +11,9 @@ import getSupabase from "@/lib/supabase";
 import type {
   BuzzerEventRow,
   GameSessionPayload,
+  ObstacleGuessRow,
+  ObstacleRow,
+  ObstacleTileRow,
   RoundQuestionRow,
   ScoreRow,
 } from "@/types/olympia/game";
@@ -49,6 +52,13 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [roundQuestions, setRoundQuestions] = useState(initialData.roundQuestions);
   const [players] = useState(initialData.players);
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
+  const [obstacle, setObstacle] = useState<ObstacleRow | null>(initialData.obstacle ?? null);
+  const [obstacleTiles, setObstacleTiles] = useState<ObstacleTileRow[]>(
+    initialData.obstacleTiles ?? []
+  );
+  const [obstacleGuesses, setObstacleGuesses] = useState<ObstacleGuessRow[]>(
+    initialData.obstacleGuesses ?? []
+  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isRealtimeReady, setRealtimeReady] = useState(false);
   const [timer, setTimer] = useState<TimerSnapshot>(() =>
@@ -156,6 +166,46 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               if ((eventRow.match_id ?? matchId) !== matchId) return;
               setBuzzerEvents((prev) => [eventRow, ...prev].slice(0, 20));
             }
+          )
+          // CNV: nghe obstacle + tile + guess để render board tối thiểu.
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "olympia", table: "obstacles" },
+            (payload) => {
+              const row = payload.new as ObstacleRow | null;
+              if (!row) return;
+              if (!session.current_round_id) return;
+              if (row.match_round_id !== session.current_round_id) return;
+              setObstacle(row);
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "olympia", table: "obstacle_tiles" },
+            (payload) => {
+              const row = payload.new as ObstacleTileRow | null;
+              if (!row) return;
+              if (!obstacle?.id) return;
+              if (row.obstacle_id !== obstacle.id) return;
+              setObstacleTiles((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((t) => t.id === row.id);
+                if (idx === -1) next.push(row);
+                else next[idx] = { ...next[idx], ...row };
+                return next.sort((a, b) => a.position_index - b.position_index);
+              });
+            }
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "olympia", table: "obstacle_guesses" },
+            (payload) => {
+              const row = payload.new as ObstacleGuessRow | null;
+              if (!row) return;
+              if (!obstacle?.id) return;
+              if (row.obstacle_id !== obstacle.id) return;
+              setObstacleGuesses((prev) => [row, ...prev].slice(0, 20));
+            }
           );
 
         channel.subscribe((status) => {
@@ -189,7 +239,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId]);
+  }, [sessionId, matchId, obstacle?.id, session.current_round_id]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -226,6 +276,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     scores,
     roundQuestions,
     buzzerEvents,
+    obstacle,
+    obstacleTiles,
+    obstacleGuesses,
     timer,
     timerLabel,
     questionState,

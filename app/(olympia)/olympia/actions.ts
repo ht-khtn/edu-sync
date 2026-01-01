@@ -474,17 +474,65 @@ export async function createQuestionAction(
     }
 
     const payload = parsed.data;
-    const { error } = await olympia.from("questions").insert({
+    const defaultSetName = "Kho đề (tạo tay)";
+
+    const { data: existingSet, error: existingSetError } = await olympia
+      .from("question_sets")
+      .select("id")
+      .eq("name", defaultSetName)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (existingSetError) return { error: existingSetError.message };
+
+    const setId = existingSet?.id
+      ? existingSet.id
+      : (
+          await olympia
+            .from("question_sets")
+            .insert({
+              name: defaultSetName,
+              item_count: 0,
+              original_filename: null,
+              uploaded_by: appUserId ?? null,
+            })
+            .select("id")
+            .maybeSingle()
+        ).data?.id;
+
+    if (!setId) return { error: "Không thể tạo bộ đề mặc định để lưu câu hỏi." };
+
+    const { data: lastItem, error: lastItemError } = await olympia
+      .from("question_set_items")
+      .select("order_index")
+      .eq("question_set_id", setId)
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastItemError) return { error: lastItemError.message };
+
+    const nextOrderIndex = (lastItem?.order_index ?? -1) + 1;
+
+    const { error } = await olympia.from("question_set_items").insert({
+      question_set_id: setId,
       code: payload.code.toUpperCase(),
       category: payload.category,
       question_text: payload.questionText,
       answer_text: payload.answerText,
       note: payload.note,
-      created_by: appUserId,
-      submitted_by: appUserId ?? "unknown",
+      submitted_by: appUserId ?? null,
+      source: null,
+      image_url: null,
+      audio_url: null,
+      order_index: nextOrderIndex,
     });
 
     if (error) return { error: error.message };
+
+    await olympia
+      .from("question_sets")
+      .update({ item_count: nextOrderIndex + 1 })
+      .eq("id", setId);
 
     revalidatePath("/olympia/admin/question-bank");
     return { success: "Đã thêm câu hỏi." };
@@ -3171,10 +3219,47 @@ export async function updateMatchAction(_: ActionState, formData: FormData): Pro
  * Generate round_questions from question_set_items based on code prefix.
  * Partitions items into 4 rounds (khoi_dong, vcnv, tang_toc, ve_dich).
  */
-async function generateRoundQuestionsFromSetsAction(matchId: string, questionSetIds: string[]) {
+type GenerateRoundQuestionsDebug = {
+  matchId: string;
+  questionSetIdsCount: number;
+  roundsCount: number;
+  roundTypes: string[];
+  itemsFetched: number;
+  itemsRecognized: number;
+  itemsUnrecognized: number;
+  recognizedByRound: Record<string, number>;
+  insertedTotal: number;
+  insertErrors: Array<{ roundType: string; message: string }>;
+  notes: string[];
+};
+
+async function generateRoundQuestionsFromSetsAction(
+  matchId: string,
+  questionSetIds: string[]
+): Promise<GenerateRoundQuestionsDebug> {
+  const debug: GenerateRoundQuestionsDebug = {
+    matchId,
+    questionSetIdsCount: questionSetIds.length,
+    roundsCount: 0,
+    roundTypes: [],
+    itemsFetched: 0,
+    itemsRecognized: 0,
+    itemsUnrecognized: 0,
+    recognizedByRound: {},
+    insertedTotal: 0,
+    insertErrors: [],
+    notes: [],
+  };
+
   try {
     const { supabase } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
+
+    if (questionSetIds.length === 0) {
+      debug.notes.push("Không có questionSetIds được chọn.");
+      console.warn("[Olympia] generateRoundQuestionsFromSets: empty questionSetIds", { matchId });
+      return debug;
+    }
 
     // Fetch all match_rounds for this match
     const { data: roundsData, error: roundsError } = await olympia
@@ -3182,7 +3267,15 @@ async function generateRoundQuestionsFromSetsAction(matchId: string, questionSet
       .select("id, round_type")
       .eq("match_id", matchId);
     if (roundsError) throw roundsError;
-    if (!roundsData || roundsData.length === 0) return; // No rounds yet
+
+    debug.roundsCount = roundsData?.length ?? 0;
+    debug.roundTypes = (roundsData ?? []).map((r) => r.round_type);
+
+    if (!roundsData || roundsData.length === 0) {
+      debug.notes.push("Chưa có match_rounds cho trận (chưa tạo vòng).");
+      console.warn("[Olympia] generateRoundQuestionsFromSets: no match_rounds", { matchId });
+      return debug;
+    }
 
     const roundMap = new Map(roundsData.map((r) => [r.round_type, r.id]));
 
@@ -3193,7 +3286,17 @@ async function generateRoundQuestionsFromSetsAction(matchId: string, questionSet
       .in("question_set_id", questionSetIds)
       .order("order_index", { ascending: true });
     if (itemsError) throw itemsError;
-    if (!itemsData || itemsData.length === 0) return; // No items
+
+    debug.itemsFetched = itemsData?.length ?? 0;
+
+    if (!itemsData || itemsData.length === 0) {
+      debug.notes.push("Không có question_set_items trong các bộ đề đã chọn.");
+      console.warn("[Olympia] generateRoundQuestionsFromSets: no items", {
+        matchId,
+        questionSetIdsCount: questionSetIds.length,
+      });
+      return debug;
+    }
 
     // Clear existing round_questions for this match
     const { error: deleteError } = await olympia
@@ -3204,19 +3307,45 @@ async function generateRoundQuestionsFromSetsAction(matchId: string, questionSet
 
     // Partition items by round_type (based on code prefix)
     const roundPartitions = new Map<string, typeof itemsData>();
+    let unrecognized = 0;
     for (const item of itemsData) {
       const roundType = parseQuestionRoundType(item.code);
-      if (!roundType) continue; // Skip items with unrecognized code
+      if (!roundType) {
+        unrecognized += 1;
+        continue;
+      }
       if (!roundPartitions.has(roundType)) {
         roundPartitions.set(roundType, []);
       }
       roundPartitions.get(roundType)!.push(item);
     }
 
+    debug.itemsUnrecognized = unrecognized;
+    debug.itemsRecognized = debug.itemsFetched - unrecognized;
+    debug.recognizedByRound = Object.fromEntries(
+      Array.from(roundPartitions.entries()).map(([roundType, items]) => [roundType, items.length])
+    );
+
+    if (debug.itemsRecognized === 0) {
+      debug.notes.push(
+        "Không nhận diện được mã câu. Code cần bắt đầu bằng KD/VCNV(CNV)/TT/VD (không phân biệt hoa/thường)."
+      );
+      console.warn("[Olympia] generateRoundQuestionsFromSets: all codes unrecognized", {
+        matchId,
+        itemsFetched: debug.itemsFetched,
+      });
+      return debug;
+    }
+
     // Insert round_questions for each round
     for (const [roundType, items] of roundPartitions.entries()) {
       const roundId = roundMap.get(roundType);
-      if (!roundId) continue;
+      if (!roundId) {
+        debug.notes.push(
+          `Không có match_rounds.round_type='${roundType}' nên bỏ qua ${items.length} câu.`
+        );
+        continue;
+      }
 
       const roundQuestionsPayload = items.map((item, idx) => ({
         match_round_id: roundId,
@@ -3226,17 +3355,31 @@ async function generateRoundQuestionsFromSetsAction(matchId: string, questionSet
         answer_text: item.answer_text,
         note: item.note,
         target_player_id: null,
-        meta: {},
-        question_id: null, // Deprecated, kept for backward compatibility
+        meta: item.code ? { code: item.code } : {},
       }));
 
       const { error: insertError } = await olympia
         .from("round_questions")
         .insert(roundQuestionsPayload);
-      if (insertError) console.warn("[Olympia] Failed to insert round_questions:", insertError);
+      if (insertError) {
+        debug.insertErrors.push({ roundType, message: insertError.message });
+        console.warn("[Olympia] Failed to insert round_questions:", {
+          matchId,
+          roundType,
+          message: insertError.message,
+        });
+      } else {
+        debug.insertedTotal += roundQuestionsPayload.length;
+      }
     }
+
+    console.info("[Olympia] generateRoundQuestionsFromSets summary:", debug);
+    return debug;
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    debug.notes.push(`Lỗi khi generate round_questions: ${message}`);
     console.error("[Olympia] generateRoundQuestionsFromSets error:", err);
+    return debug;
   }
 }
 
@@ -3296,13 +3439,24 @@ export async function updateMatchQuestionSetsAction(
     }
 
     // Auto-generate round_questions from question_set_items
-    await generateRoundQuestionsFromSetsAction(matchId, uniqueSetIds);
+    const genDebug = await generateRoundQuestionsFromSetsAction(matchId, uniqueSetIds);
 
     revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
     revalidatePath("/olympia/admin/matches");
     revalidatePath("/olympia/admin");
-    return { success: "Đã cập nhật bộ đề cho trận." };
+
+    const debugParts = [
+      `rounds=${genDebug.roundsCount}`,
+      `items=${genDebug.itemsFetched}`,
+      `recognized=${genDebug.itemsRecognized}`,
+      `inserted=${genDebug.insertedTotal}`,
+      genDebug.insertErrors.length > 0 ? `errors=${genDebug.insertErrors.length}` : null,
+    ].filter((v): v is string => Boolean(v));
+
+    const noteText = genDebug.notes.length > 0 ? ` Ghi chú: ${genDebug.notes.join(" | ")}` : "";
+    const debugText = debugParts.length > 0 ? ` (debug: ${debugParts.join(", ")}).` : ".";
+    return { success: `Đã cập nhật bộ đề cho trận.${debugText}${noteText}` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể gán bộ đề cho trận." };
   }

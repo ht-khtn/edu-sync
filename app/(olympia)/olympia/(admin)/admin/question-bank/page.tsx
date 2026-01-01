@@ -14,6 +14,7 @@ type QuestionRow = {
   answer_text: string
   note: string | null
   created_at: string
+  question_sets?: { name: string } | { name: string }[] | null
 }
 
 type QuestionSetRow = {
@@ -31,8 +32,8 @@ async function fetchQuestionBank() {
   const { supabase } = await getServerAuthContext()
   const olympia = supabase.schema('olympia')
   const { data, error, count } = await olympia
-    .from('questions')
-    .select('id, code, category, question_text, answer_text, note, created_at', { count: 'exact' })
+    .from('question_set_items')
+    .select('id, code, category, question_text, answer_text, note, created_at, question_sets(name)', { count: 'exact' })
     .order('created_at', { ascending: false })
     .limit(50)
 
@@ -106,7 +107,7 @@ export default async function OlympiaQuestionBankPage() {
         <CardHeader>
           <CardTitle>Tổng quan</CardTitle>
           <CardDescription>
-            {total} câu hỏi được ghi nhận trong bảng <span className="font-medium text-slate-900">olympia.questions</span>.
+            {total} câu hỏi được ghi nhận trong bảng <span className="font-medium text-slate-900">olympia.question_set_items</span>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -166,7 +167,7 @@ export default async function OlympiaQuestionBankPage() {
         <Alert>
           <AlertTitle>Chưa có dữ liệu</AlertTitle>
           <AlertDescription>
-            Thêm câu hỏi mới vào bảng olympia.questions để kiểm thử tính năng đồng bộ.
+            Tải bộ đề hoặc tạo câu hỏi mới để kiểm thử tính năng đồng bộ.
           </AlertDescription>
         </Alert>
       ) : (
@@ -183,6 +184,7 @@ export default async function OlympiaQuestionBankPage() {
                   <TableHead>Chuyên mục</TableHead>
                   <TableHead>Nội dung</TableHead>
                   <TableHead>Đáp án</TableHead>
+                  <TableHead>Bộ đề</TableHead>
                   <TableHead>Tạo lúc</TableHead>
                 </TableRow>
               </TableHeader>
@@ -197,6 +199,11 @@ export default async function OlympiaQuestionBankPage() {
                       <p className="line-clamp-3 text-muted-foreground">{question.question_text}</p>
                     </TableCell>
                     <TableCell className="text-sm font-medium text-slate-900">{question.answer_text}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {Array.isArray(question.question_sets)
+                        ? question.question_sets[0]?.name ?? '—'
+                        : question.question_sets?.name ?? '—'}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(question.created_at)}</TableCell>
                   </TableRow>
                 ))}

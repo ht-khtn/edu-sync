@@ -100,19 +100,22 @@ type HostObstacleGuessRow = {
   match_players: PlayerSummary | PlayerSummary[] | null
 }
 
-type QuestionJoinRow = {
-  code: string
-  category: string | null
-  question_text: string
-  answer_text: string
+type RoundQuestionRow = {
+  id: string
+  match_round_id: string
+  order_index: number
+  question_id: string | null
+  question_set_item_id: string | null
+  target_player_id: string | null
+  meta: Record<string, unknown> | null
+  question_text: string | null
+  answer_text: string | null
   note: string | null
-  image_url: string | null
-  audio_url: string | null
+  match_rounds?: RoundJoinRow | RoundJoinRow[] | null | undefined
 }
 
-function normalizeQuestionJoin(value: QuestionJoinRow | QuestionJoinRow[] | null | undefined): QuestionJoinRow | null {
-  if (!value) return null
-  return Array.isArray(value) ? value[0] ?? null : value
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
 type RoundJoinRow = {
@@ -125,8 +128,14 @@ function normalizeRoundJoin(value: RoundJoinRow | RoundJoinRow[] | null | undefi
   return Array.isArray(value) ? value[0] ?? null : value
 }
 
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+function getMetaCode(meta: Record<string, unknown> | null | undefined): string | null {
+  if (!meta) return null
+  const code = meta.code
+  return typeof code === 'string' && code.trim() ? code : null
+}
+
+function getRoundQuestionLabel(q: Pick<RoundQuestionRow, 'id' | 'question_set_item_id' | 'meta'>): string {
+  return getMetaCode(q.meta) ?? q.question_set_item_id ?? q.id
 }
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
@@ -211,7 +220,7 @@ async function fetchHostData(matchCode: string) {
   const { data: roundQuestions } = await olympia
     .from('round_questions')
     .select(
-      'id, match_round_id, order_index, question_id, target_player_id, meta, match_rounds!inner(match_id, round_type), questions(code, category, question_text, answer_text, note, image_url, audio_url)'
+      'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, match_rounds!inner(match_id, round_type)'
     )
     .eq('match_rounds.match_id', realMatchId)
     .order('order_index', { ascending: true })
@@ -373,8 +382,7 @@ export default async function OlympiaHostConsolePage({
   for (const q of roundQuestions) {
     const roundType = normalizeRoundJoin((q as unknown as { match_rounds?: RoundJoinRow | RoundJoinRow[] | null | undefined }).match_rounds)?.round_type
     const key = roundType ?? 'unknown'
-    const code = normalizeQuestionJoin((q as unknown as { questions?: QuestionJoinRow | QuestionJoinRow[] | null | undefined }).questions)?.code
-    const label = code ?? q.question_id ?? q.id
+    const label = getRoundQuestionLabel(q as unknown as RoundQuestionRow)
     const list = questionsByRoundType.get(key) ?? []
     list.push(label)
     questionsByRoundType.set(key, list)
@@ -412,13 +420,31 @@ export default async function OlympiaHostConsolePage({
   const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : undefined
   const veDichValueText = veDichValue === 20 || veDichValue === 30 ? String(veDichValue) : ''
 
-  const previewJoinedQuestion = normalizeQuestionJoin(
-    (previewRoundQuestion as unknown as { questions?: QuestionJoinRow | QuestionJoinRow[] | null | undefined })?.questions
-  )
+  type PreviewQuestionType = {
+    code: string
+    category: string | null
+    question_text: string
+    answer_text: string
+    note: string | null
+    image_url: string | null
+    audio_url: string | null
+  }
+
+  const previewJoinedQuestion: PreviewQuestionType | null = previewRoundQuestion ? {
+    code: '',
+    category: null,
+    question_text: (previewRoundQuestion as unknown as RoundQuestionRow).question_text ?? '',
+    answer_text: (previewRoundQuestion as unknown as RoundQuestionRow).answer_text ?? '',
+    note: (previewRoundQuestion as unknown as RoundQuestionRow).note ?? null,
+    image_url: null,
+    audio_url: null,
+  } : null
   const previewQuestionText = previewJoinedQuestion?.question_text ?? null
   const previewAnswerText = previewJoinedQuestion?.answer_text ?? null
   const previewNoteText = previewJoinedQuestion?.note ?? null
-  const previewQuestionCode = previewJoinedQuestion?.code ?? null
+  const previewQuestionCode = previewRoundQuestion
+    ? getMetaCode((previewRoundQuestion as unknown as RoundQuestionRow).meta)
+    : null
 
 
   return (
@@ -491,7 +517,7 @@ export default async function OlympiaHostConsolePage({
                       ) : null}
                       {currentRoundQuestions.map((q) => (
                         <option key={q.id} value={q.id}>
-                          #{q.order_index ?? '?'} · {q.question_id ?? 'n/a'}
+                          #{q.order_index ?? '?'} · {getRoundQuestionLabel(q as unknown as RoundQuestionRow)}
                         </option>
                       ))}
                     </select>
@@ -580,7 +606,7 @@ export default async function OlympiaHostConsolePage({
                 </div>
 
                 <p className="mt-3 whitespace-pre-wrap text-lg font-semibold leading-relaxed">
-                  {previewQuestionText ?? (previewRoundQuestion?.question_id ? `Câu hỏi: ${previewRoundQuestion.question_id}` : 'Chưa có nội dung câu hỏi')}
+                  {previewQuestionText ?? (previewRoundQuestion ? `ID: ${getRoundQuestionLabel(previewRoundQuestion as unknown as RoundQuestionRow)}` : 'Chưa có nội dung câu hỏi')}
                 </p>
 
                 {previewAnswerText ? (

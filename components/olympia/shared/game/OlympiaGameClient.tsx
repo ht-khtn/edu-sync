@@ -4,13 +4,8 @@ import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { submitAnswerAction, submitObstacleGuessAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import type { GameSessionPayload } from '@/types/olympia/game'
@@ -61,12 +56,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     answers,
     starUses,
     obstacle,
-    obstacleTiles,
-    obstacleGuesses,
     timerLabel,
     questionState,
     roundType,
-    statusMessage,
     isRealtimeReady,
     viewerUserId,
     refreshFromServer,
@@ -99,6 +91,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   const questionTitle = roundLabel[roundType] ?? roundType
   const isVeDich = roundType === 've_dich'
+  const isKhoiDong = roundType === 'khoi_dong'
   const isStealWindow = isVeDich && questionState === 'answer_revealed'
   const questionStateText =
     isStealWindow ? 'Cửa sổ cướp' : (questionStateLabel[questionState] ?? questionState)
@@ -135,19 +128,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
   const isViewerTarget = Boolean(viewerPlayer?.id && targetPlayerId && viewerPlayer.id === targetPlayerId)
 
-  const veDichValueRaw =
-    currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
-      ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
-      : undefined
-  const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : null
-
-  const starEnabled =
-    Boolean(
-      isVeDich &&
-      currentQuestionId &&
-      targetPlayerId &&
-      (starUses ?? []).some((s) => s.round_question_id === currentQuestionId && s.player_id === targetPlayerId)
-    )
+  // ve_dich_value/star_uses vẫn được giữ trong state để dùng ở giai đoạn sau;
+  // UI game hiện tại chưa hiển thị các badge này.
 
   const stealWinnerPlayerId =
     isStealWindow && currentQuestionId
@@ -178,337 +160,216 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     )
   const disableBuzz = isVeDich ? !canBuzzVeDich : disableInteractions
 
-  const recentPlayerAnswers = (answers ?? []).slice(0, 10)
+  void answers
+  void starUses
+
+  const viewerTotalScore = viewerPlayer?.id ? (scoreboard.find((s) => s.id === viewerPlayer.id)?.total ?? 0) : null
+  void showQuestionText
+  const isSessionRunning = session.status === 'running'
+  const isWaitingScreen = !isMc && questionState === 'hidden'
 
   return (
-    <div className="grid gap-4 lg:gap-6 lg:grid-cols-4 auto-rows-max lg:auto-rows-auto">
-      <div className="lg:col-span-3 space-y-4 lg:space-y-6">
-        <Card className="overflow-hidden border border-slate-200">
-          <CardHeader className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6">
-            <div className="min-w-0">
-              <CardTitle className="text-lg sm:text-xl truncate">{questionTitle}</CardTitle>
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">Trận: {match.name}</p>
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      {/* HUD */}
+      <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
+          <p className="text-sm text-slate-100 truncate">{match.name}</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
+              session.timer_deadline ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50' : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+            )}
+          >
+            {timerLabel}
+          </div>
+
+          {viewerTotalScore != null ? (
+            <div className="text-right">
+              <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
+              <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              <Badge variant="outline" className="text-xs">{questionStateText}</Badge>
-              <div className={cn('rounded-md border px-2 sm:px-3 py-1 font-mono text-sm sm:text-lg whitespace-nowrap', session.timer_deadline ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
-                {timerLabel}
-              </div>
+          ) : (
+            <div className="text-right">
+              <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
+              <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isVeDich && currentRoundQuestion ? (
-              <div className="rounded-xl border bg-white p-4 space-y-2">
-                <p className="text-xs font-semibold uppercase text-slate-500">Về đích</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    Trả lời chính: {targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'} · ${targetPlayer.display_name ?? '—'}` : '—'}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    Giá trị: {veDichValue === 30 ? 30 : 20}
-                  </Badge>
-                  {starEnabled ? (
-                    <Badge className="text-xs">STAR</Badge>
-                  ) : null}
-                </div>
-                {isStealWindow ? (
-                  <p className="text-xs text-amber-700">
-                    Cửa sổ cướp đang mở. {stealWinnerLabel ? `Winner: ${stealWinnerLabel}` : 'Chờ tín hiệu buzzer thắng.'}
+          )}
+        </div>
+      </header>
+
+      {/* MAIN SCREEN */}
+      <main className="flex-1 relative flex items-center justify-center px-6 py-10 bg-black">
+        {!isSessionRunning ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80">
+            <div className="text-center space-y-2">
+              <p className="text-xs uppercase tracking-widest text-slate-200">Trạng thái</p>
+              <p className="text-2xl font-semibold">Phòng chưa mở</p>
+              <p className="text-sm text-slate-200">Hiện tại: {questionStateText}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {isWaitingScreen ? (
+          <div className="text-center space-y-3">
+            <p className="text-xs uppercase tracking-widest text-slate-200">Màn chờ</p>
+            <p className="text-4xl font-semibold">ĐANG CHỜ</p>
+            <p className="text-sm text-slate-200">Host sẽ bật câu hỏi trong giây lát</p>
+          </div>
+        ) : (
+          <div className="w-full max-w-5xl text-center">
+            <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
+              {questionText?.trim() ? questionText : '—'}
+            </p>
+
+            {isMc && (answerText || noteText) ? (
+              <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
+                {answerText ? (
+                  <p className="text-sm whitespace-pre-wrap">
+                    <span className="text-slate-200">Đáp án:</span> {answerText}
+                  </p>
+                ) : null}
+                {noteText ? (
+                  <p className="mt-2 text-sm whitespace-pre-wrap">
+                    <span className="text-slate-200">Ghi chú:</span> {noteText}
                   </p>
                 ) : null}
               </div>
             ) : null}
+          </div>
+        )}
 
-            {roundType === 'vcnv' && obstacle ? (
-              <div className="rounded-xl border bg-white p-4 space-y-3">
-                <p className="text-xs font-semibold uppercase text-slate-500">CNV · Chướng ngại vật</p>
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Tiêu đề:</span> {obstacle.title ?? '—'}
-                </p>
-                <div className="grid grid-cols-5 gap-2">
-                  {(obstacleTiles ?? []).length > 0 ? (
-                    obstacleTiles
-                      .slice()
-                      .sort((a, b) => a.position_index - b.position_index)
-                      .map((t) => (
-                        <div
-                          key={t.id}
-                          className={cn(
-                            'rounded-md border px-2 py-3 text-center text-xs font-mono',
-                            t.is_open ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'
-                          )}
-                        >
-                          {t.position_index}
-                          <div className="text-[10px] mt-1">{t.is_open ? 'MỞ' : 'ĐÓNG'}</div>
-                        </div>
-                      ))
-                  ) : (
-                    <p className="col-span-5 text-sm text-muted-foreground">Chưa có dữ liệu ô CNV.</p>
-                  )}
+        {/* Top scoreboard mini */}
+        {scoreboard.length > 0 ? (
+          <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+            <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
+            <div className="mt-1 space-y-1">
+              {scoreboard.slice(0, 4).map((p, idx) => (
+                <div key={p.id} className="flex items-center justify-between gap-3">
+                  <span className="text-slate-100">
+                    {idx + 1}. Ghế {p.seat ?? '—'}
+                  </span>
+                  <span className="font-mono text-white">{p.total}</span>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase text-slate-500">Lượt đoán gần đây</p>
-                  {(obstacleGuesses ?? []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Chưa có lượt đoán.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {obstacleGuesses.slice(0, 5).map((g) => (
-                        <div key={g.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
-                          <p className="font-semibold">{g.player_id}</p>
-                          <p className="text-muted-foreground">
-                            {g.attempted_at ? new Date(g.attempted_at).toLocaleTimeString('vi-VN') : '—'} · {g.is_correct ? 'ĐÚNG' : 'CHƯA/SAI'}
-                          </p>
-                          <p className="mt-1">{g.guess_text}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-              <div className="space-y-3">
-                <div className="aspect-video w-full overflow-hidden rounded-xl border bg-slate-900/90 text-xs text-white">
-                  <div className="flex h-full items-center justify-center text-center">
-                    {/* TODO: render question media (image/video) once asset pipeline is ready. */}
-                    {showQuestionText ? (
-                      <p className="px-6 text-sm text-slate-100 whitespace-pre-wrap">{questionText}</p>
-                    ) : (
-                      <p className="px-6 text-sm text-slate-200">Đang chờ host hiển thị câu hỏi...</p>
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-xl border bg-slate-50 p-4 text-sm leading-relaxed space-y-3">
-                  {/* TODO: render host video feed or livestream embed. */}
-                  {showQuestionText ? (
-                    <p className="text-slate-700">{questionText}</p>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      Nội dung câu hỏi sẽ hiển thị ở đây khi host chuyển trạng thái sang “Đang hiển thị”.
-                    </p>
-                  )}
-
-                  {isMc && (answerText || noteText) ? (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">MC · Đáp án</p>
-                      {answerText ? (
-                        <p className="mt-1 text-sm whitespace-pre-wrap">
-                          <span className="text-muted-foreground">Đáp án:</span> {answerText}
-                        </p>
-                      ) : null}
-                      {noteText ? (
-                        <p className="mt-2 text-sm whitespace-pre-wrap">
-                          <span className="text-muted-foreground">Ghi chú:</span> {noteText}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {isMc ? (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">MC · Đáp án thí sinh (realtime)</p>
-                      {!currentQuestionId ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Chưa có câu hỏi hiện tại.</p>
-                      ) : recentPlayerAnswers.length === 0 ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Chưa có đáp án nào được gửi.</p>
-                      ) : (
-                        <div className="mt-2 space-y-2">
-                          {recentPlayerAnswers.map((row) => {
-                            const p = players.find((x) => x.id === row.player_id)
-                            const label = p ? `Ghế ${p.seat_index ?? '—'} · ${p.display_name ?? '—'}` : row.player_id
-                            return (
-                              <div key={row.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                                <p className="text-xs font-medium text-slate-800">{label}</p>
-                                <p className="mt-1 text-sm whitespace-pre-wrap text-slate-700">{row.answer_text ?? '—'}</p>
-                                {typeof row.points_awarded === 'number' ? (
-                                  <p className="mt-1 text-[11px] text-muted-foreground">Điểm: {row.points_awarded}</p>
-                                ) : null}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              {!disableInteractions ? (
-                <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase text-slate-500">Bài làm</p>
-                  <form action={answerAction} className="space-y-3">
-                    <input type="hidden" name="sessionId" value={session.id} />
-                    <Textarea
-                      name="notes"
-                      placeholder="Nhập ghi chú hoặc lập luận"
-                      rows={6}
-                      disabled={disableAnswerSubmit}
-                      className="resize-none"
-                    />
-                    <Input name="answer" placeholder="Đáp án cuối cùng" disabled={disableAnswerSubmit} />
-                    <div className="flex gap-3">
-                      <FormSubmitButton disabled={disableAnswerSubmit}>Gửi đáp án</FormSubmitButton>
-                    </div>
-                    {answerFeedback ? (
-                      <p className={cn('text-xs', answerState.error ? 'text-destructive' : 'text-emerald-600')}>
-                        {answerFeedback}
-                      </p>
-                    ) : null}
-                    <p className="text-xs text-muted-foreground">
-                      {/* TODO: route data vào scoring service thay vì chỉ log (stub). */}
-                      {isVeDich
-                        ? 'Về đích: chỉ thí sinh được chọn (hoặc winner cướp) mới gửi được.'
-                        : 'Hệ thống tạm thời ghi log server-side cho mỗi đáp án để QA trước khi bật tính điểm.'}
-                    </p>
-                  </form>
-
-                  {roundType === 'vcnv' && obstacle ? (
-                    <>
-                      <Separator />
-                      <form action={cnvGuessAction} className="space-y-2">
-                        <input type="hidden" name="sessionId" value={session.id} />
-                        <p className="text-xs font-semibold uppercase text-slate-500">CNV · Dự đoán chướng ngại vật</p>
-                        <Input name="guessText" placeholder="Nhập dự đoán CNV" disabled={disableInteractions} />
-                        <div className="flex gap-3">
-                          <FormSubmitButton disabled={disableInteractions}>Gửi dự đoán</FormSubmitButton>
-                        </div>
-                        {cnvGuessFeedback ? (
-                          <p className={cn('text-xs', cnvGuessState.error ? 'text-destructive' : 'text-emerald-600')}>
-                            {cnvGuessFeedback}
-                          </p>
-                        ) : null}
-                      </form>
-                    </>
-                  ) : null}
-
-                  <Separator />
-
-                  <form action={buzzerAction} className="space-y-2">
-                    <input type="hidden" name="sessionId" value={session.id} />
-                    <FormSubmitButton variant="outline" disabled={disableBuzz}>
-                      Bấm chuông
-                    </FormSubmitButton>
-                    {buzzerFeedback ? (
-                      <p className={cn('text-xs', buzzerState.error ? 'text-destructive' : 'text-emerald-600')}>
-                        {buzzerFeedback}
-                      </p>
-                    ) : null}
-                    <p className="text-[11px] text-muted-foreground">
-                      {/* TODO: dispatch triggerBuzzerAction tới realtime channel + lock seat. */}
-                      {isVeDich
-                        ? 'Về đích: chỉ bấm chuông khi host mở cửa sổ cướp.'
-                        : 'Chức năng hiện ghi nhận yêu cầu và sẽ được đồng bộ với host console trong bản kế tiếp.'}
-                    </p>
-                  </form>
-
-                  {isGuest ? (
-                    <Alert>
-                      <AlertDescription>Bạn cần đăng nhập để gửi đáp án hoặc bấm chuông.</AlertDescription>
-                    </Alert>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase text-slate-500">{isMc ? 'Chế độ MC' : 'Chế độ khách'}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {isMc
-                      ? 'Bạn đang xem màn hình MC. Chế độ này chỉ để quan sát (không gửi đáp án / bấm chuông).'
-                      : 'Bạn đang xem màn hình công khai. Thí sinh vui lòng vào link game và đăng nhập để bấm chuông / gửi đáp án.'}
-                  </p>
-                </div>
-              )}
+              ))}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        ) : null}
 
-      <aside className="w-full shrink-0 space-y-4 lg:w-80">
-        <Card className="border border-slate-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Bảng điểm tạm thời</CardTitle>
-            <p className="text-xs text-muted-foreground">Tự động cập nhật từ server.</p>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="space-y-2">
-              {scoreboard.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Chưa có dữ liệu điểm.</p>
-              ) : (
-                scoreboard.map((player, index) => (
-                  <div key={player.id} className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div>
-                      <p className="text-sm font-semibold">
-                        {index + 1}. {player.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Ghế {player.seat ?? '—'}</p>
-                    </div>
-                    <span className="text-lg font-semibold text-slate-900">{player.total}</span>
-                  </div>
-                ))
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {/* TODO: custom styling / animation for podium + delta once scoring rules hoàn thiện. */}
-              Giao diện bảng điểm sẽ được tinh chỉnh thêm hiệu ứng podium trong giai đoạn kế tiếp.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-slate-200">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Dòng sự kiện / Buzzer</CardTitle>
-            <p className="text-xs text-muted-foreground">Lưu 20 lần tương tác gần nhất.</p>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            {buzzerEvents.length === 0 ? (
-              <p className="text-muted-foreground">Chưa có tín hiệu buzzer.</p>
-            ) : (
-              buzzerEvents.map((event) => {
+        {/* Event feed mini */}
+        <div className="absolute bottom-24 left-4 w-[240px] rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+          <p className="text-[11px] uppercase tracking-widest text-slate-200">Buzzer</p>
+          {buzzerEvents.length === 0 ? (
+            <p className="mt-1 text-slate-200">Chưa có tín hiệu</p>
+          ) : (
+            <div className="mt-1 space-y-1">
+              {buzzerEvents.slice(0, 4).map((event) => {
                 const ts = event.occurred_at ?? event.created_at
                 const timestamp = ts ? new Date(ts).toLocaleTimeString('vi-VN') : '—'
                 const eventType = event.event_type ?? 'buzz'
                 const typeLabel = eventType === 'steal' ? 'CƯỚP' : eventType === 'buzz' ? 'BUZZ' : eventType
                 return (
-                  <div
-                    key={event.id ?? `${event.player_id}-${event.created_at}`}
-                    className="rounded-md border border-slate-100 bg-white px-3 py-2 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold">{formatPlayerLabel(event.player_id)}</p>
-                      <Badge variant="outline" className="text-[10px]">
-                        {typeLabel}
-                      </Badge>
-                    </div>
-                    <p className="text-muted-foreground">
-                      {timestamp} {event.result ? `· ${event.result}` : ''}
-                    </p>
+                  <div key={event.id ?? `${event.player_id}-${event.created_at}`} className="text-slate-100">
+                    <span className="text-slate-200">[{typeLabel}]</span> {timestamp}
                   </div>
                 )
-              })
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              {/* TODO: add richer event badges + animation when buzzer services ready. */}
-              Dòng sự kiện sẽ hiển thị rõ tên thí sinh và kết quả xử lý khi module buzzer hoàn tất.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-slate-200">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Trạng thái kết nối</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between">
-              <span>Realtime</span>
-              <Badge variant={isRealtimeReady ? 'default' : 'secondary'}>{isRealtimeReady ? 'Đã kết nối' : 'Đang đợi…'}</Badge>
+              })}
             </div>
-            {statusMessage ? <p>{statusMessage}</p> : <p>Đang nghe điều khiển từ host.</p>}
-            <Separator />
-            <Button size="sm" variant="outline" className="w-full" onClick={refreshFromServer}>
-              Làm mới trạng thái
+          )}
+        </div>
+      </main>
+
+      {/* INTERACTION BAR */}
+      <footer className="px-4 py-4 border-t border-slate-700 bg-slate-950">
+        {disableInteractions ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-200">
+              {isMc
+                ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
+                : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
+            </p>
+            <Button size="sm" variant="outline" onClick={refreshFromServer}>
+              Làm mới
             </Button>
-          </CardContent>
-        </Card>
-      </aside>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-widest text-slate-200">Pha</p>
+              <p className="text-sm text-slate-100">
+                {isKhoiDong
+                  ? targetPlayerId
+                    ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
+                    : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
+                  : isVeDich
+                    ? isStealWindow
+                      ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
+                      : 'Về đích'
+                    : questionTitle}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 justify-end">
+              {(roundType !== 'khoi_dong') ? (
+                <form action={answerAction} className="flex items-center gap-2">
+                  <input type="hidden" name="sessionId" value={session.id} />
+                  <Input
+                    name="answer"
+                    placeholder="Nhập đáp án"
+                    disabled={disableAnswerSubmit}
+                    className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                  />
+                  <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
+                </form>
+              ) : null}
+
+              {roundType === 'vcnv' && obstacle ? (
+                <form action={cnvGuessAction} className="flex items-center gap-2">
+                  <input type="hidden" name="sessionId" value={session.id} />
+                  <Input
+                    name="guessText"
+                    placeholder="Đoán CNV"
+                    disabled={disableInteractions}
+                    className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                  />
+                  <FormSubmitButton disabled={disableInteractions} variant="outline">Đoán</FormSubmitButton>
+                </form>
+              ) : null}
+
+              <form action={buzzerAction}>
+                <input type="hidden" name="sessionId" value={session.id} />
+                <Button
+                  type="submit"
+                  disabled={disableBuzz}
+                  className="h-10 px-6"
+                  variant={isKhoiDong && !targetPlayerId ? 'default' : 'outline'}
+                >
+                  Bấm chuông
+                </Button>
+              </form>
+
+              <Button size="sm" variant="outline" onClick={refreshFromServer}>
+                Làm mới
+              </Button>
+            </div>
+
+            <div className="md:col-span-2 text-xs">
+              {answerFeedback ? (
+                <p className={cn(answerState.error ? 'text-red-300' : 'text-emerald-300')}>{answerFeedback}</p>
+              ) : null}
+              {cnvGuessFeedback ? (
+                <p className={cn(cnvGuessState.error ? 'text-red-300' : 'text-emerald-300')}>{cnvGuessFeedback}</p>
+              ) : null}
+              {buzzerFeedback ? (
+                <p className={cn(buzzerState.error ? 'text-red-300' : 'text-emerald-300')}>{buzzerFeedback}</p>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </footer>
     </div>
   )
 }

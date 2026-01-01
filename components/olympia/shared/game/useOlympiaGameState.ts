@@ -71,6 +71,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const channelRef = useRef<RealtimeChannel | null>(null);
   const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabase>> | null>(null);
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionRef = useRef(initialData.session);
 
   useEffect(() => {
@@ -80,6 +81,23 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const questionState = session.question_state ?? "hidden";
   const roundType = session.current_round_type ?? "unknown";
   const matchId = initialData.match.id;
+
+  // Khi router.refresh() hoặc server re-render truyền xuống initialData mới,
+  // hook phải đồng bộ lại state. Nếu không, UI sẽ chỉ cập nhật khi F5 (reload).
+  useEffect(() => {
+    queueMicrotask(() => {
+      setSession(initialData.session);
+      setScores(initialData.scores ?? []);
+      setRoundQuestions(initialData.roundQuestions ?? []);
+      setAnswers((initialData.answers ?? []) as AnswerRow[]);
+      setStarUses((initialData.starUses ?? []) as StarUseRow[]);
+      setBuzzerEvents((initialData.buzzerEvents ?? []) as BuzzerEvent[]);
+      setObstacle((initialData.obstacle ?? null) as ObstacleRow | null);
+      setObstacleTiles((initialData.obstacleTiles ?? []) as ObstacleTileRow[]);
+      setObstacleGuesses((initialData.obstacleGuesses ?? []) as ObstacleGuessRow[]);
+      setTimer(computeRemaining(initialData.session.timer_deadline));
+    });
+  }, [initialData]);
 
   const fetchAnswersForQuestion = useCallback(async (roundQuestionId: string) => {
     const supabase = supabaseRef.current;
@@ -108,6 +126,94 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     setStatusMessage("Đang đồng bộ dữ liệu mới…");
     router.refresh();
   }, [router]);
+
+  const pollSnapshot = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+
+    try {
+      const olympia = supabase.schema("olympia");
+
+      const { data: nextSession, error: sessionError } = await olympia
+        .from("live_sessions")
+        .select(
+          "id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password"
+        )
+        .eq("id", sessionId)
+        .maybeSingle();
+
+      if (sessionError) {
+        setStatusMessage("Không thể đồng bộ realtime · đang thử lại…");
+        return;
+      }
+
+      if (nextSession) {
+        setSession((prev) => ({ ...prev, ...(nextSession as typeof prev) }));
+      }
+
+      const { data: nextScores, error: scoresError } = await olympia
+        .from("match_scores")
+        .select("id, match_id, player_id, round_type, points")
+        .eq("match_id", matchId);
+      if (!scoresError && nextScores) {
+        setScores(nextScores as ScoreRow[]);
+      }
+
+      const currentRqId = (nextSession?.current_round_question_id ?? sessionRef.current.current_round_question_id) as
+        | string
+        | null
+        | undefined;
+
+      if (currentRqId) {
+        const [{ data: rqRow }, { data: buzzerRows }] = await Promise.all([
+          olympia
+            .from("round_questions")
+            .select(
+              "id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note"
+            )
+            .eq("id", currentRqId)
+            .maybeSingle(),
+          olympia
+            .from("buzzer_events")
+            .select("id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at")
+            .eq("round_question_id", currentRqId)
+            .order("occurred_at", { ascending: false })
+            .limit(20),
+        ]);
+
+        if (rqRow) {
+          setRoundQuestions((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((row) => row.id === rqRow.id);
+            if (idx === -1) next.push(rqRow as unknown as RoundQuestionRow);
+            else next[idx] = { ...next[idx], ...(rqRow as unknown as RoundQuestionRow) };
+            return next;
+          });
+        }
+
+        if (buzzerRows) {
+          setBuzzerEvents((buzzerRows as BuzzerEvent[]).slice(0, 20));
+        }
+
+        void fetchAnswersForQuestion(currentRqId);
+      }
+
+      // Star uses chủ yếu dùng cho vòng về đích.
+      const { data: nextStarUses } = await olympia
+        .from("star_uses")
+        .select("id, match_id, round_question_id, player_id, outcome, declared_at")
+        .eq("match_id", matchId);
+      if (nextStarUses) {
+        setStarUses(nextStarUses as StarUseRow[]);
+      }
+
+      setStatusMessage(null);
+    } catch (err) {
+      console.warn("[Olympia] poll snapshot failed", err);
+      setStatusMessage("Không thể đồng bộ realtime · đang thử lại…");
+    }
+  }, [fetchAnswersForQuestion, matchId, sessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -327,10 +433,22 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
     subscribe();
 
+    // Fallback polling: đảm bảo mọi thay đổi (điểm/câu hỏi/màn chờ) cập nhật dù realtime bị chặn bởi auth/RLS.
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    pollingRef.current = setInterval(() => {
+      void pollSnapshot();
+    }, 1500);
+
     return () => {
       mounted = false;
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
+      }
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
       if (channelRef.current && supabaseRef.current) {
         supabaseRef.current.removeChannel(channelRef.current);
@@ -338,7 +456,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId, obstacle?.id, session.current_round_id]);
+  }, [sessionId, matchId, obstacle?.id, session.current_round_id, pollSnapshot]);
 
   // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
   useEffect(() => {

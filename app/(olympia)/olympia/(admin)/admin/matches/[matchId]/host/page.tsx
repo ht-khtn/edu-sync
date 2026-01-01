@@ -138,6 +138,27 @@ function getRoundQuestionLabel(q: Pick<RoundQuestionRow, 'id' | 'question_set_it
   return getMetaCode(q.meta) ?? q.question_set_item_id ?? q.id
 }
 
+function getKhoiDongCodeInfo(code: string | null): { kind: 'personal'; seat: number } | { kind: 'common' } | null {
+  if (!code) return null
+  const trimmed = code.trim().toUpperCase()
+  if (!trimmed) return null
+
+  if (trimmed.startsWith('DKA-')) {
+    return { kind: 'common' }
+  }
+
+  // KD{seat}-{stt}
+  const m = /^KD(\d+)-/i.exec(trimmed)
+  if (!m) return null
+  const seat = Number(m[1])
+  if (!Number.isFinite(seat)) return null
+  return { kind: 'personal', seat }
+}
+
+function isKhoiDongCommonByCode(code: string | null) {
+  return getKhoiDongCodeInfo(code)?.kind === 'common'
+}
+
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
 
@@ -401,6 +422,43 @@ export default async function OlympiaHostConsolePage({
   const previewRoundQuestion = previewRoundQuestionId
     ? currentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
     : null
+
+  const selectedTargetPlayerId = (previewRoundQuestion as unknown as RoundQuestionRow | null)?.target_player_id ?? currentRoundQuestion?.target_player_id ?? null
+  const selectedTargetSeat = selectedTargetPlayerId
+    ? players.find((p) => p.id === selectedTargetPlayerId)?.seat_index ?? null
+    : null
+
+  const isKhoiDong = liveSession?.current_round_type === 'khoi_dong'
+  const isVeDich = liveSession?.current_round_type === 've_dich'
+  const allowTargetSelection = Boolean(liveSession?.current_round_question_id && (isKhoiDong || isVeDich))
+
+  const filteredCurrentRoundQuestions = (() => {
+    if (!isKhoiDong) return currentRoundQuestions
+
+    // Lọc theo luật mã câu:
+    // - Thi chung: DKA-
+    // - Thi riêng: KD{seat}-
+    const previewCode = previewRoundQuestion ? getMetaCode((previewRoundQuestion as unknown as RoundQuestionRow).meta) : null
+    const byCode = getKhoiDongCodeInfo(previewCode)
+    const isCommon = byCode?.kind === 'common' || (selectedTargetPlayerId === null && isKhoiDongCommonByCode(previewCode)) || selectedTargetPlayerId === null
+
+    if (isCommon) {
+      return currentRoundQuestions.filter((q) => {
+        const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
+        return getKhoiDongCodeInfo(code)?.kind === 'common'
+      })
+    }
+
+    if (typeof selectedTargetSeat === 'number') {
+      const prefix = `KD${selectedTargetSeat}-`
+      return currentRoundQuestions.filter((q) => {
+        const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
+        return typeof code === 'string' && code.toUpperCase().startsWith(prefix)
+      })
+    }
+
+    return currentRoundQuestions
+  })()
   const previewIndex = previewRoundQuestionId
     ? currentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
     : -1
@@ -412,7 +470,6 @@ export default async function OlympiaHostConsolePage({
 
   const hostPath = `/olympia/admin/matches/${matchId}/host`
 
-  const isVeDich = liveSession?.current_round_type === 've_dich'
   const veDichValueRaw =
     currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
       ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
@@ -506,16 +563,16 @@ export default async function OlympiaHostConsolePage({
                       name="preview"
                       defaultValue={previewRoundQuestionId ?? ''}
                       className="w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      disabled={currentRoundQuestions.length === 0}
-                      required={currentRoundQuestions.length > 0}
+                      disabled={filteredCurrentRoundQuestions.length === 0}
+                      required={filteredCurrentRoundQuestions.length > 0}
                       aria-label="Danh sách câu hỏi"
                     >
-                      {currentRoundQuestions.length === 0 ? (
+                      {filteredCurrentRoundQuestions.length === 0 ? (
                         <option value="" disabled>
                           Chưa có câu trong vòng
                         </option>
                       ) : null}
-                      {currentRoundQuestions.map((q) => (
+                      {filteredCurrentRoundQuestions.map((q) => (
                         <option key={q.id} value={q.id}>
                           #{q.order_index ?? '?'} · {getRoundQuestionLabel(q as unknown as RoundQuestionRow)}
                         </option>
@@ -625,44 +682,123 @@ export default async function OlympiaHostConsolePage({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Câu trả lời</CardTitle>
-              <CardDescription>Câu trả lời của thí sinh cho câu đang live (bấm Show câu mới sẽ reset).</CardDescription>
+              <CardDescription>
+                Câu trả lời của thí sinh cho câu đang live. Chấm điểm được đặt ở đây (4 thí sinh), và sẽ tự disable theo luật.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {!liveSession?.current_round_question_id ? (
                 <p className="text-sm text-muted-foreground">Chưa show câu hỏi.</p>
-              ) : recentAnswers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Chưa có câu trả lời nào.</p>
               ) : (
-                <div className="space-y-2">
-                  {recentAnswers.map((a) => {
-                    const p = normalizePlayerSummary(a.match_players)
-                    const seatText = p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Ghế —'
-                    const nameText = p?.display_name ? ` · ${p.display_name}` : ''
+                (() => {
+                  const latestByPlayer = new Map<string, RecentAnswerRow>()
+                  for (const a of recentAnswers) {
+                    if (!a.player_id) continue
+                    if (!latestByPlayer.has(a.player_id)) {
+                      latestByPlayer.set(a.player_id, a)
+                    }
+                  }
 
-                    return (
-                      <div key={a.id} className="rounded-md border bg-background p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-medium">
-                            {seatText}
-                            {nameText}
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={a.is_correct ? 'default' : 'outline'}>
-                              {a.is_correct == null ? '—' : a.is_correct ? 'Đúng' : 'Sai'}
-                            </Badge>
-                            <Badge variant="secondary">+{a.points_awarded ?? 0}</Badge>
-                          </div>
-                        </div>
-                        <p className="mt-2 whitespace-pre-wrap text-sm">
-                          {a.answer_text?.trim() ? a.answer_text : <span className="text-muted-foreground">(Trống)</span>}
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {new Date(a.submitted_at).toLocaleTimeString('vi-VN')}
-                        </p>
+                  const enabledScoringPlayerId = (() => {
+                    if (!isKhoiDong) return null
+                    if (currentRoundQuestion?.target_player_id) return currentRoundQuestion.target_player_id
+                    return winnerBuzz?.player_id ?? null
+                  })()
+
+                  const scoringHint = (() => {
+                    if (!isKhoiDong) return 'Chỉ triển khai đầy đủ logic chấm cho Vòng 1 ở giai đoạn này.'
+                    if (currentRoundQuestion?.target_player_id) {
+                      const p = players.find((x) => x.id === currentRoundQuestion.target_player_id)
+                      return `Khởi động · Thi riêng: chỉ chấm cho Ghế ${p?.seat_index ?? '—'}. (Sai/Hết giờ: 0 điểm)`
+                    }
+                    return winnerBuzz?.player_id
+                      ? 'Khởi động · Thi chung: chỉ chấm cho thí sinh bấm chuông thắng. (Sai/Hết giờ: -5, không âm)'
+                      : 'Khởi động · Thi chung: chờ thí sinh bấm chuông thắng để chấm.'
+                  })()
+
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">{scoringHint}</p>
+                      <div className="grid gap-2">
+                        {players.map((pl) => {
+                          const latest = latestByPlayer.get(pl.id) ?? null
+                          const canScore = Boolean(liveSession?.id && enabledScoringPlayerId && enabledScoringPlayerId === pl.id)
+                          const seatText = pl.seat_index != null ? `Ghế ${pl.seat_index}` : 'Ghế —'
+                          const nameText = pl.display_name ? ` · ${pl.display_name}` : ''
+
+                          const correctLabel = isKhoiDong && currentRoundQuestion?.target_player_id ? 'Đúng (+10)' : 'Đúng (+10)'
+                          const wrongLabel = isKhoiDong && currentRoundQuestion?.target_player_id ? 'Sai (0)' : 'Sai (-5)'
+                          const timeoutLabel = isKhoiDong && currentRoundQuestion?.target_player_id ? 'Hết giờ (0)' : 'Hết giờ (-5)'
+
+                          return (
+                            <div key={pl.id} className="rounded-md border bg-background p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-medium">
+                                  {seatText}
+                                  {nameText}
+                                </p>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant={latest?.is_correct ? 'default' : 'outline'}>
+                                    {latest?.is_correct == null ? '—' : latest.is_correct ? 'Đúng' : 'Sai'}
+                                  </Badge>
+                                  <Badge variant="secondary">+{latest?.points_awarded ?? 0}</Badge>
+                                </div>
+                              </div>
+
+                              <p className="mt-2 whitespace-pre-wrap text-sm">
+                                {latest?.answer_text?.trim() ? latest.answer_text : <span className="text-muted-foreground">(Chưa có/Trống)</span>}
+                              </p>
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <form action={confirmDecisionFormAction}>
+                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                                  <input type="hidden" name="playerId" value={pl.id} />
+                                  <input type="hidden" name="decision" value="correct" />
+                                  <Button type="submit" size="sm" disabled={!canScore} title={correctLabel} aria-label={correctLabel}>
+                                    {correctLabel}
+                                  </Button>
+                                </form>
+                                <form action={confirmDecisionFormAction}>
+                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                                  <input type="hidden" name="playerId" value={pl.id} />
+                                  <input type="hidden" name="decision" value="wrong" />
+                                  <Button type="submit" size="sm" variant="outline" disabled={!canScore} title={wrongLabel} aria-label={wrongLabel}>
+                                    {wrongLabel}
+                                  </Button>
+                                </form>
+                                <form action={confirmDecisionFormAction}>
+                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                                  <input type="hidden" name="playerId" value={pl.id} />
+                                  <input type="hidden" name="decision" value="timeout" />
+                                  <Button type="submit" size="sm" variant="outline" disabled={!canScore} title={timeoutLabel} aria-label={timeoutLabel}>
+                                    {timeoutLabel}
+                                  </Button>
+                                </form>
+                              </div>
+
+                              {latest?.submitted_at ? (
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                  {new Date(latest.submitted_at).toLocaleTimeString('vi-VN')}
+                                </p>
+                              ) : null}
+                            </div>
+                          )
+                        })}
                       </div>
-                    )
-                  })}
-                </div>
+
+                      <div className="flex items-center justify-end gap-2">
+                        <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
+                          <input type="hidden" name="matchId" value={match.id} />
+                          <input type="hidden" name="reason" value="" />
+                          <Button type="submit" size="icon-sm" variant="outline" title="Undo" aria-label="Undo">
+                            <Undo2 />
+                          </Button>
+                        </form>
+                      </div>
+                    </div>
+                  )
+                })()
               )}
             </CardContent>
           </Card>
@@ -682,17 +818,21 @@ export default async function OlympiaHostConsolePage({
                 currentQuestionState={liveSession?.question_state}
               />
 
-              {liveSession?.current_round_question_id ? (
+              {allowTargetSelection ? (
                 <div className="grid gap-2">
                   <form action={setRoundQuestionTargetPlayerFormAction} className="flex gap-2">
-                    <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                    <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
                     <select
                       name="playerId"
                       defaultValue={currentRoundQuestion?.target_player_id ?? ''}
                       className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                       aria-label="Chọn thí sinh"
                     >
-                      <option value="">(Tuỳ vòng) Chọn thí sinh</option>
+                      {isKhoiDong ? (
+                        <option value="">Vòng thi chung (DKA)</option>
+                      ) : (
+                        <option value="">(Tuỳ vòng) Chọn thí sinh</option>
+                      )}
                       {players.map((p) => (
                         <option key={p.id} value={p.id}>
                           Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
@@ -708,7 +848,7 @@ export default async function OlympiaHostConsolePage({
                     <div className="grid gap-2">
                       <div className="grid grid-cols-2 gap-2">
                         <form action={setVeDichQuestionValueFormAction} className="flex gap-2">
-                          <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                          <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
                           <select
                             name="value"
                             defaultValue={veDichValueText}
@@ -726,7 +866,7 @@ export default async function OlympiaHostConsolePage({
 
                         <form action={toggleStarUseFormAction} className="flex justify-end">
                           <input type="hidden" name="matchId" value={match.id} />
-                          <input type="hidden" name="roundQuestionId" value={liveSession.current_round_question_id} />
+                          <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
                           <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
                           {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
                           <Button
@@ -751,7 +891,7 @@ export default async function OlympiaHostConsolePage({
                           </Button>
                         </form>
                         <form action={confirmVeDichMainDecisionFormAction} className="flex gap-1">
-                          <input type="hidden" name="sessionId" value={liveSession.id} />
+                          <input type="hidden" name="sessionId" value={liveSession!.id} />
                           <Button type="submit" size="icon-sm" name="decision" value="correct" title="Chính: Đúng" aria-label="Chính: Đúng">
                             <Check />
                           </Button>
@@ -763,7 +903,7 @@ export default async function OlympiaHostConsolePage({
                           </Button>
                         </form>
                         <form action={confirmVeDichStealDecisionFormAction} className="flex gap-1">
-                          <input type="hidden" name="sessionId" value={liveSession.id} />
+                          <input type="hidden" name="sessionId" value={liveSession!.id} />
                           <Button type="submit" size="icon-sm" name="decision" value="correct" title="Cướp: Đúng" aria-label="Cướp: Đúng" variant="secondary">
                             <Check />
                           </Button>
@@ -789,61 +929,7 @@ export default async function OlympiaHostConsolePage({
                 </div>
               ) : null}
 
-              {players.length > 0 ? (
-                <div className="grid gap-2">
-                  <div className="grid gap-2">
-                    <form action={confirmDecisionFormAction} className="grid gap-2">
-                      <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          name="playerId"
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                          defaultValue=""
-                          required
-                          disabled={!liveSession?.id}
-                          aria-label="Thí sinh cần chấm"
-                        >
-                          <option value="" disabled>
-                            Chọn thí sinh
-                          </option>
-                          {players.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              Ghế {p.seat_index}: {p.display_name ?? 'Không tên'}
-                            </option>
-                          ))}
-                        </select>
-
-                        <select
-                          name="decision"
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                          defaultValue="correct"
-                          required
-                          disabled={!liveSession?.id}
-                          aria-label="Kết quả"
-                        >
-                          <option value="correct">Đúng (+10)</option>
-                          <option value="wrong">Sai (-5)</option>
-                          <option value="timeout">Hết giờ (-5)</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2">
-                        <Button type="submit" size="icon-sm" title="Xác nhận chấm" aria-label="Xác nhận chấm">
-                          <Check />
-                        </Button>
-                      </div>
-                    </form>
-
-                    <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
-                      <input type="hidden" name="matchId" value={match.id} />
-                      <input type="hidden" name="reason" value="" />
-                      <Button type="submit" size="icon-sm" variant="outline" title="Undo" aria-label="Undo">
-                        <Undo2 />
-                      </Button>
-                    </form>
-                  </div>
-                </div>
-              ) : null}
+              {/* Chấm điểm đã chuyển qua card "Câu trả lời" để giảm rối UI */}
 
               {liveSession?.status !== 'running' ? (
                 <p className="text-xs text-muted-foreground">Cần mở phòng (running) để đổi vòng/trạng thái câu.</p>

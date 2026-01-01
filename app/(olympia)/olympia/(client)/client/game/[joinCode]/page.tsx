@@ -1,8 +1,6 @@
 import { notFound } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { OlympiaGameClient } from '@/components/olympia/shared/game'
-import { SessionInfoSidebar } from '@/components/olympia/client/game/SessionInfoSidebar'
+import { OlympiaGameClient } from '@/components/olympia/shared/game/OlympiaGameClient'
 import { PlayerPasswordGate } from '@/components/olympia/client/game/PlayerPasswordGate'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
@@ -137,12 +135,6 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
     }
 }
 
-const statusLabel: Record<string, string> = {
-    running: 'Đang mở',
-    pending: 'Chờ mở',
-    ended: 'Đã kết thúc',
-}
-
 export default async function OlympiaGamePage({ params }: PageProps) {
     const { supabase, authUid, appUserId } = await getServerAuthContext()
     const { joinCode } = await params
@@ -171,45 +163,16 @@ export default async function OlympiaGamePage({ params }: PageProps) {
     }
 
     const viewerId = appUserId ?? null
-    const sessionStatus = data.session.status
-    const sessionIsRunning = sessionStatus === 'running'
+    // UI game tự xử lý trạng thái phòng (running/pending/ended)
 
     return (
         <PlayerPasswordGate session={data.session} userAlreadyVerified={userAlreadyVerified}>
-            <div className="min-h-screen">
-                {!authUid ? (
-                    <div className="mx-auto max-w-7xl px-4 py-4">
-                        <Alert>
-                            <AlertTitle>Yêu cầu đăng nhập</AlertTitle>
-                            <AlertDescription>Vui lòng đăng nhập để đồng bộ tiến trình thi và gửi đáp án.</AlertDescription>
-                        </Alert>
-                    </div>
-                ) : null}
-
-                {!sessionIsRunning ? (
-                    <div className="mx-auto max-w-7xl px-4 py-4">
-                        <Alert className="border-amber-200 bg-amber-50">
-                            <AlertTitle>Phòng chưa mở</AlertTitle>
-                            <AlertDescription>
-                                Trạng thái hiện tại: {statusLabel[sessionStatus] ?? sessionStatus}. Bạn có thể ở lại trang này, hệ thống sẽ cập nhật ngay khi
-                                host mở câu hỏi.
-                            </AlertDescription>
-                        </Alert>
-                    </div>
-                ) : null}
-
-                <div className="mx-auto max-w-7xl px-4 py-6">
-                    <div className="grid gap-6 lg:grid-cols-4">
-                        <div className="lg:col-span-3">
-                            <OlympiaGameClient initialData={{ ...data, viewerUserId: viewerId }} sessionId={data.session.id} allowGuestFallback={!authUid} />
-                        </div>
-
-                        <aside className="lg:sticky lg:top-6 lg:h-fit">
-                            <SessionInfoSidebar session={data.session} match={data.match} playerCount={data.players.length} />
-                        </aside>
-                    </div>
-                </div>
-            </div>
+            <OlympiaGameClient
+                initialData={{ ...data, viewerUserId: viewerId }}
+                sessionId={data.session.id}
+                allowGuestFallback={!authUid}
+                viewerMode={!authUid ? 'guest' : 'player'}
+            />
         </PlayerPasswordGate>
     )
 }

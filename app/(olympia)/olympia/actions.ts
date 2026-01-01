@@ -393,7 +393,8 @@ const veDichValueSchema = z.object({
 
 const setRoundQuestionTargetSchema = z.object({
   roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
-  playerId: z.string().uuid("Thí sinh không hợp lệ."),
+  // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
+  playerId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
 });
 
 const toggleStarSchema = z.object({
@@ -1403,6 +1404,47 @@ export async function confirmDecisionAction(
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
 
     const roundType = session.current_round_type ?? "khoi_dong";
+
+    // Để chấm đúng luật vòng 1, cần biết đây là thi riêng hay thi chung.
+    let currentTargetPlayerId: string | null = null;
+    if (session.current_round_question_id) {
+      const { data: rqRow, error: rqErr } = await olympia
+        .from("round_questions")
+        .select("id, target_player_id")
+        .eq("id", session.current_round_question_id)
+        .maybeSingle();
+      if (rqErr) return { error: rqErr.message };
+      currentTargetPlayerId = (rqRow?.target_player_id as string | null) ?? null;
+
+      // Enforce: vòng Khởi động thi chung chỉ chấm cho người bấm chuông thắng.
+      if (roundType === "khoi_dong" && !currentTargetPlayerId) {
+        const { data: buzzWinner, error: buzzErr } = await olympia
+          .from("buzzer_events")
+          .select("player_id, result")
+          .eq("round_question_id", session.current_round_question_id)
+          .eq("event_type", "buzz")
+          .eq("result", "win")
+          .order("occurred_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (buzzErr) return { error: buzzErr.message };
+        if (!buzzWinner?.player_id) {
+          return { error: "Chưa có thí sinh bấm chuông thắng để chấm." };
+        }
+        if (buzzWinner.player_id !== playerId) {
+          return { error: "Chỉ được chấm cho thí sinh bấm chuông thắng." };
+        }
+      }
+
+      // Enforce: vòng Khởi động thi riêng chỉ chấm cho đúng thí sinh được chọn.
+      if (
+        roundType === "khoi_dong" &&
+        currentTargetPlayerId &&
+        currentTargetPlayerId !== playerId
+      ) {
+        return { error: "Đây là lượt cá nhân, chỉ được chấm cho thí sinh đang thi." };
+      }
+    }
     const { data: scoreRow, error: scoreError } = await olympia
       .from("match_scores")
       .select("id, points")
@@ -1414,7 +1456,29 @@ export async function confirmDecisionAction(
     if (scoreError) return { error: scoreError.message };
 
     const currentPoints = scoreRow?.points ?? 0;
-    const { delta, nextPoints } = computeKhoiDongCommonScore(decision, currentPoints);
+
+    let delta = 0;
+    let nextPoints = currentPoints;
+
+    if (roundType === "khoi_dong") {
+      // Khởi động:
+      // - Thi riêng (có target_player_id): đúng +10, sai/hết giờ 0.
+      // - Thi chung (target null): đúng +10, sai/hết giờ -5, clamp 0.
+      if (currentTargetPlayerId) {
+        delta = decision === "correct" ? 10 : 0;
+        nextPoints = currentPoints + delta;
+      } else {
+        const computed = computeKhoiDongCommonScore(decision, currentPoints);
+        delta = computed.delta;
+        nextPoints = computed.nextPoints;
+      }
+    } else {
+      // Hiện tại các vòng khác dùng UI chấm riêng (VD, TT auto, ...).
+      // Giữ hành vi cũ để tránh ảnh hưởng ngoài phạm vi vòng 1.
+      const computed = computeKhoiDongCommonScore(decision, currentPoints);
+      delta = computed.delta;
+      nextPoints = computed.nextPoints;
+    }
     const appliedDelta = nextPoints - currentPoints;
 
     if (scoreRow?.id) {
@@ -2599,7 +2663,11 @@ export async function setRoundQuestionTargetPlayerAction(
       .eq("id", parsed.data.roundQuestionId);
     if (error) return { error: error.message };
 
-    return { success: "Đã cập nhật thí sinh trả lời chính." };
+    return {
+      success: parsed.data.playerId
+        ? "Đã đặt thi riêng cho thí sinh."
+        : "Đã chuyển sang vòng thi chung.",
+    };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật target." };
   }

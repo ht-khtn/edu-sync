@@ -3,7 +3,7 @@ import { Card, CardHeader } from '@/components/ui/card'
 
 export default function OlympiaGameLoading() {
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 min-h-screen bg-slate-900 text-white">
             {/* Alert skeleton */}
             <div className="rounded-lg border bg-slate-100 p-4 h-20 dark:bg-slate-900" />
 

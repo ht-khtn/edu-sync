@@ -58,6 +58,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     scores,
     roundQuestions,
     buzzerEvents,
+    answers,
     starUses,
     obstacle,
     obstacleTiles,
@@ -125,9 +126,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       ? currentRoundQuestion.questions[0] ?? null
       : currentRoundQuestion.questions)
     : null
-  const questionText = questionRecord?.question_text ?? null
-  const answerText = questionRecord?.answer_text ?? null
-  const noteText = questionRecord?.note ?? null
+  const questionText = currentRoundQuestion?.question_text ?? questionRecord?.question_text ?? null
+  const answerText = currentRoundQuestion?.answer_text ?? questionRecord?.answer_text ?? null
+  const noteText = currentRoundQuestion?.note ?? questionRecord?.note ?? null
   const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden')
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
@@ -176,6 +177,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       !viewerPlayer?.is_disqualified_obstacle
     )
   const disableBuzz = isVeDich ? !canBuzzVeDich : disableInteractions
+
+  const recentPlayerAnswers = (answers ?? []).slice(0, 10)
 
   return (
     <div className="grid gap-4 lg:gap-6 lg:grid-cols-4 auto-rows-max lg:auto-rows-auto">
@@ -299,6 +302,33 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                           <span className="text-muted-foreground">Ghi chú:</span> {noteText}
                         </p>
                       ) : null}
+                    </div>
+                  ) : null}
+
+                  {isMc ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">MC · Đáp án thí sinh (realtime)</p>
+                      {!currentQuestionId ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Chưa có câu hỏi hiện tại.</p>
+                      ) : recentPlayerAnswers.length === 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Chưa có đáp án nào được gửi.</p>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {recentPlayerAnswers.map((row) => {
+                            const p = players.find((x) => x.id === row.player_id)
+                            const label = p ? `Ghế ${p.seat_index ?? '—'} · ${p.display_name ?? '—'}` : row.player_id
+                            return (
+                              <div key={row.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                                <p className="text-xs font-medium text-slate-800">{label}</p>
+                                <p className="mt-1 text-sm whitespace-pre-wrap text-slate-700">{row.answer_text ?? '—'}</p>
+                                {typeof row.points_awarded === 'number' ? (
+                                  <p className="mt-1 text-[11px] text-muted-foreground">Điểm: {row.points_awarded}</p>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   ) : null}
                 </div>

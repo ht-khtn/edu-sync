@@ -39,9 +39,14 @@ export type RoundQuestionRow = {
   id: string;
   match_round_id: string | null;
   question_id: string | null;
+  question_set_item_id?: string | null;
   order_index: number | null;
   target_player_id: string | null;
   meta?: Record<string, unknown> | null;
+  // Snapshot fields (ưu tiên hiển thị khi migrate sang question_set_items).
+  question_text?: string | null;
+  answer_text?: string | null;
+  note?: string | null;
   // Tuỳ constraint/foreign key, Supabase có thể trả object hoặc mảng (dù logically là many-to-one).
   questions?:
     | {
@@ -82,6 +87,20 @@ export type BuzzerEventRow = {
   event_type?: string | null;
   result?: string | null;
   occurred_at?: string | null;
+  created_at?: string | null;
+};
+
+export type AnswerRow = {
+  id: string;
+  match_id?: string | null;
+  session_id?: string | null;
+  round_question_id: string;
+  player_id: string;
+  answer_text: string | null;
+  notes?: string | null;
+  is_correct?: boolean | null;
+  points_awarded?: number | null;
+  submitted_at?: string | null;
   created_at?: string | null;
 };
 
@@ -128,6 +147,7 @@ export type GameSessionPayload = {
   scores: ScoreRow[];
   roundQuestions: RoundQuestionRow[];
   buzzerEvents: BuzzerEventRow[];
+  answers?: AnswerRow[];
   starUses?: StarUseRow[];
   obstacle?: ObstacleRow | null;
   obstacleTiles?: ObstacleTileRow[];

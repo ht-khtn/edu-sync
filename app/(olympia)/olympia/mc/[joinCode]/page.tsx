@@ -6,7 +6,7 @@ import { SessionInfoSidebar } from '@/components/olympia/client/game/SessionInfo
 import { McPasswordGate } from '@/components/olympia/shared/McPasswordGate'
 import { summarizeOlympiaRole } from '@/lib/olympia-access'
 import { getServerAuthContext } from '@/lib/server-auth'
-import type { GameSessionPayload } from '@/types/olympia/game'
+import type { AnswerRow, GameSessionPayload } from '@/types/olympia/game'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,12 +58,12 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
         console.warn('[Olympia][MC] load players failed', playersError.message)
     }
 
-    const [{ data: scores }, { data: roundQuestions }, { data: buzzerEvents }, { data: starUses }, obstacleBundle] = await Promise.all([
+    const [{ data: scores }, { data: roundQuestions }, { data: buzzerEvents }, { data: starUses }, { data: answers }, obstacleBundle] = await Promise.all([
         olympia.from('match_scores').select('id, match_id, player_id, round_type, points').eq('match_id', session.match_id),
         olympia
             .from('round_questions')
             .select(
-                'id, match_round_id, question_id, order_index, target_player_id, meta, questions(id, code, category, question_text, answer_text, note), match_rounds!inner(match_id, round_type)'
+                'id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note), match_rounds!inner(match_id, round_type)'
             )
             .eq('match_rounds.match_id', session.match_id)
             .order('order_index', { ascending: true }),
@@ -79,6 +79,14 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
             .from('star_uses')
             .select('id, match_id, round_question_id, player_id, outcome, declared_at')
             .eq('match_id', session.match_id),
+        session.current_round_question_id
+            ? olympia
+                .from('answers')
+                .select('id, match_id, session_id, round_question_id, player_id, answer_text, notes, is_correct, points_awarded, submitted_at, created_at')
+                .eq('round_question_id', session.current_round_question_id)
+                .order('submitted_at', { ascending: false })
+                .limit(20)
+            : Promise.resolve({ data: [] }),
         session.current_round_id
             ? (async () => {
                 const { data: obstacle } = await olympia
@@ -115,6 +123,7 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
         scores: scores ?? [],
         roundQuestions: roundQuestions ?? [],
         buzzerEvents: buzzerEvents ?? [],
+        answers: (answers as AnswerRow[] | null) ?? [],
         starUses: starUses ?? [],
         obstacle: obstacleBundle.obstacle,
         obstacleTiles: obstacleBundle.tiles,

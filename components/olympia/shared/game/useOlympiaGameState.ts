@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import getSupabase from "@/lib/supabase";
 import type {
+  AnswerRow,
   BuzzerEventRow,
   GameSessionPayload,
   ObstacleGuessRow,
@@ -51,6 +52,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [session, setSession] = useState(initialData.session);
   const [scores, setScores] = useState(initialData.scores);
   const [roundQuestions, setRoundQuestions] = useState(initialData.roundQuestions);
+  const [answers, setAnswers] = useState<AnswerRow[]>(initialData.answers ?? []);
   const [starUses, setStarUses] = useState<StarUseRow[]>(initialData.starUses ?? []);
   const [players] = useState(initialData.players);
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
@@ -69,10 +71,38 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const channelRef = useRef<RealtimeChannel | null>(null);
   const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabase>> | null>(null);
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef = useRef(initialData.session);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   const questionState = session.question_state ?? "hidden";
   const roundType = session.current_round_type ?? "unknown";
   const matchId = initialData.match.id;
+
+  const fetchAnswersForQuestion = useCallback(async (roundQuestionId: string) => {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
+    try {
+      const olympia = supabase.schema("olympia");
+      const { data, error } = await olympia
+        .from("answers")
+        .select(
+          "id, match_id, session_id, round_question_id, player_id, answer_text, notes, is_correct, points_awarded, submitted_at, created_at"
+        )
+        .eq("round_question_id", roundQuestionId)
+        .order("submitted_at", { ascending: false })
+        .limit(20);
+      if (error) {
+        console.warn("[Olympia] fetch answers failed", error.message);
+        return;
+      }
+      setAnswers((data as AnswerRow[] | null) ?? []);
+    } catch (err) {
+      console.warn("[Olympia] fetch answers failed", err);
+    }
+  }, []);
 
   const refreshFromServer = useCallback(() => {
     setStatusMessage("Đang đồng bộ dữ liệu mới…");
@@ -200,6 +230,41 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               setBuzzerEvents((prev) => [eventRow, ...prev].slice(0, 20));
             }
           )
+          // Đáp án thí sinh (MC/host view dùng để theo dõi realtime)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "olympia", table: "answers" },
+            (payload) => {
+              const row = (payload.new ?? payload.old) as AnswerRow | null;
+              if (!row) return;
+
+              // Nếu row có match_id thì filter chặt; nếu không có (tuỳ schema), fallback không filter.
+              if (row.match_id && row.match_id !== matchId) return;
+
+              const currentRqId = sessionRef.current.current_round_question_id;
+              if (!currentRqId) return;
+              if (row.round_question_id !== currentRqId) return;
+
+              const isDelete =
+                (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
+              setAnswers((prev) => {
+                if (isDelete) {
+                  return prev.filter((a) => a.id !== row.id);
+                }
+
+                const next = [row, ...prev.filter((a) => a.id !== row.id)];
+                const parsed = next
+                  .slice()
+                  .sort((a, b) => {
+                    const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                    const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                    return bt - at;
+                  })
+                  .slice(0, 20);
+                return parsed;
+              });
+            }
+          )
           // CNV: nghe obstacle + tile + guess để render board tối thiểu.
           .on(
             "postgres_changes",
@@ -207,8 +272,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             (payload) => {
               const row = payload.new as ObstacleRow | null;
               if (!row) return;
-              if (!session.current_round_id) return;
-              if (row.match_round_id !== session.current_round_id) return;
+              const currentRoundId = sessionRef.current.current_round_id;
+              if (!currentRoundId) return;
+              if (row.match_round_id !== currentRoundId) return;
               setObstacle(row);
             }
           )
@@ -274,6 +340,20 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     };
   }, [sessionId, matchId, obstacle?.id, session.current_round_id]);
 
+  // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
+  useEffect(() => {
+    const rqId = session.current_round_question_id;
+    if (!rqId) {
+      // Tránh setState đồng bộ trong effect (eslint react-hooks/set-state-in-effect)
+      queueMicrotask(() => setAnswers([]));
+      return;
+    }
+    // Tránh gọi hàm có setState trực tiếp trong body effect (eslint react-hooks/set-state-in-effect)
+    queueMicrotask(() => {
+      void fetchAnswersForQuestion(rqId);
+    });
+  }, [session.current_round_question_id, fetchAnswersForQuestion]);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     const handler = () => {
@@ -309,6 +389,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     scores,
     roundQuestions,
     buzzerEvents,
+    answers,
     starUses,
     obstacle,
     obstacleTiles,

@@ -7,7 +7,7 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { setLiveSessionRoundAction, setQuestionStateAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { setLiveSessionRoundAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Check } from 'lucide-react'
 
 const initialState: ActionState = { error: null, success: null }
@@ -19,11 +19,8 @@ const roundLabelMap: Record<string, string> = {
   ve_dich: 'Về đích',
 }
 
-const questionStateLabel: Record<string, string> = {
-  hidden: 'Ẩn nội dung',
-  showing: 'Đang hiển thị',
-  answer_revealed: 'Đã mở đáp án',
-  completed: 'Hoàn tất câu hỏi',
+function isWaitingScreenOn(questionState: string | null | undefined) {
+  return questionState === 'hidden'
 }
 
 type MatchRound = {
@@ -59,10 +56,10 @@ function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: 
 
 export function HostRoundControls({ matchId, rounds, currentQuestionState, currentRoundType }: Props) {
   const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
-  const [questionState, questionAction] = useActionState(setQuestionStateAction, initialState)
+  const [waitingState, waitingAction] = useActionState(setWaitingScreenAction, initialState)
 
   const roundMessage = roundState.error ?? roundState.success
-  const questionMessage = questionState.error ?? questionState.success
+  const waitingMessage = waitingState.error ?? waitingState.success
 
   // Show toasts for messages
   useEffect(() => {
@@ -74,12 +71,12 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
   }, [roundState.error, roundState.success])
 
   useEffect(() => {
-    if (questionState.error) {
-      toast.error(questionState.error)
-    } else if (questionState.success) {
-      toast.success(questionState.success)
+    if (waitingState.error) {
+      toast.error(waitingState.error)
+    } else if (waitingState.success) {
+      toast.success(waitingState.success)
     }
-  }, [questionState.error, questionState.success])
+  }, [waitingState.error, waitingState.success])
 
   return (
     <div className="grid gap-3">
@@ -110,30 +107,42 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
         ) : null}
       </form>
 
-      <form action={questionAction} className="grid gap-2">
+      <form action={waitingAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
-        <Label className="sr-only">Trạng thái câu hỏi</Label>
+        <Label className="sr-only">Màn chờ</Label>
         <div className="flex items-center gap-2">
-          <select
-            name="questionState"
-            defaultValue={currentQuestionState ?? ''}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-            required
-            aria-label="Trạng thái câu hỏi"
-          >
-            <option value="" disabled>
-              Trạng thái
-            </option>
-            {Object.entries(questionStateLabel).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <SubmitButton disabled={!currentRoundType}>Cập nhật</SubmitButton>
+          {isWaitingScreenOn(currentQuestionState) ? (
+            <>
+              <input type="hidden" name="enabled" value="0" />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={!currentRoundType}
+                title="Tắt màn chờ (hiện câu)"
+                aria-label="Tắt màn chờ (hiện câu)"
+              >
+                Tắt màn chờ
+              </Button>
+            </>
+          ) : (
+            <>
+              <input type="hidden" name="enabled" value="1" />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={!currentRoundType}
+                title="Bật màn chờ (ẩn câu)"
+                aria-label="Bật màn chờ (ẩn câu)"
+              >
+                Bật màn chờ
+              </Button>
+            </>
+          )}
         </div>
-        {questionMessage && !questionState.error ? (
-          <p className="text-xs text-green-600">{questionMessage}</p>
+        {waitingMessage && !waitingState.error ? (
+          <p className="text-xs text-green-600">{waitingMessage}</p>
         ) : null}
       </form>
     </div>

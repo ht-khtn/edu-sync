@@ -74,6 +74,14 @@ const advanceQuestionSchema = z.object({
     .transform((val) => val === "1"),
 });
 
+const waitingScreenSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  enabled: z
+    .string()
+    .optional()
+    .transform((val) => val === "1"),
+});
+
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 type ParsedQuestionSetItem = {
@@ -1102,6 +1110,55 @@ export async function setQuestionStateAction(
   }
 }
 
+export async function setWaitingScreenAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = waitingScreenSchema.safeParse({
+      matchId: formData.get("matchId"),
+      enabled: formData.get("enabled"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin màn chờ." };
+    }
+
+    const { matchId, enabled } = parsed.data;
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") {
+      return { error: "Phòng chưa ở trạng thái running." };
+    }
+
+    const nextState = enabled ? "hidden" : "showing";
+
+    const { error } = await olympia
+      .from("live_sessions")
+      .update({ question_state: nextState })
+      .eq("id", session.id);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/client");
+
+    return { success: enabled ? "Đã bật màn chờ." : "Đã tắt màn chờ." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật màn chờ." };
+  }
+}
+
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
     const { supabase, authUid, appUserId } = await getServerAuthContext();
@@ -1482,6 +1539,7 @@ export async function setCurrentQuestionAction(
       .update({
         current_round_id: roundQuestion.match_round_id,
         current_round_question_id: roundQuestion.id,
+        // Đổi câu luôn tự tắt màn chờ để hiển thị câu mới.
         question_state: "showing",
         timer_deadline: deadline,
       })
@@ -1560,7 +1618,8 @@ export async function advanceCurrentQuestionAction(
       .from("live_sessions")
       .update({
         current_round_question_id: nextQuestion.id,
-        question_state: autoShow ? "showing" : "hidden",
+        // Đổi câu luôn tự tắt màn chờ. Nếu không autoShow, vẫn tắt màn chờ nhưng không chạy timer.
+        question_state: "showing",
         timer_deadline: timerDeadline,
       })
       .eq("id", session.id);

@@ -37,37 +37,37 @@ export function CreateTournamentDialog() {
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Tên giải</Label>
-            <Input 
-              id="name" 
-              name="name" 
+            <Input
+              id="name"
+              name="name"
               placeholder="VD: Olympia Quý 1 - 2025"
-              required 
+              required
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="startsAt">Ngày bắt đầu</Label>
-            <Input 
-              id="startsAt" 
-              name="startsAt" 
+            <Input
+              id="startsAt"
+              name="startsAt"
               type="datetime-local"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="endsAt">Ngày kết thúc</Label>
-            <Input 
-              id="endsAt" 
-              name="endsAt" 
+            <Input
+              id="endsAt"
+              name="endsAt"
               type="datetime-local"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="status">Trạng thái</Label>
-            <select 
-              id="status" 
-              name="status" 
+            <select
+              id="status"
+              name="status"
               className="w-full rounded-md border px-3 py-2 text-sm"
               defaultValue="planned"
             >

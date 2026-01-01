@@ -1,4 +1,5 @@
 -- Migration: add audit log for score changes (undo/manual adjust)
+-- Synced from docs/supabase/migrations/20260101090000_add_score_changes.sql
 
 create table if not exists olympia.score_changes (
   id uuid primary key default gen_random_uuid(),

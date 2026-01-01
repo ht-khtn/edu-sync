@@ -1,5 +1,5 @@
 -- Migration: create olympia schema and core tables
--- Generated from docs/supabase/olympia-schema.sql
+-- Synced from docs/supabase/migrations/20241202090000_olympia_schema.sql
 
 create schema if not exists olympia;
 
@@ -82,76 +82,14 @@ create table if not exists olympia.round_questions (
   unique (match_round_id, order_index)
 );
 
-create table if not exists olympia.answers (
-  id uuid primary key default gen_random_uuid(),
-  match_id uuid not null references olympia.matches(id) on delete cascade,
-  match_round_id uuid not null references olympia.match_rounds(id) on delete cascade,
-  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
-  player_id uuid not null references olympia.match_players(id) on delete cascade,
-  answer_text text,
-  is_correct boolean,
-  points_awarded integer default 0,
-  response_time_ms integer,
-  submitted_at timestamptz not null default now()
-);
-
 create table if not exists olympia.match_scores (
   id uuid primary key default gen_random_uuid(),
   match_id uuid not null references olympia.matches(id) on delete cascade,
   player_id uuid not null references olympia.match_players(id) on delete cascade,
   round_type text not null,
   points integer not null default 0,
-  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
   unique (match_id, player_id, round_type)
-);
-
-create table if not exists olympia.buzzer_events (
-  id uuid primary key default gen_random_uuid(),
-  match_id uuid not null references olympia.matches(id) on delete cascade,
-  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
-  player_id uuid references olympia.match_players(id) on delete cascade,
-  event_type text not null default 'buzz',
-  result text,
-  occurred_at timestamptz not null default now()
-);
-
-create table if not exists olympia.star_uses (
-  id uuid primary key default gen_random_uuid(),
-  match_id uuid not null references olympia.matches(id) on delete cascade,
-  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
-  player_id uuid not null references olympia.match_players(id) on delete cascade,
-  outcome text,
-  declared_at timestamptz not null default now(),
-  unique (round_question_id, player_id)
-);
-
-create table if not exists olympia.obstacles (
-  id uuid primary key default gen_random_uuid(),
-  match_round_id uuid not null unique references olympia.match_rounds(id) on delete cascade,
-  title text,
-  final_keyword text not null,
-  image_url text,
-  meta jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists olympia.obstacle_tiles (
-  id uuid primary key default gen_random_uuid(),
-  obstacle_id uuid not null references olympia.obstacles(id) on delete cascade,
-  round_question_id uuid references olympia.round_questions(id) on delete set null,
-  position_index smallint not null,
-  is_open boolean not null default false,
-  unique (obstacle_id, position_index)
-);
-
-create table if not exists olympia.obstacle_guesses (
-  id uuid primary key default gen_random_uuid(),
-  obstacle_id uuid not null references olympia.obstacles(id) on delete cascade,
-  player_id uuid not null references olympia.match_players(id) on delete cascade,
-  guess_text text not null,
-  is_correct boolean not null default false,
-  attempt_order smallint,
-  attempted_at timestamptz not null default now()
 );
 
 create table if not exists olympia.live_sessions (
@@ -164,7 +102,75 @@ create table if not exists olympia.live_sessions (
   current_round_question_id uuid references olympia.round_questions(id) on delete set null,
   question_state text not null default 'hidden' check (question_state in ('hidden','showing','answer_revealed','completed')),
   timer_deadline timestamptz,
+  requires_player_password boolean not null default true,
   created_by uuid references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
-  ended_at timestamptz
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists olympia.answers (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references olympia.matches(id) on delete cascade,
+  session_id uuid not null references olympia.live_sessions(id) on delete cascade,
+  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
+  player_id uuid not null references olympia.match_players(id) on delete cascade,
+  answer_text text,
+  notes text,
+  is_correct boolean,
+  points_awarded integer,
+  submitted_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists olympia.buzzer_events (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references olympia.matches(id) on delete cascade,
+  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
+  player_id uuid references olympia.match_players(id) on delete set null,
+  event_type text not null check (event_type in ('buzz','steal')),
+  result text,
+  occurred_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists olympia.star_uses (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references olympia.matches(id) on delete cascade,
+  round_question_id uuid not null references olympia.round_questions(id) on delete cascade,
+  player_id uuid not null references olympia.match_players(id) on delete cascade,
+  outcome text,
+  declared_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists olympia.obstacles (
+  id uuid primary key default gen_random_uuid(),
+  match_round_id uuid not null references olympia.match_rounds(id) on delete cascade,
+  title text,
+  final_keyword text not null,
+  image_url text,
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (match_round_id)
+);
+
+create table if not exists olympia.obstacle_tiles (
+  id uuid primary key default gen_random_uuid(),
+  obstacle_id uuid not null references olympia.obstacles(id) on delete cascade,
+  round_question_id uuid references olympia.round_questions(id) on delete set null,
+  position_index smallint not null,
+  is_open boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (obstacle_id, position_index)
+);
+
+create table if not exists olympia.obstacle_guesses (
+  id uuid primary key default gen_random_uuid(),
+  obstacle_id uuid not null references olympia.obstacles(id) on delete cascade,
+  player_id uuid not null references olympia.match_players(id) on delete cascade,
+  guess_text text not null,
+  is_correct boolean not null default false,
+  attempt_order smallint,
+  attempted_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
 );

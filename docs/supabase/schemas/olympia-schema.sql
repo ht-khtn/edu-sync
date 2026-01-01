@@ -206,6 +206,33 @@ CREATE TABLE olympia.round_questions (
   CONSTRAINT round_questions_target_player_id_fkey FOREIGN KEY (target_player_id) REFERENCES olympia.match_players(id),
   CONSTRAINT round_questions_match_round_id_fkey FOREIGN KEY (match_round_id) REFERENCES olympia.match_rounds(id)
 );
+CREATE TABLE olympia.score_changes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  match_id uuid NOT NULL,
+  player_id uuid NOT NULL,
+  round_type text NOT NULL,
+  requested_delta integer NOT NULL,
+  applied_delta integer NOT NULL,
+  points_before integer NOT NULL,
+  points_after integer NOT NULL,
+  source text NOT NULL DEFAULT 'system'::text,
+  reason text,
+  round_question_id uuid,
+  answer_id uuid,
+  revert_of uuid,
+  reverted_at timestamp with time zone,
+  reverted_by uuid,
+  created_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT score_changes_pkey PRIMARY KEY (id),
+  CONSTRAINT score_changes_match_id_fkey FOREIGN KEY (match_id) REFERENCES olympia.matches(id),
+  CONSTRAINT score_changes_player_id_fkey FOREIGN KEY (player_id) REFERENCES olympia.match_players(id),
+  CONSTRAINT score_changes_round_question_id_fkey FOREIGN KEY (round_question_id) REFERENCES olympia.round_questions(id),
+  CONSTRAINT score_changes_answer_id_fkey FOREIGN KEY (answer_id) REFERENCES olympia.answers(id),
+  CONSTRAINT score_changes_revert_of_fkey FOREIGN KEY (revert_of) REFERENCES olympia.score_changes(id),
+  CONSTRAINT score_changes_reverted_by_fkey FOREIGN KEY (reverted_by) REFERENCES public.users(id),
+  CONSTRAINT score_changes_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
 CREATE TABLE olympia.session_password_history (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   session_id uuid NOT NULL,

@@ -106,6 +106,15 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
   const cnvGuessFeedback = cnvGuessState.error ?? cnvGuessState.success
   const buzzerFeedback = buzzerState.error ?? buzzerState.success
 
+  const formatPlayerLabel = (playerId: string | null | undefined) => {
+    if (!playerId) return '—'
+    const p = players.find((row) => row.id === playerId)
+    if (!p) return playerId
+    const seat = typeof p.seat_index === 'number' ? p.seat_index : '—'
+    const name = p.display_name ?? 'Thí sinh'
+    return `Ghế ${seat} · ${name}`
+  }
+
   const currentQuestionId = session.current_round_question_id
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
@@ -135,6 +144,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
         ?.player_id ?? null)
       : null
   const isViewerStealWinner = Boolean(viewerPlayer?.id && stealWinnerPlayerId && viewerPlayer.id === stealWinnerPlayerId)
+  const stealWinnerLabel = stealWinnerPlayerId ? formatPlayerLabel(stealWinnerPlayerId) : null
 
   const canSubmitVeDich =
     !disableInteractions &&
@@ -188,7 +198,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
                 </div>
                 {isStealWindow ? (
                   <p className="text-xs text-amber-700">
-                    Cửa sổ cướp đang mở. {stealWinnerPlayerId ? `Winner: ${stealWinnerPlayerId}` : 'Chờ tín hiệu buzzer thắng.'}
+                    Cửa sổ cướp đang mở. {stealWinnerLabel ? `Winner: ${stealWinnerLabel}` : 'Chờ tín hiệu buzzer thắng.'}
                   </p>
                 ) : null}
               </div>
@@ -388,14 +398,21 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback }
               buzzerEvents.map((event) => {
                 const ts = event.occurred_at ?? event.created_at
                 const timestamp = ts ? new Date(ts).toLocaleTimeString('vi-VN') : '—'
+                const eventType = event.event_type ?? 'buzz'
+                const typeLabel = eventType === 'steal' ? 'CƯỚP' : eventType === 'buzz' ? 'BUZZ' : eventType
                 return (
                   <div
                     key={event.id ?? `${event.player_id}-${event.created_at}`}
                     className="rounded-md border border-slate-100 bg-white px-3 py-2 shadow-sm"
                   >
-                    <p className="font-semibold">{event.player_id ?? '—'}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{formatPlayerLabel(event.player_id)}</p>
+                      <Badge variant="outline" className="text-[10px]">
+                        {typeLabel}
+                      </Badge>
+                    </div>
                     <p className="text-muted-foreground">
-                      {timestamp} · {event.event_type ?? 'event'} {event.result ? `· ${event.result}` : ''}
+                      {timestamp} {event.result ? `· ${event.result}` : ''}
                     </p>
                   </div>
                 )

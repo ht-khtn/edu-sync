@@ -20,3 +20,12 @@ Provide project context and coding guidelines that AI should follow when generat
 4. When running in agent mode:
    - If there is sufficient context to perform the task, proceed automatically without asking for confirmation.
    - Only ask clarifying questions when the context is genuinely insufficient or ambiguous.
+
+5. DO NOT CHANGE OTHER COMPONENTS:
+   - If you see any othr components which i đon't request to delete, please do not delete that.
+
+6. To-do lists
+   - Always create to-do lists before doing anything.
+
+7. Checking Resources
+   - Always check database schema and the specific before thinking. Also, when having a plan, please check it too.

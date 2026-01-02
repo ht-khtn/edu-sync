@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useActionState } from 'react'
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -55,6 +55,10 @@ export function HostRoundControls({
   isKhoiDong,
 }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
+
   const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
   const [waitingState, waitingAction] = useActionState(setWaitingScreenAction, initialState)
   const [buzzerState, buzzerAction] = useActionState(setBuzzerEnabledAction, initialState)
@@ -82,6 +86,8 @@ export function HostRoundControls({
   const roundMessage = roundState.error ?? roundState.success
   const waitingMessage = waitingState.error ?? waitingState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
+
+  const canPickTarget = Boolean(allowTargetSelection && currentRoundQuestionId)
 
   // Show toasts for messages
   useEffect(() => {
@@ -171,34 +177,91 @@ export function HostRoundControls({
         ) : null}
       </form>
 
-      {allowTargetSelection && players && players.length > 0 ? (
-        <form ref={targetFormRef} action={targetAction} className="grid gap-2">
-          <input type="hidden" name="matchId" value={matchId} />
-          <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
-          <Label className="sr-only">Chọn thí sinh</Label>
-          <div className="flex items-center gap-2">
-            <select
-              name="playerId"
-              value={targetPlayerId}
-              onChange={(e) => {
-                const next = e.target.value
-                setTargetPlayerId(next)
-              }}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-              aria-label="Chọn thí sinh"
-            >
-              <option value="">{isKhoiDong ? 'Vòng thi chung (DKA)' : '(Tuỳ vòng) Chọn thí sinh'}</option>
-              {players.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
+      {players && players.length > 0 ? (
+        isKhoiDong ? (
+          <form
+            ref={targetFormRef}
+            action={targetAction}
+            className="grid gap-2"
+            onSubmit={(e) => {
+              // Trước khi submit, update URL query param để lọc danh sách câu theo ghế được chọn
+              const selectedPlayer = players.find((p) => p.id === targetPlayerId)
+              const nextSeat = selectedPlayer?.seat_index
+              const params = new URLSearchParams(baseParams)
+              if (nextSeat != null) params.set('kdSeat', String(nextSeat))
+              else params.delete('kdSeat')
+              // Đổi ghế/thi chung thì reset preview để tránh chọn câu không thuộc danh sách.
+              params.delete('preview')
+              const qs = params.toString()
+              router.replace(qs ? `${pathname}?${qs}` : pathname)
+            }}
+          >
+            <input type="hidden" name="matchId" value={matchId} />
+            <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
+            <Label className="sr-only">Chọn ghế (Khởi động)</Label>
+            <div className="flex items-center gap-2">
+              <select
+                name="playerId"
+                value={targetPlayerId}
+                onChange={(e) => {
+                  const selectedPlayerId = e.target.value
+                  setTargetPlayerId(selectedPlayerId)
+                }}
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                aria-label="Chọn ghế (Khởi động)"
+              >
+                <option value="">Thi chung (DKA)</option>
+                {players
+                  .filter((p) => typeof p.seat_index === 'number')
+                  .slice()
+                  .sort((a, b) => (a.seat_index ?? 0) - (b.seat_index ?? 0))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
+                    </option>
+                  ))}
+              </select>
+              <Button type="submit" size="sm" aria-label="Xác nhận chọn ghế" title="Khởi động: chọn ghế để lọc câu, không cần chọn câu trước">
+                Xác nhận
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form ref={targetFormRef} action={targetAction} className="grid gap-2">
+            <input type="hidden" name="matchId" value={matchId} />
+            <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
+            <Label className="sr-only">Chọn thí sinh</Label>
+            <div className="flex items-center gap-2">
+              <select
+                name="playerId"
+                value={targetPlayerId}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setTargetPlayerId(next)
+                }}
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                aria-label="Chọn thí sinh"
+                disabled={!allowTargetSelection}
+              >
+                <option value="">
+                  {!allowTargetSelection
+                    ? 'Chọn thí sinh (chỉ dùng cho Về đích)'
+                    : !currentRoundQuestionId
+                      ? 'Chọn câu trước để gán thí sinh'
+                      : '(Tuỳ vòng) Chọn thí sinh'}
                 </option>
-              ))}
-            </select>
-            <Button type="submit" size="sm" aria-label="Xác nhận chọn thí sinh">
-              Xác nhận
-            </Button>
-          </div>
-        </form>
+                {players.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
+                  </option>
+                ))}
+              </select>
+              <Button type="submit" size="sm" aria-label="Xác nhận chọn thí sinh" disabled={!canPickTarget}>
+                Xác nhận
+              </Button>
+            </div>
+          </form>
+        )
       ) : null}
 
       <form ref={waitingFormRef} action={waitingAction} className="grid gap-2">

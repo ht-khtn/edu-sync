@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundControls'
 import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
+import { HostRoundDecisionPanel } from '@/components/olympia/admin/matches/HostRoundDecisionPanel'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { ScoreboardOverlayToggle } from '@/components/olympia/admin/matches/ScoreboardOverlayToggle'
@@ -369,13 +370,22 @@ export default async function OlympiaHostConsolePage({
   searchParams,
 }: {
   params: Promise<{ matchId: string }>
-  searchParams?: Promise<{ preview?: string | string[] }>
+  searchParams?: Promise<{ preview?: string | string[]; kdSeat?: string | string[] }>
 }) {
   const { matchId } = await params
-  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[] }
+  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[]; kdSeat?: string | string[] }
   const previewParam = Array.isArray(resolvedSearchParams.preview)
     ? resolvedSearchParams.preview[0]
     : resolvedSearchParams.preview
+
+  const kdSeatParamRaw = Array.isArray(resolvedSearchParams.kdSeat)
+    ? resolvedSearchParams.kdSeat[0]
+    : resolvedSearchParams.kdSeat
+  const kdSeat = (() => {
+    if (!kdSeatParamRaw) return null
+    const n = Number.parseInt(String(kdSeatParamRaw), 10)
+    return Number.isFinite(n) ? n : null
+  })()
 
   const data = await fetchHostData(matchId)
   if (!data) {
@@ -413,17 +423,6 @@ export default async function OlympiaHostConsolePage({
     .map(([roundType, codes]) => ({ roundType, codes }))
     .sort((a, b) => a.roundType.localeCompare(b.roundType))
 
-  const previewRoundQuestionId =
-    previewParam && currentRoundQuestions.some((q) => q.id === previewParam)
-      ? previewParam
-      : liveSession?.current_round_question_id && currentRoundQuestions.some((q) => q.id === liveSession.current_round_question_id)
-        ? liveSession.current_round_question_id
-        : currentRoundQuestions[0]?.id
-
-  const previewRoundQuestion = previewRoundQuestionId
-    ? currentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
-    : null
-
   const selectedTargetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const selectedTargetSeat = selectedTargetPlayerId
     ? players.find((p) => p.id === selectedTargetPlayerId)?.seat_index ?? null
@@ -439,8 +438,8 @@ export default async function OlympiaHostConsolePage({
     // Lọc theo luật mã câu:
     // - Thi chung: DKA-
     // - Thi riêng: KD{seat}-
-    if (typeof selectedTargetSeat === 'number') {
-      const prefix = `KD${selectedTargetSeat}-`
+    if (typeof kdSeat === 'number') {
+      const prefix = `KD${kdSeat}-`
       return currentRoundQuestions.filter((q) => {
         const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
         return typeof code === 'string' && code.toUpperCase().startsWith(prefix)
@@ -453,16 +452,35 @@ export default async function OlympiaHostConsolePage({
       return getKhoiDongCodeInfo(code)?.kind === 'common'
     })
   })()
+
+  const previewRoundQuestionId =
+    previewParam && filteredCurrentRoundQuestions.some((q) => q.id === previewParam)
+      ? previewParam
+      : liveSession?.current_round_question_id && filteredCurrentRoundQuestions.some((q) => q.id === liveSession.current_round_question_id)
+        ? liveSession.current_round_question_id
+        : filteredCurrentRoundQuestions[0]?.id
+
+  const previewRoundQuestion = previewRoundQuestionId
+    ? filteredCurrentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
+    : null
+
   const previewIndex = previewRoundQuestionId
-    ? currentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
+    ? filteredCurrentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
     : -1
-  const previewPrevId = previewIndex > 0 ? currentRoundQuestions[previewIndex - 1]?.id ?? null : null
+  const previewPrevId = previewIndex > 0 ? filteredCurrentRoundQuestions[previewIndex - 1]?.id ?? null : null
   const previewNextId =
-    previewIndex >= 0 && previewIndex < currentRoundQuestions.length - 1
-      ? currentRoundQuestions[previewIndex + 1]?.id ?? null
+    previewIndex >= 0 && previewIndex < filteredCurrentRoundQuestions.length - 1
+      ? filteredCurrentRoundQuestions[previewIndex + 1]?.id ?? null
       : null
 
   const hostPath = `/olympia/admin/matches/${matchId}/host`
+  const buildHostHref = (nextPreviewId: string | null) => {
+    const params = new URLSearchParams()
+    if (nextPreviewId) params.set('preview', nextPreviewId)
+    if (kdSeat != null) params.set('kdSeat', String(kdSeat))
+    const qs = params.toString()
+    return qs ? `${hostPath}?${qs}` : hostPath
+  }
 
   const veDichValueRaw =
     currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
@@ -538,12 +556,16 @@ export default async function OlympiaHostConsolePage({
                       if (!liveSession?.current_round_type) return 'Chưa chọn vòng'
                       const roundText = roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type
                       if (!allowTargetSelection) return roundText
+                      if (isKhoiDong) {
+                        return typeof kdSeat === 'number'
+                          ? `${roundText} · Thi riêng · Ghế ${kdSeat}`
+                          : `${roundText} · Thi chung`
+                      }
                       if (selectedTargetPlayerId) {
                         const p = players.find((x) => x.id === selectedTargetPlayerId)
                         const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
                         return `${roundText} · Thí sinh: ${label}`
                       }
-                      if (isKhoiDong) return `${roundText} · Thi chung`
                       return roundText
                     })()}
                   </CardDescription>
@@ -552,7 +574,7 @@ export default async function OlympiaHostConsolePage({
                 <div className="flex items-center gap-2">
                   {previewPrevId ? (
                     <Button asChild size="icon-sm" variant="outline" title="Xem câu trước" aria-label="Xem câu trước">
-                      <Link href={`${hostPath}?preview=${encodeURIComponent(previewPrevId)}`}>
+                      <Link href={buildHostHref(previewPrevId)}>
                         <ArrowLeft />
                       </Link>
                     </Button>
@@ -569,12 +591,12 @@ export default async function OlympiaHostConsolePage({
                       id: q.id,
                       label: `#${q.order_index ?? '?'} · ${getRoundQuestionLabel(q as unknown as RoundQuestionRow)}`,
                     }))}
-                    triggerReset={!currentRoundQuestion?.target_player_id || liveSession?.current_round_question_id === null}
+                    triggerReset={liveSession?.current_round_question_id === null}
                   />
 
                   {previewNextId ? (
                     <Button asChild size="icon-sm" variant="outline" title="Xem câu sau" aria-label="Xem câu sau">
-                      <Link href={`${hostPath}?preview=${encodeURIComponent(previewNextId)}`}>
+                      <Link href={buildHostHref(previewNextId)}>
                         <ArrowRight />
                       </Link>
                     </Button>
@@ -778,6 +800,16 @@ export default async function OlympiaHostConsolePage({
                           </Button>
                         </form>
                       </div>
+
+                      {isKhoiDong && enabledScoringPlayerId && (
+                        <HostRoundDecisionPanel
+                          matchId={match.id}
+                          sessionId={liveSession?.id ?? null}
+                          enabledPlayerId={enabledScoringPlayerId}
+                          roundType={liveSession?.current_round_type}
+                          currentRoundQuestionId={liveSession?.current_round_question_id}
+                        />
+                      )}
                     </div>
                   )
                 })()

@@ -260,7 +260,7 @@ const veDichValueSchema = z.object({
 
 const setRoundQuestionTargetSchema = z.object({
   matchId: z.string().uuid("Trận không hợp lệ."),
-  roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
+  roundQuestionId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
   // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
   playerId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
 });
@@ -2644,25 +2644,29 @@ export async function setRoundQuestionTargetPlayerAction(
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin target." };
     }
 
-    const { error } = await olympia
-      .from("round_questions")
-      .update({ target_player_id: parsed.data.playerId })
-      .eq("id", parsed.data.roundQuestionId);
-    if (error) return { error: error.message };
+    // Chỉ cập nhật round_questions nếu có roundQuestionId cụ thể.
+    // Nếu roundQuestionId = null (chỉ chọn ghế, chưa chọn câu), thì bỏ qua bước này.
+    if (parsed.data.roundQuestionId) {
+      const { error } = await olympia
+        .from("round_questions")
+        .update({ target_player_id: parsed.data.playerId })
+        .eq("id", parsed.data.roundQuestionId);
+      if (error) return { error: error.message };
 
-    // Khi đổi sub-round (thi chung/thi riêng), reset câu đang live + bật màn chờ + tắt chuông.
-    // Chỉ reset nếu roundQuestionId đúng là câu đang live để tránh side-effect khi chỉnh nhầm.
-    await olympia
-      .from("live_sessions")
-      .update({
-        current_round_question_id: null,
-        question_state: "hidden",
-        timer_deadline: null,
-        buzzer_enabled: false,
-      })
-      .eq("match_id", parsed.data.matchId)
-      .eq("status", "running")
-      .eq("current_round_question_id", parsed.data.roundQuestionId);
+      // Khi đổi sub-round (thi chung/thi riêng), reset câu đang live + bật màn chờ + tắt chuông.
+      // Chỉ reset nếu roundQuestionId đúng là câu đang live để tránh side-effect khi chỉnh nhầm.
+      await olympia
+        .from("live_sessions")
+        .update({
+          current_round_question_id: null,
+          question_state: "hidden",
+          timer_deadline: null,
+          buzzer_enabled: false,
+        })
+        .eq("match_id", parsed.data.matchId)
+        .eq("status", "running")
+        .eq("current_round_question_id", parsed.data.roundQuestionId);
+    }
 
     revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
 

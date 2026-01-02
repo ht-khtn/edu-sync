@@ -66,6 +66,18 @@ function applyAuthCookies(response: NextResponse, request: NextRequest, tokens: 
     maxAge:
       typeof tokens.expires_in === "number" && tokens.expires_in > 0 ? tokens.expires_in : 60 * 60,
   });
+
+  // Cookie phụ để client-side Supabase (storage/realtime) có thể đọc JWT.
+  // Giữ cookie chính httpOnly để an toàn hơn cho SSR.
+  response.cookies.set("sb-access-token-public", tokens.access_token, {
+    httpOnly: false,
+    path: "/",
+    sameSite: "lax",
+    secure,
+    maxAge:
+      typeof tokens.expires_in === "number" && tokens.expires_in > 0 ? tokens.expires_in : 60 * 60,
+  });
+
   response.cookies.set("sb-refresh-token", tokens.refresh_token, {
     httpOnly: true,
     path: "/",
@@ -83,6 +95,15 @@ export async function proxy(request: NextRequest) {
   const host = request.headers.get("host");
   const url = request.nextUrl.clone();
   const { pathname } = request.nextUrl;
+
+  // Public Olympia routes (MC / Guest) không bắt buộc đăng nhập
+  const isPublicOlympiaRoute =
+    pathname === "/olympia/mc" ||
+    pathname.startsWith("/olympia/mc/") ||
+    pathname.startsWith("/olympia/client/guest") ||
+    pathname.startsWith("/olympia/client/watch") ||
+    pathname.startsWith("/olympia/client/join") ||
+    pathname.startsWith("/olympia/client/how-to-join");
 
   // Skip static assets and API routes
   if (
@@ -182,6 +203,9 @@ export async function proxy(request: NextRequest) {
 
   // Rule 3: Protect olympia routes
   if (isProtectedOlympiaRoute(pathname)) {
+    if (isPublicOlympiaRoute) {
+      return finalize(NextResponse.next());
+    }
     if (!session.isAuthenticated) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";

@@ -1,11 +1,10 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { OlympiaGameClient } from '@/components/olympia/shared/game'
 import { SessionInfoSidebar } from '@/components/olympia/client/game/SessionInfoSidebar'
 import { McPasswordGate } from '@/components/olympia/shared/McPasswordGate'
-import { summarizeOlympiaRole } from '@/lib/olympia-access'
-import { getServerAuthContext } from '@/lib/server-auth'
+import { getServerSupabase } from '@/lib/server-auth'
 import type { AnswerRow, GameSessionPayload } from '@/types/olympia/game'
 
 export const dynamic = 'force-dynamic'
@@ -140,15 +139,8 @@ const statusLabel: Record<string, string> = {
 }
 
 export default async function OlympiaMcJoinCodePage({ params }: PageProps) {
-    const { appUserId, supabase } = await getServerAuthContext()
-    if (!appUserId) {
-        redirect(`/login?redirect=/olympia/mc/${params.joinCode}`)
-    }
-
-    const role = await summarizeOlympiaRole()
-    if (role !== 'olympia-mc' && role !== 'olympia-admin') {
-        redirect('/olympia')
-    }
+    // MC view cho phép mọi người truy cập (không bắt buộc là thí sinh / không cần đăng nhập).
+    const supabase = await getServerSupabase()
 
     const joinCode = (params.joinCode ?? '').trim().toUpperCase()
     if (!joinCode) {
@@ -181,7 +173,7 @@ export default async function OlympiaMcJoinCodePage({ params }: PageProps) {
                     <div className="grid gap-6 lg:grid-cols-4">
                         <div className="lg:col-span-3">
                             <OlympiaGameClient
-                                initialData={{ ...data, viewerUserId: appUserId }}
+                                initialData={{ ...data, viewerUserId: null }}
                                 sessionId={data.session.id}
                                 viewerMode="mc"
                             />

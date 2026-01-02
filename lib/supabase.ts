@@ -34,7 +34,7 @@ export async function getSupabase(): Promise<SupabaseClient> {
     const { url, anonKey } = getSupabasePublicEnv();
     // Server dùng cookie `sb-access-token` để set Authorization.
     // Browser cũng cần token này để nhận Realtime events (RLS) mà không phải reload.
-    const accessToken = readCookie("sb-access-token");
+    const accessToken = readCookie("sb-access-token-public") ?? readCookie("sb-access-token");
     const client = createClient(url, anonKey, {
       global: {
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},

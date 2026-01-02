@@ -1,5 +1,6 @@
 import { UploadQuestionSetDialog } from '@/components/olympia/admin/question-bank/UploadQuestionSetDialog'
 import { ViewQuestionSetDialog } from '@/components/olympia/admin/question-bank/ViewQuestionSetDialog'
+import { DeleteQuestionSetButton } from '@/components/olympia/admin/question-bank/DeleteQuestionSetButton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -149,11 +150,14 @@ export default async function OlympiaQuestionBankPage() {
                     <TableCell className="text-sm text-muted-foreground">{set.original_filename ?? '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(set.created_at)}</TableCell>
                     <TableCell>
-                      <ViewQuestionSetDialog
-                        questionSetId={set.id}
-                        questionSetName={set.name}
-                        itemCount={set.item_count}
-                      />
+                      <div className="flex flex-wrap gap-2">
+                        <ViewQuestionSetDialog
+                          questionSetId={set.id}
+                          questionSetName={set.name}
+                          itemCount={set.item_count}
+                        />
+                        <DeleteQuestionSetButton questionSetId={set.id} questionSetName={set.name} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

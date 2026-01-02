@@ -10,6 +10,7 @@ export type LiveSessionRow = {
   timer_deadline: string | null;
   buzzer_enabled?: boolean;
   requires_player_password?: boolean;
+  show_scoreboard_overlay?: boolean;
 };
 
 export type MatchRow = {

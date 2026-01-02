@@ -163,7 +163,6 @@ export function UploadQuestionSetDialog() {
             <Label htmlFor="assets">Tải nguyên (thư mục)</Label>
             <Input
               id="assets"
-              name="assets"
               type="file"
               multiple
               onChange={handleAssetFolderChange}

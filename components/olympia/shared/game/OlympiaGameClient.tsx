@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo, useEffect, useRef, useState } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -136,7 +136,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
 
-  const [showBigScoreboard, setShowBigScoreboard] = useState(false)
+  const showBigScoreboard = session.show_scoreboard_overlay === true
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
     roundQuestionId: null,
     key: null,
@@ -314,21 +314,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         </header>
       ) : null}
 
-      {/* Guest: nút bật/tắt bảng điểm lớn */}
-      {isGuest ? (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-          <Button
-            variant="outline"
-            className="bg-slate-950/60 border-slate-600 text-white hover:bg-slate-900"
-            onClick={() => setShowBigScoreboard((v) => !v)}
-          >
-            {showBigScoreboard ? 'Đóng bảng điểm' : 'Bảng điểm'}
-          </Button>
-        </div>
-      ) : null}
-
-      {/* Guest: overlay bảng điểm lớn nền Result.png */}
-      {isGuest && showBigScoreboard ? (
+      {/* Overlay bảng điểm lớn (đồng bộ theo host) */}
+      {showBigScoreboard ? (
         <div className="fixed inset-0 z-[60]">
           <div
             className="absolute inset-0"
@@ -349,13 +336,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                   <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
                   <p className="text-sm text-slate-100 truncate">{match.name}</p>
                 </div>
-                <Button
-                  variant="outline"
-                  className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
-                  onClick={() => setShowBigScoreboard(false)}
-                >
-                  Đóng
-                </Button>
               </div>
 
               <div className="mt-6 grid gap-3">

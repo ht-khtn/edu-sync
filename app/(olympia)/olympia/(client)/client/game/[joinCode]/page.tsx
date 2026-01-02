@@ -19,7 +19,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
     const { data: session, error: sessionError } = await olympia
         .from('live_sessions')
         .select(
-            'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password'
+            'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay'
         )
         .eq('join_code', sessionId)
         .maybeSingle()

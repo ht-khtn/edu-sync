@@ -95,6 +95,14 @@ const buzzerEnabledSchema = z.object({
     .transform((val) => val === "1"),
 });
 
+const scoreboardOverlaySchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  enabled: z
+    .string()
+    .optional()
+    .transform((val) => val === "1"),
+});
+
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 /**
@@ -104,6 +112,7 @@ const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 function parseQuestionRoundType(code: string): string | null {
   const upper = code.toUpperCase().trim();
   if (upper.startsWith("KD")) return "khoi_dong";
+  if (upper.startsWith("DKA")) return "khoi_dong";
   if (upper.startsWith("VCNV") || upper.startsWith("CNV")) return "vcnv";
   if (upper.startsWith("TT")) return "tang_toc";
   if (upper.startsWith("VD")) return "ve_dich";
@@ -1083,6 +1092,51 @@ export async function setBuzzerEnabledAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật bấm chuông." };
   }
+}
+
+export async function setScoreboardOverlayAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = scoreboardOverlaySchema.safeParse({
+      matchId: formData.get("matchId"),
+      enabled: formData.get("enabled"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bảng điểm." };
+    }
+
+    const { matchId, enabled } = parsed.data;
+
+    const { data: updatedRows, error } = await olympia
+      .from("live_sessions")
+      .update({ show_scoreboard_overlay: enabled })
+      .eq("match_id", matchId)
+      .select("id");
+
+    if (error) return { error: error.message };
+    if (!updatedRows || updatedRows.length === 0) {
+      return { error: "Không tìm thấy phòng để cập nhật bảng điểm." };
+    }
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/client");
+
+    return { success: enabled ? "Đã bật bảng điểm lớn." : "Đã tắt bảng điểm lớn." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật bảng điểm." };
+  }
+}
+
+// Wrapper dùng trực tiếp cho <form action={...}> trong Server Component.
+// Next.js form action chỉ truyền 1 tham số (FormData).
+export async function setScoreboardOverlayFormAction(formData: FormData): Promise<void> {
+  await setScoreboardOverlayAction({}, formData);
 }
 
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
@@ -3404,7 +3458,7 @@ async function generateRoundQuestionsFromSetsAction(
 
     if (debug.itemsRecognized === 0) {
       debug.notes.push(
-        "Không nhận diện được mã câu. Code cần bắt đầu bằng KD/VCNV(CNV)/TT/VD (không phân biệt hoa/thường)."
+        "Không nhận diện được mã câu. Code cần bắt đầu bằng KD/DKA/VCNV(CNV)/TT/VD (không phân biệt hoa/thường)."
       );
       console.warn("[Olympia] generateRoundQuestionsFromSets: all codes unrecognized", {
         matchId,

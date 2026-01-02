@@ -7,10 +7,12 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
+import { ScoreboardOverlayToggle } from '@/components/olympia/admin/matches/ScoreboardOverlayToggle'
 import { getServerAuthContext } from '@/lib/server-auth'
 import {
   ArrowLeft,
   ArrowRight,
+  Check,
   Eye,
   Hand,
   Sparkles,
@@ -207,7 +209,7 @@ async function fetchHostData(matchCode: string) {
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled')
+      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay')
       .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
@@ -804,6 +806,13 @@ export default async function OlympiaHostConsolePage({
                 buzzerEnabled={liveSession?.buzzer_enabled ?? null}
               />
 
+              {liveSession ? (
+                <ScoreboardOverlayToggle
+                  matchId={match.id}
+                  enabled={liveSession.show_scoreboard_overlay === true}
+                />
+              ) : null}
+
               {allowTargetSelection ? (
                 <div className="grid gap-2">
                   {isVeDich ? (
@@ -811,7 +820,7 @@ export default async function OlympiaHostConsolePage({
                       <div className="grid grid-cols-2 gap-2">
                         <form action={setVeDichQuestionValueFormAction} className="flex gap-2">
                           <input type="hidden" name="matchId" value={match.id} />
-                          <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
+                          <input type="hidden" name="roundQuestionId" value={liveSession?.current_round_question_id ?? ''} />
                           <select
                             name="value"
                             defaultValue={veDichValueText}
@@ -822,21 +831,28 @@ export default async function OlympiaHostConsolePage({
                             <option value="20">20</option>
                             <option value="30">30</option>
                           </select>
-                          <Button type="submit" size="icon-sm" title="Lưu giá trị" aria-label="Lưu giá trị" variant="outline">
+                          <Button
+                            type="submit"
+                            size="icon-sm"
+                            title="Lưu giá trị"
+                            aria-label="Lưu giá trị"
+                            variant="outline"
+                            disabled={!liveSession?.current_round_question_id}
+                          >
                             <Check />
                           </Button>
                         </form>
 
                         <form action={toggleStarUseFormAction} className="flex justify-end">
                           <input type="hidden" name="matchId" value={match.id} />
-                          <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
+                          <input type="hidden" name="roundQuestionId" value={liveSession?.current_round_question_id ?? ''} />
                           <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
                           {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
                           <Button
                             type="submit"
                             size="icon-sm"
                             variant={isStarEnabled ? 'default' : 'outline'}
-                            disabled={!currentRoundQuestion?.target_player_id}
+                            disabled={!liveSession?.current_round_question_id || !currentRoundQuestion?.target_player_id}
                             title={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
                             aria-label={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
                           >

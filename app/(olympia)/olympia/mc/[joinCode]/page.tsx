@@ -10,9 +10,9 @@ import type { AnswerRow, GameSessionPayload } from '@/types/olympia/game'
 export const dynamic = 'force-dynamic'
 
 type PageProps = {
-    params: {
+    params: Promise<{
         joinCode: string
-    }
+    }>
 }
 
 async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Promise<GameSessionPayload | null> {
@@ -142,7 +142,8 @@ export default async function OlympiaMcJoinCodePage({ params }: PageProps) {
     // MC view cho phép mọi người truy cập (không bắt buộc là thí sinh / không cần đăng nhập).
     const supabase = await getServerSupabase()
 
-    const joinCode = (params.joinCode ?? '').trim().toUpperCase()
+    const resolvedParams = await params
+    const joinCode = (resolvedParams.joinCode ?? '').trim().toUpperCase()
     if (!joinCode) {
         notFound()
     }

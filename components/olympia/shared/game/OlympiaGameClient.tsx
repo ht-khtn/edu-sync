@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -136,6 +136,12 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
 
+  const [showBigScoreboard, setShowBigScoreboard] = useState(false)
+  const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
+    roundQuestionId: null,
+    key: null,
+  })
+
   const formatPlayerLabel = (playerId: string | null | undefined) => {
     if (!playerId) return '—'
     const p = players.find((row) => row.id === playerId)
@@ -208,6 +214,40 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     }
   }, [isSessionRunning])
 
+  // Guest: toast tên người bấm chuông nhanh nhất (mỗi câu hỏi 1 lần)
+  useEffect(() => {
+    if (!isGuest) return
+    if (session.buzzer_enabled === false) return
+    if (!currentQuestionId) return
+
+    const relevantEvents = buzzerEvents
+      .filter((e) => e.round_question_id === currentQuestionId)
+      .filter((e) => Boolean(e.player_id))
+
+    if (relevantEvents.length === 0) return
+
+    const getTimeMs = (e: (typeof relevantEvents)[number]) => {
+      const ts = e.occurred_at ?? e.created_at
+      const parsed = ts ? Date.parse(ts) : NaN
+      return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+    }
+
+    const fastest = [...relevantEvents].sort((a, b) => getTimeMs(a) - getTimeMs(b))[0]
+    if (!fastest) return
+
+    const fastestKey = fastest.id ?? `${fastest.player_id ?? 'unknown'}|${fastest.occurred_at ?? fastest.created_at ?? ''}`
+    const alreadyToasted =
+      lastFastestBuzzerRef.current.roundQuestionId === currentQuestionId &&
+      lastFastestBuzzerRef.current.key === fastestKey
+    if (alreadyToasted) return
+
+    lastFastestBuzzerRef.current = { roundQuestionId: currentQuestionId, key: fastestKey }
+
+    const player = fastest.player_id ? players.find((p) => p.id === fastest.player_id) ?? null : null
+    const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
+    toast.success(`${name} bấm nhanh nhất`)
+  }, [buzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
+
   return (
     <div
       className="min-h-screen bg-black text-white flex flex-col"
@@ -221,54 +261,127 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         backgroundColor: '#000',
       }}
     >
-      {/* HUD */}
-      <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-        <div className="min-w-0 flex flex-col gap-1">
-          <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
-            <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
-            <p className="text-sm text-slate-100 truncate">{match.name}</p>
-          </div>
-          {/* Pha info - moved to top left, semi-transparent */}
-          {!isWaitingScreen && (
-            <div className="rounded-md px-3 py-1 bg-slate-900/40 border border-slate-700/30 inline-w-fit">
-              <p className="text-xs text-slate-300">
-                {isKhoiDong
-                  ? targetPlayerId
-                    ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
-                    : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
-                  : isVeDich
-                    ? isStealWindow
-                      ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
-                      : 'Về đích'
-                    : questionTitle}
-              </p>
+      {/* HUD (ẩn ở guest) */}
+      {!isGuest ? (
+        <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+          <div className="min-w-0 flex flex-col gap-1">
+            <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
+              <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
+              <p className="text-sm text-slate-100 truncate">{match.name}</p>
             </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
-              session.timer_deadline ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50' : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+            {/* Pha info - moved to top left, semi-transparent */}
+            {!isWaitingScreen && (
+              <div className="rounded-md px-3 py-1 bg-slate-900/40 border border-slate-700/30 inline-w-fit">
+                <p className="text-xs text-slate-300">
+                  {isKhoiDong
+                    ? targetPlayerId
+                      ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
+                      : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
+                    : isVeDich
+                      ? isStealWindow
+                        ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
+                        : 'Về đích'
+                      : questionTitle}
+                </p>
+              </div>
             )}
-          >
-            {timerLabel}
           </div>
 
-          {viewerTotalScore != null ? (
-            <div className="text-right">
-              <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
-              <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
+                session.timer_deadline
+                  ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
+                  : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+              )}
+            >
+              {timerLabel}
             </div>
-          ) : (
-            <div className="text-right">
-              <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
-              <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
-            </div>
-          )}
+
+            {viewerTotalScore != null ? (
+              <div className="text-right">
+                <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
+                <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
+              </div>
+            ) : (
+              <div className="text-right">
+                <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
+                <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
+              </div>
+            )}
+          </div>
+        </header>
+      ) : null}
+
+      {/* Guest: nút bật/tắt bảng điểm lớn */}
+      {isGuest ? (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="bg-slate-950/60 border-slate-600 text-white hover:bg-slate-900"
+            onClick={() => setShowBigScoreboard((v) => !v)}
+          >
+            {showBigScoreboard ? 'Đóng bảng điểm' : 'Bảng điểm'}
+          </Button>
         </div>
-      </header>
+      ) : null}
+
+      {/* Guest: overlay bảng điểm lớn nền Result.png */}
+      {isGuest && showBigScoreboard ? (
+        <div className="fixed inset-0 z-[60]">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url('/olympia-theme/Result.png')`,
+              backgroundSize: 'contain',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              backgroundColor: '#000',
+            }}
+          />
+          <div className="absolute inset-0 bg-black/40" />
+
+          <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
+            <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
+                  <p className="text-sm text-slate-100 truncate">{match.name}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
+                  onClick={() => setShowBigScoreboard(false)}
+                >
+                  Đóng
+                </Button>
+              </div>
+
+              <div className="mt-6 grid gap-3">
+                {scoreboard.length > 0 ? (
+                  scoreboard.map((p, idx) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 px-5 py-4"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-lg sm:text-xl font-semibold text-slate-50 truncate">
+                          {idx + 1}. {p.name}
+                        </p>
+                        <p className="text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
+                      </div>
+                      <p className="text-3xl sm:text-4xl font-mono font-semibold text-white">{p.total}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-slate-200">Chưa có dữ liệu điểm.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* MAIN SCREEN */}
       <main
@@ -311,7 +424,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         )}
 
         {/* Top scoreboard mini */}
-        {scoreboard.length > 0 ? (
+        {!isGuest && scoreboard.length > 0 ? (
           <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
             <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
             <div className="mt-1 space-y-1">
@@ -330,66 +443,69 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
       </main>
 
-      {/* INTERACTION BAR */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-        {disableInteractions ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-slate-200">
-              {isMc
-                ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
-                : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-1 md:items-center">
-            {/* Answer section - center, only show when NOT waiting screen */}
-            {!isWaitingScreen && (
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex flex-wrap gap-3 justify-center">
-                  {(roundType !== 'khoi_dong') ? (
-                    <form action={answerAction} className="flex items-center gap-2">
-                      <input type="hidden" name="sessionId" value={session.id} />
-                      <Input
-                        name="answer"
-                        placeholder="Nhập đáp án"
-                        disabled={disableAnswerSubmit}
-                        className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                      />
-                      <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
-                    </form>
-                  ) : null}
+      {/* INTERACTION BAR (ẩn ở guest) */}
+      {!isGuest ? (
+        <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+          {disableInteractions ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-200">
+                {isMc
+                  ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
+                  : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-1 md:items-center">
+              {/* Answer section - center, only show when NOT waiting screen */}
+              {!isWaitingScreen && (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    {roundType !== 'khoi_dong' ? (
+                      <form action={answerAction} className="flex items-center gap-2">
+                        <input type="hidden" name="sessionId" value={session.id} />
+                        <Input
+                          name="answer"
+                          placeholder="Nhập đáp án"
+                          disabled={disableAnswerSubmit}
+                          className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                        />
+                        <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
+                      </form>
+                    ) : null}
 
-                  {roundType === 'vcnv' && obstacle ? (
-                    <form action={cnvGuessAction} className="flex items-center gap-2">
-                      <input type="hidden" name="sessionId" value={session.id} />
-                      <Input
-                        name="guessText"
-                        placeholder="Đoán CNV"
-                        disabled={disableInteractions}
-                        className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                      />
-                      <FormSubmitButton disabled={disableInteractions} variant="outline">Đoán</FormSubmitButton>
-                    </form>
-                  ) : null}
+                    {roundType === 'vcnv' && obstacle ? (
+                      <form action={cnvGuessAction} className="flex items-center gap-2">
+                        <input type="hidden" name="sessionId" value={session.id} />
+                        <Input
+                          name="guessText"
+                          placeholder="Đoán CNV"
+                          disabled={disableInteractions}
+                          className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                        />
+                        <FormSubmitButton disabled={disableInteractions} variant="outline">
+                          Đoán
+                        </FormSubmitButton>
+                      </form>
+                    ) : null}
+                  </div>
                 </div>
+              )}
+            </div>
+          )}
 
-              </div>
-            )}
+          {/* Refresh button - footer right */}
+          <div className="absolute right-4 top-1/2 -translate-y-1/2">
+            <Button
+              size="icon"
+              variant="outline"
+              className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
+              onClick={refreshFromServer}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
-        )}
-
-        {/* Refresh button - footer right */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2">
-          <Button
-            size="icon"
-            variant="outline"
-            className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
-            onClick={refreshFromServer}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-        </div>
-      </footer>
+        </footer>
+      ) : null}
 
       {/* Buzzer FAB - bottom right corner */}
       {!disableInteractions && session.buzzer_enabled !== false && (

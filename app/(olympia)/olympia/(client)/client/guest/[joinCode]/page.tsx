@@ -1,16 +1,18 @@
-import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { OlympiaGameClient } from '@/components/olympia/shared/game/OlympiaGameClient'
-import { getServerAuthContext } from '@/lib/server-auth'
+import { getServerSupabase } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
 // KEEP force-dynamic: Real-time match state
 export const dynamic = 'force-dynamic'
 
 type GuestPageProps = {
-    params: {
+    params: Promise<{
         joinCode: string
-    }
+    }>
 }
 
 async function getGuestSessionData(
@@ -140,10 +142,31 @@ async function getGuestSessionData(
 }
 
 export default async function OlympiaGuestWatchPage({ params }: GuestPageProps) {
-    const { supabase } = await getServerAuthContext()
-    const { payload } = await getGuestSessionData(supabase, params.joinCode)
+    const supabase = await getServerSupabase()
+    const resolvedParams = await params
+    const { payload, matchName } = await getGuestSessionData(supabase, resolvedParams.joinCode)
     if (!payload) {
-        notFound()
+        return (
+            <section className="mx-auto max-w-2xl px-4 py-8 space-y-4">
+                <Alert>
+                    <AlertTitle>Không thể mở chế độ khách</AlertTitle>
+                    <AlertDescription>
+                        {matchName
+                            ? `Trận "${matchName}" chưa mở phòng live hoặc chưa có dữ liệu để xem.`
+                            : 'Không tìm thấy phòng/trận với mã bạn cung cấp.'}
+                    </AlertDescription>
+                </Alert>
+
+                <div className="flex gap-2">
+                    <Button asChild variant="outline">
+                        <Link href="/olympia/client/join">Về trang tham gia</Link>
+                    </Button>
+                    <Button asChild>
+                        <Link href="/olympia/client/matches">Xem danh sách trận</Link>
+                    </Button>
+                </div>
+            </section>
+        )
     }
 
     return (

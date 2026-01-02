@@ -429,7 +429,7 @@ export default async function OlympiaHostConsolePage({
 
   const isKhoiDong = liveSession?.current_round_type === 'khoi_dong'
   const isVeDich = liveSession?.current_round_type === 've_dich'
-  const allowTargetSelection = Boolean(liveSession?.current_round_question_id && (isKhoiDong || isVeDich))
+  const allowTargetSelection = Boolean(isKhoiDong || isVeDich)
 
   const filteredCurrentRoundQuestions = (() => {
     if (!isKhoiDong) return currentRoundQuestions
@@ -567,6 +567,7 @@ export default async function OlympiaHostConsolePage({
                       id: q.id,
                       label: `#${q.order_index ?? '?'} · ${getRoundQuestionLabel(q as unknown as RoundQuestionRow)}`,
                     }))}
+                    triggerReset={!currentRoundQuestion?.target_player_id || liveSession?.current_round_question_id === null}
                   />
 
                   {previewNextId ? (

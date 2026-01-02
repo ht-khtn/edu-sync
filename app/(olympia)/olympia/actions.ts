@@ -3,6 +3,11 @@
 import { createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import ExcelJS from "exceljs";
+import {
+  extractRequiredAssetBasenames,
+  normalizeAssetBasename,
+  parseQuestionSetWorkbook,
+} from "@/lib/olympia/question-set-workbook";
 import { z } from "zod";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
@@ -92,19 +97,6 @@ const buzzerEnabledSchema = z.object({
 
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
-type ParsedQuestionSetItem = {
-  code: string;
-  category: string | null;
-  question_text: string;
-  answer_text: string;
-  note: string | null;
-  submitted_by: string | null;
-  source: string | null;
-  image_url: string | null;
-  audio_url: string | null;
-  order_index: number;
-};
-
 /**
  * Map question code prefix to round_type.
  * KD* → khoi_dong, VCNV* → vcnv, TT* → tang_toc, VD* → ve_dich
@@ -146,151 +138,7 @@ function parseQuestionCode(rawCode: string): {
   };
 }
 
-async function parseQuestionSetWorkbook(buffer: Buffer | ArrayBuffer | Uint8Array) {
-  const workbook = new ExcelJS.Workbook();
-  // ExcelJS expects a Node Buffer; normalize input properly
-  let nodeBuffer: Buffer;
-  if (Buffer.isBuffer(buffer)) {
-    nodeBuffer = buffer;
-  } else if (buffer instanceof ArrayBuffer) {
-    nodeBuffer = Buffer.from(buffer) as unknown as Buffer;
-  } else {
-    nodeBuffer = Buffer.from(buffer) as unknown as Buffer;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await workbook.xlsx.load(nodeBuffer as any);
-  const sheet = workbook.worksheets[0];
-  if (!sheet) {
-    throw new Error("File không có sheet hợp lệ.");
-  }
-
-  const items: ParsedQuestionSetItem[] = [];
-  const codeSet = new Set<string>();
-  let skipped = 0;
-
-  // First pass: collect all rows
-  const rows: string[][] = [];
-  sheet.eachRow((row) => {
-    const cells = Array.from({ length: 9 }, (_, index) => row.getCell(index + 1));
-    const values = cells.map((cell) =>
-      typeof cell.text === "string" ? cell.text.trim() : String(cell.text || "").trim()
-    );
-    rows.push(values);
-  });
-
-  // Second pass: process rows with TT merge handling
-  let i = 0;
-  while (i < rows.length) {
-    const values = rows[i];
-    const [
-      rawCode,
-      rawCategory,
-      rawQuestion,
-      rawAnswer,
-      rawNote,
-      rawSender,
-      rawSource,
-      rawImage,
-      rawAudio,
-    ] = values;
-
-    const isEmptyRow = values.every((value) => !value || value.length === 0);
-    if (isEmptyRow) {
-      i += 1;
-      continue;
-    }
-
-    if (!rawCode || !rawQuestion || !rawAnswer) {
-      skipped += 1;
-      i += 1;
-      continue;
-    }
-
-    const codeInfo = parseQuestionCode(rawCode);
-    const normalizedCode = codeInfo.normalizedCode;
-
-    if (normalizedCode.length < 3 || normalizedCode.length > 32) {
-      skipped += 1;
-      i += 1;
-      continue;
-    }
-
-    if (codeSet.has(normalizedCode)) {
-      skipped += 1;
-      i += 1;
-      continue;
-    }
-
-    // Handle TT{n} merge: if code is TT{n}, check next rows for more TT{n} and merge
-    let mergedQuestion = rawQuestion;
-    let mergedAnswer = rawAnswer;
-    let mergedNote = rawNote;
-    let mergedImage = rawImage;
-    let mergedAudio = rawAudio;
-
-    if (codeInfo.isTT) {
-      // Look ahead for consecutive rows with same TT prefix but more data
-      let j = i + 1;
-      while (j < rows.length) {
-        const nextValues = rows[j];
-        const nextRawCode = nextValues[0]?.trim() || "";
-        const nextRawQuestion = nextValues[2]?.trim() || "";
-        const nextRawAnswer = nextValues[3]?.trim() || "";
-
-        // Check if next row is also TT with same number, or is a continuation row
-        const nextCodeInfo = parseQuestionCode(nextRawCode);
-        const isContinuation =
-          nextRawCode === "" ||
-          (codeInfo.isTT && nextCodeInfo.isTT && nextCodeInfo.ttNumber === codeInfo.ttNumber);
-
-        if (!isContinuation || (!nextRawQuestion && !nextRawAnswer)) {
-          break; // Stop merging if next row doesn't belong to this TT or is empty
-        }
-
-        // Merge data with newline separator (for display purposes)
-        if (nextRawQuestion) {
-          mergedQuestion = mergedQuestion + "\n" + nextRawQuestion;
-        }
-        if (nextRawAnswer) {
-          mergedAnswer = mergedAnswer + "\n" + nextRawAnswer;
-        }
-        if (nextValues[4]?.trim()) {
-          mergedNote = (mergedNote || "") + "\n" + nextValues[4].trim();
-        }
-        if (nextValues[7]?.trim()) {
-          mergedImage = mergedImage || nextValues[7].trim();
-        }
-        if (nextValues[8]?.trim()) {
-          mergedAudio = mergedAudio || nextValues[8].trim();
-        }
-
-        j += 1;
-      }
-
-      // Skip merged rows
-      i = j;
-    } else {
-      i += 1;
-    }
-
-    codeSet.add(normalizedCode);
-    items.push({
-      code: normalizedCode,
-      category: rawCategory?.length ? rawCategory : null,
-      question_text: mergedQuestion,
-      answer_text: mergedAnswer,
-      note: mergedNote?.length ? mergedNote : null,
-      submitted_by: rawSender?.length ? rawSender : null,
-      source: rawSource?.length ? rawSource : null,
-      image_url: mergedImage?.length ? mergedImage : null,
-      audio_url: mergedAudio?.length ? mergedAudio : null,
-      order_index: items.length,
-    });
-  }
-
-  return { items, skipped };
-}
+// parseQuestionSetWorkbook đã được tách ra module dùng chung (server + client)
 
 const joinSchema = z.object({
   joinCode: z
@@ -599,6 +447,28 @@ export async function uploadQuestionSetAction(
       return { error: "Không có câu hỏi hợp lệ trong file đã tải lên." };
     }
 
+    type AssetManifestEntry = { name: string; path: string; publicUrl: string };
+    const rawManifest = formData.get("assetManifest");
+    const assetManifest: Record<string, AssetManifestEntry> =
+      typeof rawManifest === "string" && rawManifest.trim().length > 0
+        ? (JSON.parse(rawManifest) as Record<string, AssetManifestEntry>)
+        : {};
+
+    const requiredAssets = extractRequiredAssetBasenames(items);
+    if (requiredAssets.length > 0) {
+      const missing = requiredAssets
+        .filter((name) => !assetManifest[name.toLowerCase()])
+        .slice(0, 20);
+      if (missing.length > 0) {
+        return {
+          error:
+            missing.length === 1
+              ? `Thiếu tài nguyên: ${missing[0]}. Vui lòng tải thư mục tài nguyên trước khi submit.`
+              : `Thiếu ${missing.length} tài nguyên (ví dụ: ${missing.join(", ")}). Vui lòng tải thư mục tài nguyên trước khi submit.`,
+        };
+      }
+    }
+
     const { data: createdSet, error: insertSetError } = await olympia
       .from("question_sets")
       .insert({
@@ -615,10 +485,23 @@ export async function uploadQuestionSetAction(
 
     const batchSize = 500;
     for (let i = 0; i < items.length; i += batchSize) {
-      const slice = items.slice(i, i + batchSize).map((item) => ({
-        question_set_id: createdSet.id,
-        ...item,
-      }));
+      const slice = items.slice(i, i + batchSize).map((item) => {
+        const imageBase = item.image_url ? normalizeAssetBasename(item.image_url) : "";
+        const audioBase = item.audio_url ? normalizeAssetBasename(item.audio_url) : "";
+
+        return {
+          question_set_id: createdSet.id,
+          ...item,
+          image_url:
+            imageBase && assetManifest[imageBase.toLowerCase()]
+              ? assetManifest[imageBase.toLowerCase()]!.publicUrl
+              : item.image_url,
+          audio_url:
+            audioBase && assetManifest[audioBase.toLowerCase()]
+              ? assetManifest[audioBase.toLowerCase()]!.publicUrl
+              : item.audio_url,
+        };
+      });
 
       const { error } = await olympia.from("question_set_items").insert(slice);
       if (error) return { error: error.message };

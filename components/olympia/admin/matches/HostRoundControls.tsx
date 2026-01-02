@@ -120,11 +120,11 @@ export function HostRoundControls({
 
   useEffect(() => {
     setRoundId(currentRound?.id ?? '')
-  }, [currentRound?.id])
+  }, [currentRound?.id, roundState.success])
 
   useEffect(() => {
     setTargetPlayerId(currentTargetPlayerId ?? '')
-  }, [currentTargetPlayerId])
+  }, [currentTargetPlayerId, targetState.success])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))
@@ -171,29 +171,33 @@ export function HostRoundControls({
         ) : null}
       </form>
 
-      {allowTargetSelection && currentRoundQuestionId && players && players.length > 0 ? (
+      {allowTargetSelection && players && players.length > 0 ? (
         <form ref={targetFormRef} action={targetAction} className="grid gap-2">
           <input type="hidden" name="matchId" value={matchId} />
-          <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId} />
+          <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
           <Label className="sr-only">Chọn thí sinh</Label>
-          <select
-            name="playerId"
-            value={targetPlayerId}
-            onChange={(e) => {
-              const next = e.target.value
-              setTargetPlayerId(next)
-              queueMicrotask(() => targetFormRef.current?.requestSubmit())
-            }}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-            aria-label="Chọn thí sinh"
-          >
-            <option value="">{isKhoiDong ? 'Vòng thi chung (DKA)' : '(Tuỳ vòng) Chọn thí sinh'}</option>
-            {players.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              name="playerId"
+              value={targetPlayerId}
+              onChange={(e) => {
+                const next = e.target.value
+                setTargetPlayerId(next)
+              }}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+              aria-label="Chọn thí sinh"
+            >
+              <option value="">{isKhoiDong ? 'Vòng thi chung (DKA)' : '(Tuỳ vòng) Chọn thí sinh'}</option>
+              {players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
+                </option>
+              ))}
+            </select>
+            <Button type="submit" size="sm" aria-label="Xác nhận chọn thí sinh">
+              Xác nhận
+            </Button>
+          </div>
         </form>
       ) : null}
 

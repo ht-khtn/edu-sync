@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { submitAnswerAction, submitObstacleGuessAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import type { GameSessionPayload } from '@/types/olympia/game'
+import { RefreshCw, Bell } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { cn } from '@/utils/cn'
 
@@ -67,6 +69,40 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const [cnvGuessState, cnvGuessAction] = useActionState(submitObstacleGuessAction, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
 
+  // Toast notifications for feedback
+  useEffect(() => {
+    const answerFeedback = answerState.error ?? answerState.success
+    if (answerFeedback) {
+      if (answerState.error) {
+        toast.error(answerFeedback)
+      } else {
+        toast.success(answerFeedback)
+      }
+    }
+  }, [answerState.error, answerState.success])
+
+  useEffect(() => {
+    const cnvFeedback = cnvGuessState.error ?? cnvGuessState.success
+    if (cnvFeedback) {
+      if (cnvGuessState.error) {
+        toast.error(cnvFeedback)
+      } else {
+        toast.success(cnvFeedback)
+      }
+    }
+  }, [cnvGuessState.error, cnvGuessState.success])
+
+  useEffect(() => {
+    const buzzerFeedback = buzzerState.error ?? buzzerState.success
+    if (buzzerFeedback) {
+      if (buzzerState.error) {
+        toast.error(buzzerFeedback)
+      } else {
+        toast.success(buzzerFeedback)
+      }
+    }
+  }, [buzzerState.error, buzzerState.success])
+
   const scoreboard = useMemo(() => {
     const totals = new Map<string, number>()
     for (const score of scores) {
@@ -99,9 +135,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isGuest = resolvedViewerMode === 'guest'
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
-  const answerFeedback = answerState.error ?? answerState.success
-  const cnvGuessFeedback = cnvGuessState.error ?? cnvGuessState.success
-  const buzzerFeedback = buzzerState.error ?? buzzerState.success
 
   const formatPlayerLabel = (playerId: string | null | undefined) => {
     if (!playerId) return '—'
@@ -168,13 +201,49 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
 
+  // Toast notification for session state
+  useEffect(() => {
+    if (!isSessionRunning) {
+      toast.info('Phòng chưa mở')
+    }
+  }, [isSessionRunning])
+
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div
+      className="min-h-screen bg-black text-white flex flex-col"
+      style={{
+        backgroundImage: isWaitingScreen
+          ? `url('/olympia-theme/pointscreen_default_O22_new.png')`
+          : `url('/olympia-theme/default_background.png')`,
+        backgroundSize: 'contain',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundColor: '#000',
+      }}
+    >
       {/* HUD */}
-      <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
-          <p className="text-sm text-slate-100 truncate">{match.name}</p>
+      <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+        <div className="min-w-0 flex flex-col gap-1">
+          <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
+            <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
+            <p className="text-sm text-slate-100 truncate">{match.name}</p>
+          </div>
+          {/* Pha info - moved to top left, semi-transparent */}
+          {!isWaitingScreen && (
+            <div className="rounded-md px-3 py-1 bg-slate-900/40 border border-slate-700/30 inline-w-fit">
+              <p className="text-xs text-slate-300">
+                {isKhoiDong
+                  ? targetPlayerId
+                    ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
+                    : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
+                  : isVeDich
+                    ? isStealWindow
+                      ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
+                      : 'Về đích'
+                    : questionTitle}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -202,7 +271,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       </header>
 
       {/* MAIN SCREEN */}
-      <main className="flex-1 relative flex items-center justify-center px-6 py-10 bg-black">
+      <main
+        className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-44"
+
+      >
         {!isSessionRunning ? (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80">
             <div className="text-center space-y-2">
@@ -214,11 +286,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         ) : null}
 
         {isWaitingScreen ? (
-          <div className="text-center space-y-3">
-            <p className="text-xs uppercase tracking-widest text-slate-200">Màn chờ</p>
-            <p className="text-4xl font-semibold">ĐANG CHỜ</p>
-            <p className="text-sm text-slate-200">Host sẽ bật câu hỏi trong giây lát</p>
-          </div>
+          <div className=""></div>
         ) : (
           <div className="w-full max-w-5xl text-center">
             <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
@@ -259,31 +327,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
           </div>
         ) : null}
 
-        {/* Event feed mini */}
-        <div className="absolute bottom-24 left-4 w-[240px] rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
-          <p className="text-[11px] uppercase tracking-widest text-slate-200">Buzzer</p>
-          {buzzerEvents.length === 0 ? (
-            <p className="mt-1 text-slate-200">Chưa có tín hiệu</p>
-          ) : (
-            <div className="mt-1 space-y-1">
-              {buzzerEvents.slice(0, 4).map((event) => {
-                const ts = event.occurred_at ?? event.created_at
-                const timestamp = ts ? new Date(ts).toLocaleTimeString('vi-VN') : '—'
-                const eventType = event.event_type ?? 'buzz'
-                const typeLabel = eventType === 'steal' ? 'CƯỚP' : eventType === 'buzz' ? 'BUZZ' : eventType
-                return (
-                  <div key={event.id ?? `${event.player_id}-${event.created_at}`} className="text-slate-100">
-                    <span className="text-slate-200">[{typeLabel}]</span> {timestamp}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+
       </main>
 
       {/* INTERACTION BAR */}
-      <footer className="px-4 py-4 border-t border-slate-700 bg-slate-950">
+      <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
         {disableInteractions ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-200">
@@ -291,85 +339,77 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                 ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
                 : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
             </p>
-            <Button size="sm" variant="outline" onClick={refreshFromServer}>
-              Làm mới
-            </Button>
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-widest text-slate-200">Pha</p>
-              <p className="text-sm text-slate-100">
-                {isKhoiDong
-                  ? targetPlayerId
-                    ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
-                    : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
-                  : isVeDich
-                    ? isStealWindow
-                      ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
-                      : 'Về đích'
-                    : questionTitle}
-              </p>
-            </div>
+          <div className="grid gap-3 md:grid-cols-1 md:items-center">
+            {/* Answer section - center, only show when NOT waiting screen */}
+            {!isWaitingScreen && (
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-wrap gap-3 justify-center">
+                  {(roundType !== 'khoi_dong') ? (
+                    <form action={answerAction} className="flex items-center gap-2">
+                      <input type="hidden" name="sessionId" value={session.id} />
+                      <Input
+                        name="answer"
+                        placeholder="Nhập đáp án"
+                        disabled={disableAnswerSubmit}
+                        className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                      />
+                      <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
+                    </form>
+                  ) : null}
 
-            <div className="flex flex-wrap gap-2 justify-end">
-              {(roundType !== 'khoi_dong') ? (
-                <form action={answerAction} className="flex items-center gap-2">
-                  <input type="hidden" name="sessionId" value={session.id} />
-                  <Input
-                    name="answer"
-                    placeholder="Nhập đáp án"
-                    disabled={disableAnswerSubmit}
-                    className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                  />
-                  <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
-                </form>
-              ) : null}
+                  {roundType === 'vcnv' && obstacle ? (
+                    <form action={cnvGuessAction} className="flex items-center gap-2">
+                      <input type="hidden" name="sessionId" value={session.id} />
+                      <Input
+                        name="guessText"
+                        placeholder="Đoán CNV"
+                        disabled={disableInteractions}
+                        className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                      />
+                      <FormSubmitButton disabled={disableInteractions} variant="outline">Đoán</FormSubmitButton>
+                    </form>
+                  ) : null}
+                </div>
 
-              {roundType === 'vcnv' && obstacle ? (
-                <form action={cnvGuessAction} className="flex items-center gap-2">
-                  <input type="hidden" name="sessionId" value={session.id} />
-                  <Input
-                    name="guessText"
-                    placeholder="Đoán CNV"
-                    disabled={disableInteractions}
-                    className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                  />
-                  <FormSubmitButton disabled={disableInteractions} variant="outline">Đoán</FormSubmitButton>
-                </form>
-              ) : null}
-
-              <form action={buzzerAction}>
-                <input type="hidden" name="sessionId" value={session.id} />
-                <Button
-                  type="submit"
-                  disabled={disableBuzz}
-                  className="h-10 px-6 bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300text-white "
-                  variant={isKhoiDong && !targetPlayerId ? 'default' : 'outline'}
-                >
-                  Bấm chuông
-                </Button>
-              </form>
-
-              <Button size="sm" variant="outline" className="bg-slate-900/70 border-slate-600 text-white" onClick={refreshFromServer}>
-                Làm mới
-              </Button>
-            </div>
-
-            <div className="md:col-span-2 text-xs">
-              {answerFeedback ? (
-                <p className={cn(answerState.error ? 'text-red-300' : 'text-emerald-300')}>{answerFeedback}</p>
-              ) : null}
-              {cnvGuessFeedback ? (
-                <p className={cn(cnvGuessState.error ? 'text-red-300' : 'text-emerald-300')}>{cnvGuessFeedback}</p>
-              ) : null}
-              {buzzerFeedback ? (
-                <p className={cn(buzzerState.error ? 'text-red-300' : 'text-emerald-300')}>{buzzerFeedback}</p>
-              ) : null}
-            </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* Refresh button - footer right */}
+        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+          <Button
+            size="icon"
+            variant="outline"
+            className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
+            onClick={refreshFromServer}
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
       </footer>
+
+      {/* Buzzer FAB - bottom right corner */}
+      {!disableInteractions && (
+        <div className="fixed bottom-24 right-4 z-50">
+          <form action={buzzerAction}>
+            <input type="hidden" name="sessionId" value={session.id} />
+            <Button
+              type="submit"
+              disabled={disableBuzz}
+              size="lg"
+              className="w-32 h-32 rounded-full flex items-center justify-center shadow-lg bg-slate-900 hover:bg-slate-800 text-white border-0"
+              variant="default"
+            >
+              <Bell className="w-20 h-20" />
+            </Button>
+          </form>
+        </div>
+      )}
+
+
     </div>
   )
 }

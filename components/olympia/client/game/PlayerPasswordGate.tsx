@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useActionState } from 'react'
 import { useEffect } from 'react'
+import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -98,7 +99,16 @@ export function PlayerPasswordGate({ session, userAlreadyVerified = false, child
           </Button>
 
           {state.error ? (
-            <p className="text-sm text-red-200 text-center">{state.error}</p>
+            <div className="space-y-3">
+              <p className="text-sm text-red-200 text-center">{state.error}</p>
+              {state.error.includes('đăng nhập') && (
+                <div className="text-center">
+                  <Link href={`/login?redirect=/olympia/client/game/${session.join_code}`} className="text-sm text-cyan-400 hover:text-cyan-300 underline">
+                    Đăng nhập ngay
+                  </Link>
+                </div>
+              )}
+            </div>
           ) : (
             <p className="text-xs text-slate-200 text-center">Nhập mật khẩu do ban tổ chức cung cấp</p>
           )}

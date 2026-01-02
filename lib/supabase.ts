@@ -6,6 +6,7 @@ import { getSupabasePublicEnv } from "@/configs/env";
 
 let browserClient: SupabaseClient | null = null;
 let browserClientPromise: Promise<SupabaseClient> | null = null;
+let lastAccessToken: string | null = null;
 
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -21,7 +22,17 @@ function readCookie(name: string): string | null {
 }
 
 export async function getSupabase(): Promise<SupabaseClient> {
-  if (browserClient) return browserClient;
+  if (browserClient) {
+    const currentToken = readCookie("sb-access-token-public") ?? readCookie("sb-access-token");
+    // Nếu client được tạo trước khi có token (hoặc token đổi), Storage/Realtime sẽ chạy với role sai.
+    // Rebuild client để cập nhật Authorization header.
+    if ((currentToken ?? null) !== lastAccessToken) {
+      browserClient = null;
+      lastAccessToken = null;
+    } else {
+      return browserClient;
+    }
+  }
   if (browserClientPromise) return browserClientPromise;
   if (typeof window === "undefined") {
     throw new Error(
@@ -55,6 +66,7 @@ export async function getSupabase(): Promise<SupabaseClient> {
         // ignore: không phải bản supabase-js nào cũng expose setAuth
       }
     }
+    lastAccessToken = accessToken ?? null;
     browserClient = client;
     browserClientPromise = null;
     return client;

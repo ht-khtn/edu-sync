@@ -32,6 +32,12 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: APP_VERSION,
   },
+  experimental: {
+    serverActions: {
+      // Upload .xlsx + manifest tài nguyên có thể vượt 1MB mặc định.
+      bodySizeLimit: "20mb",
+    },
+  },
   images: {
     remotePatterns: [
       {

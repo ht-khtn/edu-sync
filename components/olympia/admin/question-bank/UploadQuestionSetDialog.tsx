@@ -32,6 +32,16 @@ export function UploadQuestionSetDialog() {
     return `Đã tải ${count} file lên Supabase.`
   }, [assetManifest])
 
+  const assetManifestForSubmit = useMemo(() => {
+    const requiredLower = new Set(requiredAssets.map((n) => n.toLowerCase()))
+    if (requiredLower.size === 0) return {}
+    const filtered: Record<string, AssetManifestEntry> = {}
+    for (const [key, value] of Object.entries(assetManifest)) {
+      if (requiredLower.has(key)) filtered[key] = value
+    }
+    return filtered
+  }, [assetManifest, requiredAssets])
+
   const hasMessage = state.error || state.success
 
   const handleOpenChange = (value: boolean) => {
@@ -178,7 +188,7 @@ export function UploadQuestionSetDialog() {
             ) : null}
           </div>
 
-          <input type="hidden" name="assetManifest" value={JSON.stringify(assetManifest)} />
+          <input type="hidden" name="assetManifest" value={JSON.stringify(assetManifestForSubmit)} />
 
           {hasMessage ? (
             <p className={cn('text-sm', state.error ? 'text-destructive' : 'text-green-600')}>

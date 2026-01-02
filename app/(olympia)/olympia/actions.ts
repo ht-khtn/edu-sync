@@ -1056,7 +1056,10 @@ export async function setLiveSessionRoundAction(
       .update({
         current_round_id: roundId,
         current_round_type: roundType,
+        current_round_question_id: null,
         question_state: "hidden",
+        timer_deadline: null,
+        buzzer_enabled: false,
       })
       .eq("match_id", matchId)
       .eq("status", "running")
@@ -1190,9 +1193,6 @@ export async function setBuzzerEnabledAction(
     if (!updatedRows || updatedRows.length === 0) {
       return { error: "Phòng chưa ở trạng thái running." };
     }
-
-    revalidatePath("/olympia/admin/matches");
-    revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
     revalidatePath("/olympia/client");
 
@@ -2712,6 +2712,20 @@ export async function setRoundQuestionTargetPlayerAction(
       .update({ target_player_id: parsed.data.playerId })
       .eq("id", parsed.data.roundQuestionId);
     if (error) return { error: error.message };
+
+    // Khi đổi sub-round (thi chung/thi riêng), reset câu đang live + bật màn chờ + tắt chuông.
+    // Chỉ reset nếu roundQuestionId đúng là câu đang live để tránh side-effect khi chỉnh nhầm.
+    await olympia
+      .from("live_sessions")
+      .update({
+        current_round_question_id: null,
+        question_state: "hidden",
+        timer_deadline: null,
+        buzzer_enabled: false,
+      })
+      .eq("match_id", parsed.data.matchId)
+      .eq("status", "running")
+      .eq("current_round_question_id", parsed.data.roundQuestionId);
 
     revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
 

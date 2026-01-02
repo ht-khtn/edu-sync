@@ -191,7 +191,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       !isViewerTarget &&
       !viewerPlayer?.is_disqualified_obstacle
     )
-  const disableBuzz = isVeDich ? !canBuzzVeDich : disableInteractions
+  const disableBuzz = (session.buzzer_enabled === false) || (isVeDich ? !canBuzzVeDich : disableInteractions)
 
   void answers
   void starUses
@@ -392,7 +392,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       </footer>
 
       {/* Buzzer FAB - bottom right corner */}
-      {!disableInteractions && (
+      {!disableInteractions && session.buzzer_enabled !== false && (
         <div className="fixed bottom-24 right-4 z-50">
           <form action={buzzerAction}>
             <input type="hidden" name="sessionId" value={session.id} />

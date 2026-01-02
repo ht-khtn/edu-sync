@@ -5,6 +5,7 @@ import { useActionState } from 'react'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { setBuzzerEnabledAction, setLiveSessionRoundAction, setRoundQuestionTargetPlayerAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -147,9 +148,6 @@ export function HostRoundControls({
             onChange={(e) => {
               const nextId = e.target.value
               setRoundId(nextId)
-              if (nextId) {
-                queueMicrotask(() => roundFormRef.current?.requestSubmit())
-              }
             }}
             className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
             required
@@ -164,6 +162,9 @@ export function HostRoundControls({
               </option>
             ))}
           </select>
+          <Button type="submit" size="sm" disabled={!roundId} aria-label="Chuyển vòng">
+            Chuyển vòng
+          </Button>
         </div>
         {roundMessage && !roundState.error ? (
           <p className="text-xs text-green-600">{roundMessage}</p>

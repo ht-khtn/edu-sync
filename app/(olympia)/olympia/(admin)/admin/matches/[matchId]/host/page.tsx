@@ -4,13 +4,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundControls'
+import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { getServerAuthContext } from '@/lib/server-auth'
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   Eye,
   Hand,
   Sparkles,
@@ -422,7 +422,7 @@ export default async function OlympiaHostConsolePage({
     ? currentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
     : null
 
-  const selectedTargetPlayerId = (previewRoundQuestion as unknown as RoundQuestionRow | null)?.target_player_id ?? currentRoundQuestion?.target_player_id ?? null
+  const selectedTargetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const selectedTargetSeat = selectedTargetPlayerId
     ? players.find((p) => p.id === selectedTargetPlayerId)?.seat_index ?? null
     : null
@@ -437,17 +437,6 @@ export default async function OlympiaHostConsolePage({
     // Lọc theo luật mã câu:
     // - Thi chung: DKA-
     // - Thi riêng: KD{seat}-
-    const previewCode = previewRoundQuestion ? getMetaCode((previewRoundQuestion as unknown as RoundQuestionRow).meta) : null
-    const byCode = getKhoiDongCodeInfo(previewCode)
-    const isCommon = byCode?.kind === 'common' || (selectedTargetPlayerId === null && isKhoiDongCommonByCode(previewCode)) || selectedTargetPlayerId === null
-
-    if (isCommon) {
-      return currentRoundQuestions.filter((q) => {
-        const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
-        return getKhoiDongCodeInfo(code)?.kind === 'common'
-      })
-    }
-
     if (typeof selectedTargetSeat === 'number') {
       const prefix = `KD${selectedTargetSeat}-`
       return currentRoundQuestions.filter((q) => {
@@ -456,7 +445,11 @@ export default async function OlympiaHostConsolePage({
       })
     }
 
-    return currentRoundQuestions
+    // Mặc định thi chung (DKA-) khi chưa chọn thí sinh.
+    return currentRoundQuestions.filter((q) => {
+      const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
+      return getKhoiDongCodeInfo(code)?.kind === 'common'
+    })
   })()
   const previewIndex = previewRoundQuestionId
     ? currentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
@@ -539,8 +532,18 @@ export default async function OlympiaHostConsolePage({
                 <div className="min-w-0">
                   <CardTitle className="text-base">Câu hỏi</CardTitle>
                   <CardDescription>
-                    {liveSession?.current_round_type ? roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type : 'Chưa chọn vòng'}
-                    {' '}· trạng thái: {liveSession?.question_state ?? '—'}
+                    {(() => {
+                      if (!liveSession?.current_round_type) return 'Chưa chọn vòng'
+                      const roundText = roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type
+                      if (!allowTargetSelection) return roundText
+                      if (selectedTargetPlayerId) {
+                        const p = players.find((x) => x.id === selectedTargetPlayerId)
+                        const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
+                        return `${roundText} · Thí sinh: ${label}`
+                      }
+                      if (isKhoiDong) return `${roundText} · Thi chung`
+                      return roundText
+                    })()}
                   </CardDescription>
                 </div>
 
@@ -557,37 +560,14 @@ export default async function OlympiaHostConsolePage({
                     </Button>
                   )}
 
-                  <form method="get" className="flex items-center gap-2">
-                    <select
-                      name="preview"
-                      defaultValue={previewRoundQuestionId ?? ''}
-                      className="w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      disabled={filteredCurrentRoundQuestions.length === 0}
-                      required={filteredCurrentRoundQuestions.length > 0}
-                      aria-label="Danh sách câu hỏi"
-                    >
-                      {filteredCurrentRoundQuestions.length === 0 ? (
-                        <option value="" disabled>
-                          Chưa có câu trong vòng
-                        </option>
-                      ) : null}
-                      {filteredCurrentRoundQuestions.map((q) => (
-                        <option key={q.id} value={q.id}>
-                          #{q.order_index ?? '?'} · {getRoundQuestionLabel(q as unknown as RoundQuestionRow)}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="submit"
-                      size="icon-sm"
-                      variant="outline"
-                      disabled={currentRoundQuestions.length === 0}
-                      title="Xem"
-                      aria-label="Xem"
-                    >
-                      <Check />
-                    </Button>
-                  </form>
+                  <HostPreviewQuestionSelect
+                    value={previewRoundQuestionId ?? ''}
+                    disabled={filteredCurrentRoundQuestions.length === 0}
+                    options={filteredCurrentRoundQuestions.map((q) => ({
+                      id: q.id,
+                      label: `#${q.order_index ?? '?'} · ${getRoundQuestionLabel(q as unknown as RoundQuestionRow)}`,
+                    }))}
+                  />
 
                   {previewNextId ? (
                     <Button asChild size="icon-sm" variant="outline" title="Xem câu sau" aria-label="Xem câu sau">

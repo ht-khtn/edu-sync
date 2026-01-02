@@ -1,13 +1,15 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { useRef, useState } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { setLiveSessionRoundAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { Switch } from '@/components/ui/switch'
+import { setBuzzerEnabledAction, setLiveSessionRoundAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Check } from 'lucide-react'
 
 const initialState: ActionState = { error: null, success: null }
@@ -34,6 +36,7 @@ type Props = {
   rounds: MatchRound[]
   currentQuestionState?: string | null
   currentRoundType?: string | null
+  buzzerEnabled?: boolean | null
 }
 
 function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
@@ -54,12 +57,20 @@ function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: 
   )
 }
 
-export function HostRoundControls({ matchId, rounds, currentQuestionState, currentRoundType }: Props) {
+export function HostRoundControls({ matchId, rounds, currentQuestionState, currentRoundType, buzzerEnabled }: Props) {
   const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
   const [waitingState, waitingAction] = useActionState(setWaitingScreenAction, initialState)
+  const [buzzerState, buzzerAction] = useActionState(setBuzzerEnabledAction, initialState)
+
+  const waitingFormRef = useRef<HTMLFormElement | null>(null)
+  const buzzerFormRef = useRef<HTMLFormElement | null>(null)
+
+  const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
+  const [buzzerChecked, setBuzzerChecked] = useState<boolean>(() => (buzzerEnabled ?? true))
 
   const roundMessage = roundState.error ?? roundState.success
   const waitingMessage = waitingState.error ?? waitingState.success
+  const buzzerMessage = buzzerState.error ?? buzzerState.success
 
   // Show toasts for messages
   useEffect(() => {
@@ -77,6 +88,23 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
       toast.success(waitingState.success)
     }
   }, [waitingState.error, waitingState.success])
+
+  useEffect(() => {
+    if (buzzerState.error) {
+      toast.error(buzzerState.error)
+    } else if (buzzerState.success) {
+      toast.success(buzzerState.success)
+    }
+  }, [buzzerState.error, buzzerState.success])
+
+  useEffect(() => {
+    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
+  }, [currentQuestionState])
+
+  useEffect(() => {
+    // mặc định bật nếu chưa có dữ liệu (trước khi migrate)
+    setBuzzerChecked(buzzerEnabled ?? true)
+  }, [buzzerEnabled])
 
   return (
     <div className="grid gap-3">
@@ -107,43 +135,43 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
         ) : null}
       </form>
 
-      <form action={waitingAction} className="grid gap-2">
+      <form ref={waitingFormRef} action={waitingAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
-        <Label className="sr-only">Màn chờ</Label>
-        <div className="flex items-center gap-2">
-          {isWaitingScreenOn(currentQuestionState) ? (
-            <>
-              <input type="hidden" name="enabled" value="0" />
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                disabled={!currentRoundType}
-                title="Tắt màn chờ (hiện câu)"
-                aria-label="Tắt màn chờ (hiện câu)"
-              >
-                Tắt màn chờ
-              </Button>
-            </>
-          ) : (
-            <>
-              <input type="hidden" name="enabled" value="1" />
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                disabled={!currentRoundType}
-                title="Bật màn chờ (ẩn câu)"
-                aria-label="Bật màn chờ (ẩn câu)"
-              >
-                Bật màn chờ
-              </Button>
-            </>
-          )}
+        <input type="hidden" name="enabled" value={waitingChecked ? '1' : '0'} />
+        <div className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3">
+          <Label className="text-sm">Màn chờ</Label>
+          <Switch
+            checked={waitingChecked}
+            onCheckedChange={(v) => {
+              const next = Boolean(v)
+              setWaitingChecked(next)
+              // Submit ngay để host điều khiển nhanh
+              queueMicrotask(() => waitingFormRef.current?.requestSubmit())
+            }}
+            disabled={!currentRoundType}
+            aria-label="Màn chờ"
+          />
         </div>
-        {waitingMessage && !waitingState.error ? (
-          <p className="text-xs text-green-600">{waitingMessage}</p>
-        ) : null}
+        {waitingMessage && !waitingState.error ? <p className="text-xs text-green-600">{waitingMessage}</p> : null}
+      </form>
+
+      <form ref={buzzerFormRef} action={buzzerAction} className="grid gap-2">
+        <input type="hidden" name="matchId" value={matchId} />
+        <input type="hidden" name="enabled" value={buzzerChecked ? '1' : '0'} />
+        <div className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3">
+          <Label className="text-sm">Bấm chuông</Label>
+          <Switch
+            checked={buzzerChecked}
+            onCheckedChange={(v) => {
+              const next = Boolean(v)
+              setBuzzerChecked(next)
+              queueMicrotask(() => buzzerFormRef.current?.requestSubmit())
+            }}
+            disabled={!currentRoundType}
+            aria-label="Bấm chuông"
+          />
+        </div>
+        {buzzerMessage && !buzzerState.error ? <p className="text-xs text-green-600">{buzzerMessage}</p> : null}
       </form>
     </div>
   )

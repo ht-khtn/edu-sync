@@ -82,6 +82,14 @@ const waitingScreenSchema = z.object({
     .transform((val) => val === "1"),
 });
 
+const buzzerEnabledSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  enabled: z
+    .string()
+    .optional()
+    .transform((val) => val === "1"),
+});
+
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 type ParsedQuestionSetItem = {
@@ -1174,6 +1182,53 @@ export async function setWaitingScreenAction(
   }
 }
 
+export async function setBuzzerEnabledAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = buzzerEnabledSchema.safeParse({
+      matchId: formData.get("matchId"),
+      enabled: formData.get("enabled"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm chuông." };
+    }
+
+    const { matchId, enabled } = parsed.data;
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live." };
+    if (session.status !== "running") {
+      return { error: "Phòng chưa ở trạng thái running." };
+    }
+
+    const { error } = await olympia
+      .from("live_sessions")
+      .update({ buzzer_enabled: enabled })
+      .eq("id", session.id);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath("/olympia/client");
+
+    return { success: enabled ? "Đã bật bấm chuông." : "Đã tắt bấm chuông." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể cập nhật bấm chuông." };
+  }
+}
+
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
     const { supabase, authUid, appUserId } = await getServerAuthContext();
@@ -1294,7 +1349,9 @@ export async function triggerBuzzerAction(
 
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status, match_id, current_round_question_id, question_state, current_round_type")
+      .select(
+        "id, status, match_id, current_round_question_id, question_state, current_round_type, buzzer_enabled"
+      )
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
 
@@ -1302,6 +1359,9 @@ export async function triggerBuzzerAction(
     if (!session) return { error: "Không tìm thấy phòng thi." };
     if (session.status !== "running") {
       return { error: "Phòng chưa sẵn sàng nhận tín hiệu buzzer." };
+    }
+    if (session.buzzer_enabled === false) {
+      return { error: "Host đang tắt bấm chuông." };
     }
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
     if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };

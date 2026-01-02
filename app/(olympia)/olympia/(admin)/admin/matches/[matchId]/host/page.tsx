@@ -208,7 +208,7 @@ async function fetchHostData(matchCode: string) {
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password')
+      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled')
       .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
@@ -816,6 +816,7 @@ export default async function OlympiaHostConsolePage({
                 rounds={rounds}
                 currentRoundType={liveSession?.current_round_type}
                 currentQuestionState={liveSession?.question_state}
+                buzzerEnabled={liveSession?.buzzer_enabled ?? null}
               />
 
               {allowTargetSelection ? (

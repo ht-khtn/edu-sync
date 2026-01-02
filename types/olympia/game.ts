@@ -8,6 +8,7 @@ export type LiveSessionRow = {
   current_round_type: string | null;
   current_round_question_id: string | null;
   timer_deadline: string | null;
+  buzzer_enabled?: boolean;
   requires_player_password?: boolean;
 };
 

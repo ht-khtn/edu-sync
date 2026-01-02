@@ -323,6 +323,7 @@ const matchIdSchema = z.object({
 
 const roundControlSchema = z.object({
   matchId: z.string().uuid("Trận không hợp lệ."),
+  roundId: z.string().uuid("Vòng không hợp lệ."),
   roundType: z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]),
 });
 
@@ -392,6 +393,7 @@ const autoScoreTangTocSchema = z.object({
 });
 
 const veDichValueSchema = z.object({
+  matchId: z.string().uuid("Trận không hợp lệ."),
   roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
   value: z
     .number()
@@ -400,6 +402,7 @@ const veDichValueSchema = z.object({
 });
 
 const setRoundQuestionTargetSchema = z.object({
+  matchId: z.string().uuid("Trận không hợp lệ."),
   roundQuestionId: z.string().uuid("Câu hỏi không hợp lệ."),
   // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
   playerId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
@@ -1038,48 +1041,33 @@ export async function setLiveSessionRoundAction(
     const olympia = supabase.schema("olympia");
     const parsed = roundControlSchema.safeParse({
       matchId: formData.get("matchId"),
+      roundId: formData.get("roundId"),
       roundType: formData.get("roundType"),
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin vòng." };
     }
 
-    const { matchId, roundType } = parsed.data;
-    const { data: session, error: sessionError } = await olympia
-      .from("live_sessions")
-      .select("id, status")
-      .eq("match_id", matchId)
-      .maybeSingle();
-    if (sessionError) return { error: sessionError.message };
-    if (!session) return { error: "Trận chưa mở phòng live." };
-    if (session.status !== "running") {
-      return { error: "Phòng chưa ở trạng thái running." };
-    }
+    const { matchId, roundId, roundType } = parsed.data;
 
-    const { data: roundRow, error: roundError } = await olympia
-      .from("match_rounds")
-      .select("id")
-      .eq("match_id", matchId)
-      .eq("round_type", roundType)
-      .maybeSingle();
-    if (roundError) return { error: roundError.message };
-    if (!roundRow) return { error: "Trận chưa cấu hình vòng này." };
-
-    const { error } = await olympia
+    // Tối ưu: 1 query update, filter trực tiếp theo match_id + status.
+    const { data: updatedRows, error } = await olympia
       .from("live_sessions")
       .update({
-        current_round_id: roundRow.id,
+        current_round_id: roundId,
         current_round_type: roundType,
         question_state: "hidden",
       })
-      .eq("id", session.id);
+      .eq("match_id", matchId)
+      .eq("status", "running")
+      .select("id");
 
     if (error) return { error: error.message };
+    if (!updatedRows || updatedRows.length === 0) {
+      return { error: "Phòng chưa ở trạng thái running." };
+    }
 
-    revalidatePath("/olympia/admin/matches");
-    revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
 
     return { success: `Đã chuyển sang vòng ${roundType}.` };
   } catch (err) {
@@ -1122,10 +1110,7 @@ export async function setQuestionStateAction(
 
     if (error) return { error: error.message };
 
-    revalidatePath("/olympia/admin/matches");
-    revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
 
     return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` };
   } catch (err) {
@@ -1151,30 +1136,22 @@ export async function setWaitingScreenAction(
     }
 
     const { matchId, enabled } = parsed.data;
-    const { data: session, error: sessionError } = await olympia
+    const nextState = enabled ? "hidden" : "showing";
+
+    // Tối ưu: 1 query update
+    const { data: updatedRows, error } = await olympia
       .from("live_sessions")
-      .select("id, status")
+      .update({ question_state: nextState })
       .eq("match_id", matchId)
-      .maybeSingle();
-    if (sessionError) return { error: sessionError.message };
-    if (!session) return { error: "Trận chưa mở phòng live." };
-    if (session.status !== "running") {
+      .eq("status", "running")
+      .select("id");
+
+    if (error) return { error: error.message };
+    if (!updatedRows || updatedRows.length === 0) {
       return { error: "Phòng chưa ở trạng thái running." };
     }
 
-    const nextState = enabled ? "hidden" : "showing";
-
-    const { error } = await olympia
-      .from("live_sessions")
-      .update({ question_state: nextState })
-      .eq("id", session.id);
-
-    if (error) return { error: error.message };
-
-    revalidatePath("/olympia/admin/matches");
-    revalidatePath(`/olympia/admin/matches/${matchId}`);
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
 
     return { success: enabled ? "Đã bật màn chờ." : "Đã tắt màn chờ." };
   } catch (err) {
@@ -1200,23 +1177,19 @@ export async function setBuzzerEnabledAction(
     }
 
     const { matchId, enabled } = parsed.data;
-    const { data: session, error: sessionError } = await olympia
-      .from("live_sessions")
-      .select("id, status")
-      .eq("match_id", matchId)
-      .maybeSingle();
-    if (sessionError) return { error: sessionError.message };
-    if (!session) return { error: "Trận chưa mở phòng live." };
-    if (session.status !== "running") {
-      return { error: "Phòng chưa ở trạng thái running." };
-    }
 
-    const { error } = await olympia
+    // Tối ưu: 1 query update
+    const { data: updatedRows, error } = await olympia
       .from("live_sessions")
       .update({ buzzer_enabled: enabled })
-      .eq("id", session.id);
+      .eq("match_id", matchId)
+      .eq("status", "running")
+      .select("id");
 
     if (error) return { error: error.message };
+    if (!updatedRows || updatedRows.length === 0) {
+      return { error: "Phòng chưa ở trạng thái running." };
+    }
 
     revalidatePath("/olympia/admin/matches");
     revalidatePath(`/olympia/admin/matches/${matchId}`);
@@ -2677,6 +2650,7 @@ export async function setVeDichQuestionValueAction(
     const olympia = supabase.schema("olympia");
 
     const parsed = veDichValueSchema.safeParse({
+      matchId: formData.get("matchId"),
       roundQuestionId: formData.get("roundQuestionId"),
       value: Number(formData.get("value")),
     });
@@ -2704,6 +2678,7 @@ export async function setVeDichQuestionValueAction(
       .eq("id", rq.id);
     if (updateError) return { error: updateError.message };
 
+    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
     return { success: "Đã cập nhật giá trị câu Về đích." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật giá trị câu." };
@@ -2724,6 +2699,7 @@ export async function setRoundQuestionTargetPlayerAction(
     const olympia = supabase.schema("olympia");
 
     const parsed = setRoundQuestionTargetSchema.safeParse({
+      matchId: formData.get("matchId"),
       roundQuestionId: formData.get("roundQuestionId"),
       playerId: formData.get("playerId"),
     });
@@ -2736,6 +2712,8 @@ export async function setRoundQuestionTargetPlayerAction(
       .update({ target_player_id: parsed.data.playerId })
       .eq("id", parsed.data.roundQuestionId);
     if (error) return { error: error.message };
+
+    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
 
     return {
       success: parsed.data.playerId

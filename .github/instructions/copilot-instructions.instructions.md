@@ -12,6 +12,7 @@ Provide project context and coding guidelines that AI should follow when generat
 
 2. After completing any task:
    - Always review the workspace (files, diffs, logs, or outputs) to detect potential errors, inconsistencies, or unfinished changes.
+   - Do not use pnpm run lint, pnpm lint, pnpm dev, pnpm build when I do not request.
    - Fix any obvious issues before considering the task done.
 
 3. Always use Vietnamese in all responses, comments, and explanations unless explicitly instructed otherwise.

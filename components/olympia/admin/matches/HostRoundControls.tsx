@@ -1,16 +1,13 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useActionState } from 'react'
-import { useFormStatus } from 'react-dom'
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { setBuzzerEnabledAction, setLiveSessionRoundAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { Check } from 'lucide-react'
+import { setBuzzerEnabledAction, setLiveSessionRoundAction, setRoundQuestionTargetPlayerAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -34,37 +31,50 @@ type MatchRound = {
 type Props = {
   matchId: string
   rounds: MatchRound[]
+  players?: Array<{ id: string; seat_index: number | null; display_name: string | null }>
   currentQuestionState?: string | null
   currentRoundType?: string | null
   buzzerEnabled?: boolean | null
+  allowTargetSelection?: boolean
+  currentRoundQuestionId?: string | null
+  currentTargetPlayerId?: string | null
+  isKhoiDong?: boolean
 }
 
-function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
-  const { pending } = useFormStatus()
-  const isDisabled = pending || disabled
-  return (
-    <Button
-      type="submit"
-      size="icon-sm"
-      variant="outline"
-      disabled={isDisabled}
-      title={pending ? 'Đang cập nhật…' : String(children)}
-      aria-label={pending ? 'Đang cập nhật…' : String(children)}
-    >
-      <Check />
-      <span className="sr-only">{pending ? 'Đang cập nhật…' : children}</span>
-    </Button>
-  )
-}
-
-export function HostRoundControls({ matchId, rounds, currentQuestionState, currentRoundType, buzzerEnabled }: Props) {
+export function HostRoundControls({
+  matchId,
+  rounds,
+  players,
+  currentQuestionState,
+  currentRoundType,
+  buzzerEnabled,
+  allowTargetSelection,
+  currentRoundQuestionId,
+  currentTargetPlayerId,
+  isKhoiDong,
+}: Props) {
+  const router = useRouter()
   const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
   const [waitingState, waitingAction] = useActionState(setWaitingScreenAction, initialState)
   const [buzzerState, buzzerAction] = useActionState(setBuzzerEnabledAction, initialState)
+  const [targetState, targetAction] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
 
+  const roundFormRef = useRef<HTMLFormElement | null>(null)
   const waitingFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
+  const targetFormRef = useRef<HTMLFormElement | null>(null)
 
+  const roundById = useMemo(() => {
+    const map = new Map<string, MatchRound>()
+    for (const r of rounds) map.set(r.id, r)
+    return map
+  }, [rounds])
+
+  const currentRound = rounds.find((r) => r.round_type === currentRoundType) ?? null
+  const [roundId, setRoundId] = useState<string>(() => currentRound?.id ?? '')
+  const selectedRoundType = roundId ? roundById.get(roundId)?.round_type ?? '' : ''
+
+  const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
   const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
   const [buzzerChecked, setBuzzerChecked] = useState<boolean>(() => (buzzerEnabled ?? true))
 
@@ -78,8 +88,9 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
       toast.error(roundState.error)
     } else if (roundState.success) {
       toast.success(roundState.success)
+      router.refresh()
     }
-  }, [roundState.error, roundState.success])
+  }, [roundState.error, roundState.success, router])
 
   useEffect(() => {
     if (waitingState.error) {
@@ -87,7 +98,7 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
     } else if (waitingState.success) {
       toast.success(waitingState.success)
     }
-  }, [waitingState.error, waitingState.success])
+  }, [waitingState.error, waitingState.success, router])
 
   useEffect(() => {
     if (buzzerState.error) {
@@ -95,7 +106,24 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
     } else if (buzzerState.success) {
       toast.success(buzzerState.success)
     }
-  }, [buzzerState.error, buzzerState.success])
+  }, [buzzerState.error, buzzerState.success, router])
+
+  useEffect(() => {
+    if (targetState.error) {
+      toast.error(targetState.error)
+    } else if (targetState.success) {
+      toast.success(targetState.success)
+      router.refresh()
+    }
+  }, [targetState.error, targetState.success, router])
+
+  useEffect(() => {
+    setRoundId(currentRound?.id ?? '')
+  }, [currentRound?.id])
+
+  useEffect(() => {
+    setTargetPlayerId(currentTargetPlayerId ?? '')
+  }, [currentTargetPlayerId])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))
@@ -108,13 +136,21 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
 
   return (
     <div className="grid gap-3">
-      <form action={roundAction} className="grid gap-2">
+      <form ref={roundFormRef} action={roundAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
+        <input type="hidden" name="roundType" value={selectedRoundType} />
         <Label className="sr-only">Chuyển vòng</Label>
         <div className="flex items-center gap-2">
           <select
-            name="roundType"
-            defaultValue={currentRoundType ?? ''}
+            name="roundId"
+            value={roundId}
+            onChange={(e) => {
+              const nextId = e.target.value
+              setRoundId(nextId)
+              if (nextId) {
+                queueMicrotask(() => roundFormRef.current?.requestSubmit())
+              }
+            }}
             className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
             required
             aria-label="Chọn vòng"
@@ -123,23 +159,48 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
               Chọn vòng
             </option>
             {rounds.map((round) => (
-              <option key={round.id} value={round.round_type}>
+              <option key={round.id} value={round.id}>
                 Vòng {round.order_index + 1}: {roundLabelMap[round.round_type] ?? round.round_type}
               </option>
             ))}
           </select>
-          <SubmitButton disabled={rounds.length === 0}>Đặt vòng</SubmitButton>
         </div>
         {roundMessage && !roundState.error ? (
           <p className="text-xs text-green-600">{roundMessage}</p>
         ) : null}
       </form>
 
+      {allowTargetSelection && currentRoundQuestionId && players && players.length > 0 ? (
+        <form ref={targetFormRef} action={targetAction} className="grid gap-2">
+          <input type="hidden" name="matchId" value={matchId} />
+          <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId} />
+          <Label className="sr-only">Chọn thí sinh</Label>
+          <select
+            name="playerId"
+            value={targetPlayerId}
+            onChange={(e) => {
+              const next = e.target.value
+              setTargetPlayerId(next)
+              queueMicrotask(() => targetFormRef.current?.requestSubmit())
+            }}
+            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+            aria-label="Chọn thí sinh"
+          >
+            <option value="">{isKhoiDong ? 'Vòng thi chung (DKA)' : '(Tuỳ vòng) Chọn thí sinh'}</option>
+            {players.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.display_name ?? (p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')}
+              </option>
+            ))}
+          </select>
+        </form>
+      ) : null}
+
       <form ref={waitingFormRef} action={waitingAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="enabled" value={waitingChecked ? '1' : '0'} />
-        <div className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3">
-          <Label className="text-sm">Màn chờ</Label>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Màn chờ</Label>
           <Switch
             checked={waitingChecked}
             onCheckedChange={(v) => {
@@ -158,8 +219,8 @@ export function HostRoundControls({ matchId, rounds, currentQuestionState, curre
       <form ref={buzzerFormRef} action={buzzerAction} className="grid gap-2">
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="enabled" value={buzzerChecked ? '1' : '0'} />
-        <div className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3">
-          <Label className="text-sm">Bấm chuông</Label>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Bấm chuông</Label>
           <Switch
             checked={buzzerChecked}
             onCheckedChange={(v) => {

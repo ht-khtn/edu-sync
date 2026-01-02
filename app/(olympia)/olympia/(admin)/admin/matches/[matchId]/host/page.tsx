@@ -25,7 +25,6 @@ import {
   confirmVeDichStealDecisionFormAction,
   openStealWindowFormAction,
   setCurrentQuestionFormAction,
-  setRoundQuestionTargetPlayerFormAction,
   setVeDichQuestionValueFormAction,
   toggleStarUseFormAction,
   undoLastScoreChangeFormAction,
@@ -814,6 +813,11 @@ export default async function OlympiaHostConsolePage({
               <HostRoundControls
                 matchId={match.id}
                 rounds={rounds}
+                players={players}
+                allowTargetSelection={allowTargetSelection}
+                currentRoundQuestionId={liveSession?.current_round_question_id ?? null}
+                currentTargetPlayerId={currentRoundQuestion?.target_player_id ?? null}
+                isKhoiDong={isKhoiDong}
                 currentRoundType={liveSession?.current_round_type}
                 currentQuestionState={liveSession?.question_state}
                 buzzerEnabled={liveSession?.buzzer_enabled ?? null}
@@ -821,34 +825,11 @@ export default async function OlympiaHostConsolePage({
 
               {allowTargetSelection ? (
                 <div className="grid gap-2">
-                  <form action={setRoundQuestionTargetPlayerFormAction} className="flex gap-2">
-                    <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
-                    <select
-                      name="playerId"
-                      defaultValue={currentRoundQuestion?.target_player_id ?? ''}
-                      className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                      aria-label="Chọn thí sinh"
-                    >
-                      {isKhoiDong ? (
-                        <option value="">Vòng thi chung (DKA)</option>
-                      ) : (
-                        <option value="">(Tuỳ vòng) Chọn thí sinh</option>
-                      )}
-                      {players.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Ghế {p.seat_index ?? '—'} · {p.display_name ?? p.id}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="icon-sm" title="Lưu thí sinh" aria-label="Lưu thí sinh" variant="outline">
-                      <Check />
-                    </Button>
-                  </form>
-
                   {isVeDich ? (
                     <div className="grid gap-2">
                       <div className="grid grid-cols-2 gap-2">
                         <form action={setVeDichQuestionValueFormAction} className="flex gap-2">
+                          <input type="hidden" name="matchId" value={match.id} />
                           <input type="hidden" name="roundQuestionId" value={liveSession!.current_round_question_id} />
                           <select
                             name="value"

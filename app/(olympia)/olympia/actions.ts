@@ -2420,87 +2420,13 @@ export async function submitObstacleGuessAction(
   _: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  try {
-    // Theo yêu cầu UX: đoán CNV là trả lời miệng; thí sinh chỉ bấm chuông xin quyền.
-    // Host sẽ nhập từ khóa và xác nhận đúng/sai.
-    return { error: "CNV: chỉ đoán miệng. Hãy bấm chuông để xin quyền đoán." };
-
-    const { supabase, authUid, appUserId } = await getServerAuthContext();
-    const olympia = supabase.schema("olympia");
-    if (!authUid || !appUserId) {
-      return { error: "Bạn cần đăng nhập để dự đoán CNV." };
-    }
-
-    const parsed = obstacleGuessSubmitSchema.safeParse({
-      sessionId: formData.get("sessionId"),
-      guessText: formData.get("guessText"),
-    });
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu dự đoán không hợp lệ." };
-    }
-
-    const { data: session, error: sessionError } = await olympia
-      .from("live_sessions")
-      .select("id, status, match_id, current_round_id, current_round_type")
-      .eq("id", parsed.data.sessionId)
-      .maybeSingle();
-
-    if (sessionError) return { error: sessionError.message };
-    if (!session) return { error: "Không tìm thấy phòng thi." };
-    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
-    if (!session.match_id || !session.current_round_id)
-      return { error: "Phòng chưa gắn trận/vòng hiện tại." };
-    if (session.current_round_type !== "vcnv")
-      return { error: "Hiện không ở vòng Vượt chướng ngại vật." };
-
-    const { data: playerRow, error: playerError } = await olympia
-      .from("match_players")
-      .select("id, is_disqualified_obstacle")
-      .eq("match_id", session.match_id)
-      .eq("participant_id", appUserId)
-      .maybeSingle();
-
-    if (playerError) return { error: playerError.message };
-    if (!playerRow) return { error: "Bạn không thuộc trận này." };
-    if (playerRow.is_disqualified_obstacle) {
-      return { error: "Bạn đã bị loại khỏi quyền đoán CNV." };
-    }
-
-    const { data: obstacle, error: obstacleError } = await olympia
-      .from("obstacles")
-      .select("id")
-      .eq("match_round_id", session.current_round_id)
-      .maybeSingle();
-    if (obstacleError) return { error: obstacleError.message };
-    if (!obstacle) return { error: "Vòng này chưa có CNV." };
-
-    const { count, error: countError } = await olympia
-      .from("obstacle_guesses")
-      .select("id", { count: "exact", head: true })
-      .eq("obstacle_id", obstacle.id)
-      .eq("player_id", playerRow.id);
-    if (countError) return { error: countError.message };
-
-    const attemptOrder = (count ?? 0) + 1;
-    const { error: insertError } = await olympia.from("obstacle_guesses").insert({
-      obstacle_id: obstacle.id,
-      player_id: playerRow.id,
-      guess_text: parsed.data.guessText,
-      attempt_order: attemptOrder,
-      attempted_at: new Date().toISOString(),
-    });
-    if (insertError) return { error: insertError.message };
-
-    return { success: "Đã ghi nhận dự đoán CNV. Host sẽ xác nhận." };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Không thể gửi dự đoán CNV." };
-  }
+  void formData;
+  // Theo yêu cầu UX: đoán CNV là trả lời miệng; thí sinh chỉ bấm chuông xin quyền.
+  // Host sẽ nhập từ khóa và xác nhận đúng/sai.
+  return { error: "CNV: chỉ đoán miệng. Hãy bấm chuông để xin quyền đoán." };
 }
 
-export async function submitObstacleGuessByHostAction(
-  _: ActionState,
-  formData: FormData
-): Promise<ActionState> {
+export async function submitObstacleGuessByHostFormAction(formData: FormData): Promise<void> {
   try {
     await ensureOlympiaAdminAccess();
     const { supabase } = await getServerAuthContext();
@@ -2512,7 +2438,8 @@ export async function submitObstacleGuessByHostAction(
       guessText: formData.get("guessText"),
     });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu dự đoán CNV không hợp lệ." };
+      console.warn("[Olympia] submitObstacleGuessByHostFormAction invalid payload");
+      return;
     }
 
     const { data: session, error: sessionError } = await olympia
@@ -2520,64 +2447,57 @@ export async function submitObstacleGuessByHostAction(
       .select("id, status, match_id, join_code, current_round_id, current_round_type")
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
-    if (sessionError) return { error: sessionError.message };
-    if (!session) return { error: "Không tìm thấy phòng thi." };
-    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
-    if (!session.match_id || !session.current_round_id)
-      return { error: "Phòng chưa gắn trận/vòng hiện tại." };
-    if (session.current_round_type !== "vcnv")
-      return { error: "Hiện không ở vòng Vượt chướng ngại vật." };
-
-    const { data: playerRow, error: playerError } = await olympia
-      .from("match_players")
-      .select("id, is_disqualified_obstacle")
-      .eq("id", parsed.data.playerId)
-      .eq("match_id", session.match_id)
-      .maybeSingle();
-    if (playerError) return { error: playerError.message };
-    if (!playerRow) return { error: "Thí sinh không thuộc trận này." };
-    if (playerRow.is_disqualified_obstacle) {
-      return { error: "Thí sinh này đã bị loại khỏi quyền đoán CNV." };
+    if (sessionError || !session) {
+      console.warn("[Olympia] submitObstacleGuessByHostFormAction session lookup failed", sessionError?.message);
+      return;
     }
+    if (session.status !== "running") return;
+    if (!session.match_id || !session.current_round_id) return;
+    if (session.current_round_type !== "vcnv") return;
 
     const { data: obstacle, error: obstacleError } = await olympia
       .from("obstacles")
       .select("id")
       .eq("match_round_id", session.current_round_id)
       .maybeSingle();
-    if (obstacleError) return { error: obstacleError.message };
-    if (!obstacle) return { error: "Vòng này chưa có CNV." };
+    if (obstacleError || !obstacle) {
+      console.warn("[Olympia] submitObstacleGuessByHostFormAction obstacle lookup failed", obstacleError?.message);
+      return;
+    }
 
     const { count, error: countError } = await olympia
       .from("obstacle_guesses")
       .select("id", { count: "exact", head: true })
       .eq("obstacle_id", obstacle.id)
-      .eq("player_id", playerRow.id);
-    if (countError) return { error: countError.message };
+      .eq("player_id", parsed.data.playerId);
+    if (countError) {
+      console.warn("[Olympia] submitObstacleGuessByHostFormAction count failed", countError.message);
+      return;
+    }
 
     const attemptOrder = (count ?? 0) + 1;
     const { error: insertError } = await olympia.from("obstacle_guesses").insert({
       obstacle_id: obstacle.id,
-      player_id: playerRow.id,
+      player_id: parsed.data.playerId,
       guess_text: parsed.data.guessText,
+      is_correct: false,
       attempt_order: attemptOrder,
       attempted_at: new Date().toISOString(),
     });
-    if (insertError) return { error: insertError.message };
+    if (insertError) {
+      console.warn("[Olympia] submitObstacleGuessByHostFormAction insert failed", insertError.message);
+      return;
+    }
 
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);
       revalidatePath(`/olympia/client/guest/${session.join_code}`);
+      revalidatePath(`/olympia/mc/${session.join_code}`);
     }
-    return { success: "Đã ghi nhận lượt đoán CNV (host)." };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Không thể ghi nhận lượt đoán CNV." };
+    console.warn("[Olympia] submitObstacleGuessByHostFormAction failed", err);
   }
-}
-
-export async function submitObstacleGuessByHostFormAction(formData: FormData): Promise<void> {
-  await submitObstacleGuessByHostAction({}, formData);
 }
 
 export async function confirmVcnvRowDecisionAction(

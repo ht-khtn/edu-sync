@@ -2448,7 +2448,10 @@ export async function submitObstacleGuessByHostFormAction(formData: FormData): P
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
     if (sessionError || !session) {
-      console.warn("[Olympia] submitObstacleGuessByHostFormAction session lookup failed", sessionError?.message);
+      console.warn(
+        "[Olympia] submitObstacleGuessByHostFormAction session lookup failed",
+        sessionError?.message
+      );
       return;
     }
     if (session.status !== "running") return;
@@ -2461,7 +2464,10 @@ export async function submitObstacleGuessByHostFormAction(formData: FormData): P
       .eq("match_round_id", session.current_round_id)
       .maybeSingle();
     if (obstacleError || !obstacle) {
-      console.warn("[Olympia] submitObstacleGuessByHostFormAction obstacle lookup failed", obstacleError?.message);
+      console.warn(
+        "[Olympia] submitObstacleGuessByHostFormAction obstacle lookup failed",
+        obstacleError?.message
+      );
       return;
     }
 
@@ -2471,7 +2477,10 @@ export async function submitObstacleGuessByHostFormAction(formData: FormData): P
       .eq("obstacle_id", obstacle.id)
       .eq("player_id", parsed.data.playerId);
     if (countError) {
-      console.warn("[Olympia] submitObstacleGuessByHostFormAction count failed", countError.message);
+      console.warn(
+        "[Olympia] submitObstacleGuessByHostFormAction count failed",
+        countError.message
+      );
       return;
     }
 
@@ -2485,7 +2494,10 @@ export async function submitObstacleGuessByHostFormAction(formData: FormData): P
       attempted_at: new Date().toISOString(),
     });
     if (insertError) {
-      console.warn("[Olympia] submitObstacleGuessByHostFormAction insert failed", insertError.message);
+      console.warn(
+        "[Olympia] submitObstacleGuessByHostFormAction insert failed",
+        insertError.message
+      );
       return;
     }
 

@@ -47,6 +47,9 @@ CREATE TABLE olympia.live_sessions (
   player_password text,
   requires_player_password boolean NOT NULL DEFAULT true,
   mc_view_password text,
+  buzzer_enabled boolean NOT NULL DEFAULT true,
+  show_scoreboard_overlay boolean NOT NULL DEFAULT false,
+  guest_media_control jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT live_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT live_sessions_match_id_fkey FOREIGN KEY (match_id) REFERENCES olympia.matches(id),
   CONSTRAINT live_sessions_current_round_id_fkey FOREIGN KEY (current_round_id) REFERENCES olympia.match_rounds(id),
@@ -196,15 +199,20 @@ CREATE TABLE olympia.questions (
 CREATE TABLE olympia.round_questions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   match_round_id uuid NOT NULL,
-  question_id uuid NOT NULL,
+  question_id uuid,
   order_index smallint NOT NULL,
   target_player_id uuid,
   meta jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  question_set_item_id uuid,
+  question_text text,
+  answer_text text,
+  note text,
   CONSTRAINT round_questions_pkey PRIMARY KEY (id),
   CONSTRAINT round_questions_question_id_fkey FOREIGN KEY (question_id) REFERENCES olympia.questions(id),
   CONSTRAINT round_questions_target_player_id_fkey FOREIGN KEY (target_player_id) REFERENCES olympia.match_players(id),
-  CONSTRAINT round_questions_match_round_id_fkey FOREIGN KEY (match_round_id) REFERENCES olympia.match_rounds(id)
+  CONSTRAINT round_questions_match_round_id_fkey FOREIGN KEY (match_round_id) REFERENCES olympia.match_rounds(id),
+  CONSTRAINT round_questions_question_set_item_id_fkey FOREIGN KEY (question_set_item_id) REFERENCES olympia.question_set_items(id)
 );
 CREATE TABLE olympia.score_changes (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

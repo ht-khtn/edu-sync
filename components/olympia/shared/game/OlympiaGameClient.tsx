@@ -126,6 +126,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
 
+  const guestAudioRef = useRef<HTMLAudioElement | null>(null)
+  const guestVideoRef = useRef<HTMLVideoElement | null>(null)
+  const lastGuestMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
+
   const showBigScoreboard = session.show_scoreboard_overlay === true
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
     roundQuestionId: null,
@@ -230,6 +234,50 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       return null
     }
   }, [mediaKind, mediaUrl])
+
+  useEffect(() => {
+    if (!isGuest) return
+    const control = session.guest_media_control
+    if (!control) return
+
+    const applyCommand = async (mediaType: 'audio' | 'video') => {
+      const cmd = control[mediaType]
+      if (!cmd) return
+      const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
+      if (cmdId <= lastGuestMediaCmdRef.current[mediaType]) return
+      lastGuestMediaCmdRef.current = { ...lastGuestMediaCmdRef.current, [mediaType]: cmdId }
+
+      const action = cmd.action
+      const element = mediaType === 'audio' ? guestAudioRef.current : guestVideoRef.current
+      if (!element) return
+
+      try {
+        if (action === 'pause') {
+          element.pause()
+          return
+        }
+
+        if (action === 'restart') {
+          try {
+            element.currentTime = 0
+          } catch {
+            // ignore
+          }
+        }
+
+        // play
+        const p = element.play()
+        if (p && typeof (p as Promise<void>).then === 'function') {
+          await p
+        }
+      } catch {
+        // Trình duyệt có thể chặn autoplay; bỏ qua để tránh spam toast.
+      }
+    }
+
+    void applyCommand('audio')
+    void applyCommand('video')
+  }, [isGuest, session.guest_media_control])
 
   // Toast notification for session state
   useEffect(() => {
@@ -424,6 +472,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                       />
                     ) : mediaKind === 'video' ? (
                       <video
+                        ref={isGuest ? guestVideoRef : undefined}
                         controls
                         playsInline
                         src={mediaUrl}
@@ -455,7 +504,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                 {audioUrl ? (
                   <div className={cn('space-y-2', mediaUrl ? 'mt-4' : '')}>
                     <p className="text-xs text-slate-300">Âm thanh</p>
-                    <audio controls src={audioUrl} className="w-full" />
+                    <audio ref={isGuest ? guestAudioRef : undefined} controls src={audioUrl} className="w-full" />
                   </div>
                 ) : null}
               </div>

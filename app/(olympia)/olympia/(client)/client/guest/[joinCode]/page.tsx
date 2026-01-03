@@ -25,7 +25,7 @@ async function getGuestSessionData(
     const { data: session } = await olympia
         .from('live_sessions')
         .select(
-            'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay'
+            'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control'
         )
         .eq('join_code', joinCodeOrMatchId)
         .maybeSingle()
@@ -52,7 +52,7 @@ async function getGuestSessionData(
         (await olympia
             .from('live_sessions')
             .select(
-                'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay'
+                'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control'
             )
             .eq('match_id', match.id)
             .order('created_at', { ascending: false })

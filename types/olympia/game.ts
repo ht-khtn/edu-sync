@@ -11,6 +11,11 @@ export type LiveSessionRow = {
   buzzer_enabled?: boolean;
   requires_player_password?: boolean;
   show_scoreboard_overlay?: boolean;
+  guest_media_control?: {
+    version?: number;
+    audio?: { commandId: number; action: "play" | "pause" | "restart"; issuedAt: string };
+    video?: { commandId: number; action: "play" | "pause" | "restart"; issuedAt: string };
+  };
 };
 
 export type MatchRow = {

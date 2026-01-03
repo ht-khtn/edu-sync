@@ -8,7 +8,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { setBuzzerEnabledAction, setLiveSessionRoundAction, setRoundQuestionTargetPlayerAction, setWaitingScreenAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+
+export type ActionState = {
+  error?: string | null
+  success?: string | null
+  data?: Record<string, unknown> | null
+}
+
+type HostControlAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -40,6 +47,11 @@ type Props = {
   currentRoundQuestionId?: string | null
   currentTargetPlayerId?: string | null
   isKhoiDong?: boolean
+
+  setLiveSessionRoundAction: HostControlAction
+  setWaitingScreenAction: HostControlAction
+  setBuzzerEnabledAction: HostControlAction
+  setRoundQuestionTargetPlayerAction: HostControlAction
 }
 
 export function HostRoundControls({
@@ -53,6 +65,10 @@ export function HostRoundControls({
   currentRoundQuestionId,
   currentTargetPlayerId,
   isKhoiDong,
+  setLiveSessionRoundAction,
+  setWaitingScreenAction,
+  setBuzzerEnabledAction,
+  setRoundQuestionTargetPlayerAction,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()

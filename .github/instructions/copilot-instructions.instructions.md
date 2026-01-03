@@ -29,3 +29,6 @@ Provide project context and coding guidelines that AI should follow when generat
 
 7. Checking Resources
    - Always check database schema and the specific before thinking. Also, when having a plan, please check it too.
+
+8. Other coding rules
+   - Do not use any or unknown type, always use a specific type (strict rule)

@@ -182,6 +182,24 @@ const decisionSchema = z.object({
   decision: z.enum(["correct", "wrong", "timeout"]),
 });
 
+const guestMediaControlSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  mediaType: z.enum(["audio", "video"]),
+  command: z.enum(["play", "pause", "restart"]),
+});
+
+type GuestMediaCommand = {
+  commandId: number;
+  action: "play" | "pause" | "restart";
+  issuedAt: string;
+};
+
+type GuestMediaControl = {
+  version?: number;
+  audio?: GuestMediaCommand;
+  video?: GuestMediaCommand;
+};
+
 const decisionAndAdvanceSchema = decisionSchema.extend({
   matchId: z.string().uuid("Trận không hợp lệ."),
   // durationMs theo luật từng vòng (vòng 1: 5s, vòng 4: 15/20s). Nếu thiếu sẽ dùng default của advance.
@@ -1601,6 +1619,10 @@ export async function confirmDecisionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
+    const startedAt = Date.now();
+    let afterSessionFetchAt: number | null = null;
+    let afterScoreWriteAt: number | null = null;
+
     await ensureOlympiaAdminAccess();
     const { supabase, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
@@ -1621,6 +1643,8 @@ export async function confirmDecisionAction(
       .select("id, match_id, join_code, current_round_type, current_round_question_id")
       .eq("id", sessionId)
       .maybeSingle();
+
+    afterSessionFetchAt = Date.now();
 
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Không tìm thấy phòng thi." };
@@ -1796,6 +1820,8 @@ export async function confirmDecisionAction(
       if (insertScoreError) return { error: insertScoreError.message };
     }
 
+    afterScoreWriteAt = Date.now();
+
     // Cập nhật đáp án mới nhất (nếu có) để lưu điểm và trạng thái đúng/sai.
     let answerId: string | null = null;
     if (session.current_round_question_id) {
@@ -1841,7 +1867,19 @@ export async function confirmDecisionAction(
       console.warn("[Olympia] insertScoreChange(confirmDecision) failed:", auditErr);
     }
 
-    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
+    // Host/admin đang là Server Component nên cần revalidate để thấy cập nhật ngay.
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+
+    console.info("[Olympia][Perf] confirmDecisionAction", {
+      matchId: session.match_id,
+      sessionId,
+      playerId,
+      decision,
+      roundType,
+      msTotal: Date.now() - startedAt,
+      msFetchSession: afterSessionFetchAt ? afterSessionFetchAt - startedAt : null,
+      msAfterScoreWrite: afterScoreWriteAt ? afterScoreWriteAt - startedAt : null,
+    });
 
     return { success: `Đã xác nhận: ${decision}. Điểm mới: ${nextPoints}.` };
   } catch (err) {
@@ -1853,6 +1891,75 @@ export async function confirmDecisionAction(
 // Next.js form action chỉ truyền 1 tham số (FormData).
 export async function confirmDecisionFormAction(formData: FormData): Promise<void> {
   await confirmDecisionAction({}, formData);
+}
+
+export async function setGuestMediaControlAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = guestMediaControlSchema.safeParse({
+      matchId: formData.get("matchId"),
+      mediaType: formData.get("mediaType"),
+      command: formData.get("command"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin điều khiển media." };
+    }
+
+    const { matchId, mediaType, command } = parsed.data;
+
+    const { data: sessionRow, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select("id, status, guest_media_control")
+      .eq("match_id", matchId)
+      .maybeSingle();
+
+    if (sessionErr) return { error: sessionErr.message };
+    if (!sessionRow?.id) return { error: "Trận chưa mở phòng live." };
+    if (sessionRow.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+
+    const rawControl = (sessionRow as unknown as { guest_media_control?: unknown })
+      .guest_media_control;
+    const prevControl: GuestMediaControl =
+      rawControl && typeof rawControl === "object" ? (rawControl as GuestMediaControl) : {};
+
+    const prevCmd = prevControl[mediaType];
+    const prevId = typeof prevCmd?.commandId === "number" ? prevCmd.commandId : 0;
+    const nextCmd: GuestMediaCommand = {
+      commandId: prevId + 1,
+      action: command,
+      issuedAt: new Date().toISOString(),
+    };
+
+    const nextControl: GuestMediaControl = {
+      ...prevControl,
+      version: 1,
+      [mediaType]: nextCmd,
+    };
+
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({ guest_media_control: nextControl, updated_at: new Date().toISOString() })
+      .eq("id", sessionRow.id);
+
+    if (updateErr) return { error: updateErr.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+
+    return { success: `Đã gửi lệnh ${command} (${mediaType}) cho guest.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể điều khiển media guest." };
+  }
+}
+
+export async function setGuestMediaControlFormAction(formData: FormData): Promise<void> {
+  await setGuestMediaControlAction({}, formData);
 }
 
 export async function confirmDecisionAndAdvanceAction(
@@ -1909,6 +2016,7 @@ export async function setCurrentQuestionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
+    const startedAt = Date.now();
     await ensureOlympiaAdminAccess();
     const { supabase } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
@@ -1971,7 +2079,14 @@ export async function setCurrentQuestionAction(
 
     if (updateError) return { error: updateError.message };
 
-    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
+    // Host/admin: revalidate để nội dung câu hỏi hiển thị ngay.
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+
+    console.info("[Olympia][Perf] setCurrentQuestionAction", {
+      matchId,
+      roundQuestionId,
+      msTotal: Date.now() - startedAt,
+    });
     return { success: "Đã hiển thị câu hỏi." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật câu hỏi." };
@@ -1988,6 +2103,7 @@ export async function advanceCurrentQuestionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
+    const startedAt = Date.now();
     await ensureOlympiaAdminAccess();
     const { supabase } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
@@ -2091,7 +2207,17 @@ export async function advanceCurrentQuestionAction(
 
     if (updateError) return { error: updateError.message };
 
-    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
+    // Host/admin: revalidate để thấy câu mới ngay.
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+
+    console.info("[Olympia][Perf] advanceCurrentQuestionAction", {
+      matchId,
+      direction,
+      autoShow,
+      shouldAutoShow,
+      durationMs,
+      msTotal: Date.now() - startedAt,
+    });
     return {
       success: shouldAutoShow ? "Đã chuyển & hiển thị câu mới." : "Đã chuyển câu & bật màn chờ.",
     };

@@ -168,7 +168,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           olympia
             .from("round_questions")
             .select(
-                "id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note, image_url, audio_url), question_set_items(id, code, category, question_text, answer_text, note, image_url, audio_url)"
+              "id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note, image_url, audio_url), question_set_items(id, code, category, question_text, answer_text, note, image_url, audio_url)"
             )
             .eq("id", currentRqId)
             .maybeSingle(),

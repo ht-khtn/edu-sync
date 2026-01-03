@@ -148,9 +148,16 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       ? currentRoundQuestion.questions[0] ?? null
       : currentRoundQuestion.questions)
     : null
+  const questionSetItemRecord = currentRoundQuestion?.question_set_items
+    ? (Array.isArray(currentRoundQuestion.question_set_items)
+      ? currentRoundQuestion.question_set_items[0] ?? null
+      : currentRoundQuestion.question_set_items)
+    : null
   const questionText = currentRoundQuestion?.question_text ?? questionRecord?.question_text ?? null
   const answerText = currentRoundQuestion?.answer_text ?? questionRecord?.answer_text ?? null
   const noteText = currentRoundQuestion?.note ?? questionRecord?.note ?? null
+  const mediaUrl = (questionSetItemRecord?.image_url ?? questionRecord?.image_url ?? null)?.trim() || null
+  const audioUrl = (questionSetItemRecord?.audio_url ?? questionRecord?.audio_url ?? null)?.trim() || null
   const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden')
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
@@ -195,6 +202,34 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   void showQuestionText
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
+
+  const mediaKind = useMemo(() => {
+    if (!mediaUrl) return null
+    const lower = mediaUrl.toLowerCase()
+    const isYouTube = lower.includes('youtube.com') || lower.includes('youtu.be')
+    if (isYouTube) return 'youtube'
+    const isVideo = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/.test(lower)
+    if (isVideo) return 'video'
+    const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/.test(lower)
+    if (isImage) return 'image'
+    // Fallback: cột này có thể là link Ảnh/Video nhưng không có extension
+    return 'link'
+  }, [mediaUrl])
+
+  const youtubeEmbedUrl = useMemo(() => {
+    if (!mediaUrl || mediaKind !== 'youtube') return null
+    try {
+      const url = new URL(mediaUrl)
+      if (url.hostname.includes('youtu.be')) {
+        const id = url.pathname.replace('/', '').trim()
+        return id ? `https://www.youtube.com/embed/${id}` : null
+      }
+      const v = url.searchParams.get('v')
+      return v ? `https://www.youtube.com/embed/${v}` : null
+    } catch {
+      return null
+    }
+  }, [mediaKind, mediaUrl])
 
   // Toast notification for session state
   useEffect(() => {
@@ -374,6 +409,57 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
             <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
               {questionText?.trim() ? questionText : '—'}
             </p>
+
+            {(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') ? (
+              <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
+                {mediaUrl ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-300">Ảnh/Video</p>
+                    {mediaKind === 'image' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={mediaUrl}
+                        alt="Media câu hỏi"
+                        className="w-full max-h-[420px] object-contain rounded"
+                      />
+                    ) : mediaKind === 'video' ? (
+                      <video
+                        controls
+                        playsInline
+                        src={mediaUrl}
+                        className="w-full max-h-[420px] rounded bg-black"
+                      />
+                    ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                      <div className="aspect-video w-full overflow-hidden rounded bg-black">
+                        <iframe
+                          src={youtubeEmbedUrl}
+                          title="Video câu hỏi"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          className="h-full w-full"
+                        />
+                      </div>
+                    ) : (
+                      <a
+                        href={mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-sky-300 hover:underline break-all"
+                      >
+                        {mediaUrl}
+                      </a>
+                    )}
+                  </div>
+                ) : null}
+
+                {audioUrl ? (
+                  <div className={cn('space-y-2', mediaUrl ? 'mt-4' : '')}>
+                    <p className="text-xs text-slate-300">Âm thanh</p>
+                    <audio controls src={audioUrl} className="w-full" />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {roundType === 'vcnv' && obstacle ? (
               (() => {

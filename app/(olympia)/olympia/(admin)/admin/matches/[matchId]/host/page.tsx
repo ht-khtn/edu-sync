@@ -125,6 +125,14 @@ type RoundQuestionRow = {
   question_text: string | null
   answer_text: string | null
   note: string | null
+  questions?:
+    | { image_url?: string | null; audio_url?: string | null }
+    | Array<{ image_url?: string | null; audio_url?: string | null }>
+    | null
+  question_set_items?:
+    | { image_url?: string | null; audio_url?: string | null }
+    | Array<{ image_url?: string | null; audio_url?: string | null }>
+    | null
 }
 
 function isUuid(value: string) {
@@ -254,7 +262,7 @@ async function fetchHostData(matchCode: string) {
     ? await olympia
       .from('round_questions')
       .select(
-        'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note'
+        'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
       )
       .in('match_round_id', roundIds)
       .order('match_round_id', { ascending: true })
@@ -387,6 +395,34 @@ async function fetchHostData(matchCode: string) {
     obstacleTiles,
     obstacleGuesses,
     vcnvAnswerSummary,
+  }
+}
+
+function pickJoin<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function detectMediaKind(url: string | null): 'youtube' | 'video' | 'image' | 'link' | null {
+  if (!url) return null
+  const lower = url.toLowerCase()
+  if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube'
+  if (/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/.test(lower)) return 'video'
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/.test(lower)) return 'image'
+  return 'link'
+}
+
+function toYoutubeEmbed(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.includes('youtu.be')) {
+      const id = parsed.pathname.replace('/', '').trim()
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    const v = parsed.searchParams.get('v')
+    return v ? `https://www.youtube.com/embed/${v}` : null
+  } catch {
+    return null
   }
 }
 
@@ -789,6 +825,55 @@ export default async function OlympiaHostConsolePage({
                 <p className="mt-3 whitespace-pre-wrap text-lg font-semibold leading-relaxed">
                   {previewQuestionText ?? (previewRoundQuestion ? `ID: ${getRoundQuestionLabel(previewRoundQuestion as unknown as RoundQuestionRow)}` : 'Chưa có nội dung câu hỏi')}
                 </p>
+
+                {(() => {
+                  const rq = previewRoundQuestion as unknown as RoundQuestionRow | null
+                  const qsi = pickJoin(rq?.question_set_items)
+                  const q = pickJoin(rq?.questions)
+                  const mediaUrl = (qsi?.image_url ?? q?.image_url ?? null)?.trim() || null
+                  const audioUrl = (qsi?.audio_url ?? q?.audio_url ?? null)?.trim() || null
+                  const kind = detectMediaKind(mediaUrl)
+                  const yt = kind === 'youtube' && mediaUrl ? toYoutubeEmbed(mediaUrl) : null
+
+                  if (!mediaUrl && !audioUrl) return null
+
+                  return (
+                    <div className="mt-4 rounded-md border bg-white p-3 space-y-3">
+                      {mediaUrl ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-slate-700">Ảnh/Video</p>
+                          {kind === 'image' ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={mediaUrl} alt="Media câu hỏi" className="w-full max-h-[360px] object-contain rounded" />
+                          ) : kind === 'video' ? (
+                            <video controls playsInline src={mediaUrl} className="w-full max-h-[360px] rounded bg-black" />
+                          ) : kind === 'youtube' && yt ? (
+                            <div className="aspect-video w-full overflow-hidden rounded bg-black">
+                              <iframe
+                                src={yt}
+                                title="Video câu hỏi"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                className="h-full w-full"
+                              />
+                            </div>
+                          ) : (
+                            <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
+                              {mediaUrl}
+                            </a>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {audioUrl ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-slate-700">Âm thanh</p>
+                          <audio controls src={audioUrl} className="w-full" />
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })()}
 
                 {previewAnswerText ? (
                   <div className="mt-4 rounded-md border bg-slate-50 p-3">

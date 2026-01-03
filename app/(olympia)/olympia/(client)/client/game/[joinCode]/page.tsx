@@ -74,7 +74,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         olympia
             .from('round_questions')
             .select(
-                'id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note), match_rounds!inner(match_id, round_type)'
+                'id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note, image_url, audio_url), question_set_items(id, code, category, question_text, answer_text, note, image_url, audio_url), match_rounds!inner(match_id, round_type)'
             )
             .eq('match_rounds.match_id', session.match_id)
             .order('order_index', { ascending: true }),

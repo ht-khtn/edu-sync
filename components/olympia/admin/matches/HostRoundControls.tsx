@@ -183,7 +183,7 @@ export function HostRoundControls({
             ref={targetFormRef}
             action={targetAction}
             className="grid gap-2"
-            onSubmit={(e) => {
+            onSubmit={() => {
               // Trước khi submit, update URL query param để lọc danh sách câu theo ghế được chọn
               const selectedPlayer = players.find((p) => p.id === targetPlayerId)
               const nextSeat = selectedPlayer?.seat_index
@@ -227,7 +227,17 @@ export function HostRoundControls({
             </div>
           </form>
         ) : (
-          <form ref={targetFormRef} action={targetAction} className="grid gap-2">
+          <form
+            ref={targetFormRef}
+            action={targetAction}
+            className="grid gap-2"
+            onSubmit={() => {
+              const params = new URLSearchParams(baseParams)
+              params.delete('preview')
+              const qs = params.toString()
+              router.replace(qs ? `${pathname}?${qs}` : pathname)
+            }}
+          >
             <input type="hidden" name="matchId" value={matchId} />
             <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
             <Label className="sr-only">Chọn thí sinh</Label>

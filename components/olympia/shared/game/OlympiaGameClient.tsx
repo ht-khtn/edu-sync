@@ -6,7 +6,7 @@ import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { submitAnswerAction, submitObstacleGuessAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
@@ -58,6 +58,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     answers,
     starUses,
     obstacle,
+    obstacleTiles,
     timerLabel,
     questionState,
     roundType,
@@ -66,7 +67,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
   const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
-  const [cnvGuessState, cnvGuessAction] = useActionState(submitObstacleGuessAction, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
 
   // Toast notifications for feedback
@@ -81,16 +81,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     }
   }, [answerState.error, answerState.success])
 
-  useEffect(() => {
-    const cnvFeedback = cnvGuessState.error ?? cnvGuessState.success
-    if (cnvFeedback) {
-      if (cnvGuessState.error) {
-        toast.error(cnvFeedback)
-      } else {
-        toast.success(cnvFeedback)
-      }
-    }
-  }, [cnvGuessState.error, cnvGuessState.success])
 
   useEffect(() => {
     const buzzerFeedback = buzzerState.error ?? buzzerState.success
@@ -194,8 +184,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     Boolean(
       viewerPlayer?.id &&
       isStealWindow &&
-      !isViewerTarget &&
-      !viewerPlayer?.is_disqualified_obstacle
+      !isViewerTarget
     )
   const disableBuzz = (session.buzzer_enabled === false) || (isVeDich ? !canBuzzVeDich : disableInteractions)
 
@@ -386,6 +375,115 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
               {questionText?.trim() ? questionText : '—'}
             </p>
 
+            {roundType === 'vcnv' && obstacle ? (
+              (() => {
+                const byPos = new Map<number, (typeof obstacleTiles)[number]>()
+                for (const t of obstacleTiles ?? []) {
+                  if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
+                }
+
+                const getRqAnswer = (rqId: string | null | undefined) => {
+                  if (!rqId) return ''
+                  const rq = roundQuestions.find((q) => q.id === rqId) ?? null
+                  const raw = (rq?.answer_text ?? '').trim()
+                  return raw
+                }
+
+                const buildBoxes = (answerText: string, reveal: boolean) => {
+                  const chars = Array.from(answerText)
+                  return (
+                    <div className="flex flex-wrap justify-center gap-1">
+                      {chars.map((ch, idx) => {
+                        if (ch === ' ') return <span key={idx} className="w-2" />
+                        return (
+                          <span
+                            key={idx}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/60 text-sm font-semibold"
+                            aria-label={reveal ? ch.toUpperCase() : 'Ô chữ'}
+                          >
+                            {reveal ? ch.toUpperCase() : ''}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )
+                }
+
+                const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
+                  { pos: 1, label: '1', className: 'left-2 top-2' },
+                  { pos: 2, label: '2', className: 'right-2 top-2' },
+                  { pos: 3, label: '3', className: 'left-2 bottom-2' },
+                  { pos: 4, label: '4', className: 'right-2 bottom-2' },
+                  { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
+                ]
+
+                const renderRow = (pos: number, title: string) => {
+                  const tile = byPos.get(pos) ?? null
+                  const answer = getRqAnswer(tile?.round_question_id)
+                  const reveal = Boolean(tile?.is_open)
+
+                  return (
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-300">{title}</p>
+                      {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-slate-400">(Chưa có đáp án)</p>}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="mt-8 grid gap-6 md:grid-cols-2 md:items-start text-left">
+                    <div className="space-y-2">
+                      <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
+                        {obstacle.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={obstacle.image_url}
+                            alt={obstacle.title ?? 'Chướng ngại vật'}
+                            className="h-64 w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
+                            (Chưa có ảnh CNV)
+                          </div>
+                        )}
+
+                        {tilesForImage.map((t) => {
+                          const tile = byPos.get(t.pos) ?? null
+                          if (tile?.is_open) return null
+                          return (
+                            <div
+                              key={t.pos}
+                              className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border border-slate-700 bg-slate-950/70`}
+                              aria-label={`Ô ${t.label} (che)`}
+                            >
+                              <span className="text-sm font-semibold text-slate-100">{t.label}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <p className="text-xs text-slate-300">
+                        CNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 text-center">
+                      {renderRow(1, 'Hàng 1')}
+                      {renderRow(2, 'Hàng 2')}
+                      {renderRow(3, 'Hàng 3')}
+                      {renderRow(4, 'Hàng 4')}
+                      {renderRow(5, 'Trung tâm')}
+                      {!disableInteractions ? (
+                        <p className="mt-2 text-xs text-slate-300">
+                          Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })()
+            ) : null}
+
             {isMc && (answerText || noteText) ? (
               <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
                 {answerText ? (
@@ -453,20 +551,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                       </form>
                     ) : null}
 
-                    {roundType === 'vcnv' && obstacle ? (
-                      <form action={cnvGuessAction} className="flex items-center gap-2">
-                        <input type="hidden" name="sessionId" value={session.id} />
-                        <Input
-                          name="guessText"
-                          placeholder="Đoán CNV"
-                          disabled={disableInteractions}
-                          className="w-[180px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                        />
-                        <FormSubmitButton disabled={disableInteractions} variant="outline">
-                          Đoán
-                        </FormSubmitButton>
-                      </form>
-                    ) : null}
                   </div>
                 </div>
               )}

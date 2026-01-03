@@ -58,6 +58,8 @@ export type RoundQuestionRow = {
         question_text?: string | null;
         answer_text?: string | null;
         note?: string | null;
+        image_url?: string | null;
+        audio_url?: string | null;
       }
     | Array<{
         id?: string | null;
@@ -66,6 +68,32 @@ export type RoundQuestionRow = {
         question_text?: string | null;
         answer_text?: string | null;
         note?: string | null;
+        image_url?: string | null;
+        audio_url?: string | null;
+      }>
+    | null;
+
+  // Khi migrate sang question_set_items, media thường nằm ở đây.
+  question_set_items?:
+    | {
+        id?: string | null;
+        code?: string | null;
+        category?: string | null;
+        question_text?: string | null;
+        answer_text?: string | null;
+        note?: string | null;
+        image_url?: string | null;
+        audio_url?: string | null;
+      }
+    | Array<{
+        id?: string | null;
+        code?: string | null;
+        category?: string | null;
+        question_text?: string | null;
+        answer_text?: string | null;
+        note?: string | null;
+        image_url?: string | null;
+        audio_url?: string | null;
       }>
     | null;
   // Supabase join có thể trả về object (many-to-one) hoặc mảng (tuỳ select/alias).

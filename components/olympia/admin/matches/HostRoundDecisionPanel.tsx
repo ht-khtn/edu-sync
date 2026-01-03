@@ -1,6 +1,5 @@
 'use client'
 
-import { useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,14 +15,11 @@ interface Props {
 }
 
 export function HostRoundDecisionPanel({
-    matchId,
     sessionId,
     enabledPlayerId,
-    roundType,
     currentRoundQuestionId,
 }: Props) {
     const router = useRouter()
-    const formRef = useRef<HTMLFormElement | null>(null)
 
     // Chỉ show panel nếu có thí sinh được chấm
     if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) {

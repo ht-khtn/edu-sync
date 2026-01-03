@@ -160,7 +160,7 @@ export function UploadQuestionSetDialog() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="assets">Tải nguyên (thư mục)</Label>
+            <Label htmlFor="assets">Tài nguyên (thư mục)</Label>
             <Input
               id="assets"
               type="file"

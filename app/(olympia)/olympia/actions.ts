@@ -2,7 +2,6 @@
 
 import { createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
-import ExcelJS from "exceljs";
 import {
   extractRequiredAssetBasenames,
   normalizeAssetBasename,
@@ -119,34 +118,6 @@ function parseQuestionRoundType(code: string): string | null {
   return null;
 }
 
-/**
- * Parses code format to extract round/question info.
- * Supports formats: KD{i}-{n}, DKA-{n}, VCNV-{n}, VCNV-OTT, CNV, TT{n}, VD-{s}.{n}, CHP-{i}
- * Returns normalized code (uppercase) and metadata.
- */
-function parseQuestionCode(rawCode: string): {
-  normalizedCode: string;
-  isTT: boolean;
-  ttNumber?: number;
-} {
-  const normalized = rawCode.toUpperCase().trim();
-
-  // Check if TT{n} (Tăng tốc)
-  const ttMatch = normalized.match(/^TT(\d+)$/);
-  if (ttMatch) {
-    return {
-      normalizedCode: normalized,
-      isTT: true,
-      ttNumber: parseInt(ttMatch[1], 10),
-    };
-  }
-
-  return {
-    normalizedCode: normalized,
-    isTT: false,
-  };
-}
-
 // parseQuestionSetWorkbook đã được tách ra module dùng chung (server + client)
 
 const joinSchema = z.object({
@@ -227,14 +198,6 @@ const vcnvRowDecisionSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
   playerId: z.string().uuid("Thí sinh không hợp lệ."),
   decision: z.enum(["correct", "wrong", "timeout"]),
-});
-
-const obstacleGuessSubmitSchema = z.object({
-  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
-  guessText: z
-    .string()
-    .transform((value) => value.trim())
-    .refine((value) => value.length > 0, "Vui lòng nhập dự đoán CNV."),
 });
 
 const obstacleGuessHostSubmitSchema = z.object({
@@ -399,19 +362,63 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
     }
 
     const payload = parsed.data;
-    const { error } = await olympia.from("matches").insert({
-      name: payload.name,
-      tournament_id: payload.tournamentId,
-      scheduled_at: payload.scheduledAt,
-      status: "draft",
-      host_user_id: appUserId,
-    });
+    const { data: createdMatch, error: insertError } = await olympia
+      .from("matches")
+      .insert({
+        name: payload.name,
+        tournament_id: payload.tournamentId,
+        scheduled_at: payload.scheduledAt,
+        status: "draft",
+        host_user_id: appUserId,
+      })
+      .select("id")
+      .maybeSingle();
 
-    if (error) return { error: error.message };
+    if (insertError) return { error: insertError.message };
+    if (!createdMatch?.id) return { error: "Không thể tạo trận mới." };
+
+    // Tự động khởi tạo cấu hình vòng (match_rounds) cho trận mới.
+    const matchId = createdMatch.id;
+    const { data: existingRounds, error: checkRoundsError } = await olympia
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .limit(1);
+    if (checkRoundsError) {
+      return {
+        error: `Đã tạo trận nhưng không thể kiểm tra vòng thi: ${checkRoundsError.message}`,
+      };
+    }
+
+    if (!existingRounds || existingRounds.length === 0) {
+      const roundTypes = [
+        { roundType: "khoi_dong", orderIndex: 0 },
+        { roundType: "vcnv", orderIndex: 1 },
+        { roundType: "tang_toc", orderIndex: 2 },
+        { roundType: "ve_dich", orderIndex: 3 },
+      ];
+
+      const { error: insertRoundsError } = await olympia.from("match_rounds").insert(
+        roundTypes.map((round) => ({
+          match_id: matchId,
+          round_type: round.roundType,
+          order_index: round.orderIndex,
+          config: {},
+        }))
+      );
+
+      if (insertRoundsError) {
+        return {
+          error: `Đã tạo trận nhưng không thể khởi tạo cấu hình vòng: ${insertRoundsError.message}`,
+        };
+      }
+    }
 
     revalidatePath("/olympia/admin/matches");
     revalidatePath("/olympia/admin");
-    return { success: "Đã tạo trận mới." };
+    revalidatePath(`/olympia/admin/matches/${createdMatch.id}`);
+    revalidatePath(`/olympia/admin/matches/${createdMatch.id}/host`);
+    return { success: "Đã tạo trận mới và khởi tạo cấu hình 4 vòng thi." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể tạo trận." };
   }
@@ -1635,7 +1642,6 @@ export async function confirmDecisionAction(
 
     // Để chấm đúng luật theo vòng, cần biết target_player_id (thi riêng) và một số meta.
     let currentTargetPlayerId: string | null = null;
-    let inferredKhoiDongSeat: number | null = null;
     let currentVeDichValue: 20 | 30 | null = null;
     if (session.current_round_question_id) {
       const { data: rqRow, error: rqErr } = await olympia
@@ -1649,7 +1655,6 @@ export async function confirmDecisionAction(
       if (roundType === "khoi_dong" && !currentTargetPlayerId) {
         const info = parseKhoiDongCodeInfoFromMeta((rqRow as unknown as { meta?: unknown })?.meta);
         if (info?.kind === "personal") {
-          inferredKhoiDongSeat = info.seat;
           const { data: seatPlayer, error: seatErr } = await olympia
             .from("match_players")
             .select("id")

@@ -79,11 +79,11 @@ export function HostRoundControls({
   const searchParams = useSearchParams()
   const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
 
-  const [roundState, roundAction] = useActionState(setLiveSessionRoundAction, initialState)
-  const [waitingState, waitingAction] = useActionState(setWaitingScreenAction, initialState)
-  const [scoreboardState, scoreboardAction] = useActionState(setScoreboardOverlayAction, initialState)
-  const [buzzerState, buzzerAction] = useActionState(setBuzzerEnabledAction, initialState)
-  const [targetState, targetAction] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
+  const [roundState, roundAction, roundPending] = useActionState(setLiveSessionRoundAction, initialState)
+  const [waitingState, waitingAction, waitingPending] = useActionState(setWaitingScreenAction, initialState)
+  const [scoreboardState, scoreboardAction, scoreboardPending] = useActionState(setScoreboardOverlayAction, initialState)
+  const [buzzerState, buzzerAction, buzzerPending] = useActionState(setBuzzerEnabledAction, initialState)
+  const [targetState, targetAction, targetPending] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
   const lastRoundToastRef = useRef<string | null>(null)
   const lastWaitingToastRef = useRef<string | null>(null)
   const lastScoreboardToastRef = useRef<string | null>(null)
@@ -108,6 +108,10 @@ export function HostRoundControls({
 
   const lastServerRoundIdRef = useRef<string>('')
   const lastServerTargetPlayerIdRef = useRef<string>('')
+  const lastSubmittedRoundIdRef = useRef<string | null>(null)
+  const lastSubmittedRoundTypeRef = useRef<string | null>(null)
+  const lastSubmittedTargetPlayerIdRef = useRef<string | null>(null)
+  const lastAppliedUrlRef = useRef<string | null>(null)
 
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
   const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
@@ -187,6 +191,39 @@ export function HostRoundControls({
     }
   }, [targetState.error, targetState.success, router])
 
+  // Rollback local UI when actions fail (không để UI lệch server).
+  useEffect(() => {
+    if (!roundState.error) return
+    const serverId = currentRound?.id ?? ''
+    lastServerRoundIdRef.current = serverId
+    setRoundId(serverId)
+    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
+    setScoreboardChecked(showScoreboardOverlay ?? false)
+    setBuzzerChecked(buzzerEnabled ?? true)
+  }, [roundState.error, currentRound?.id, currentQuestionState, showScoreboardOverlay, buzzerEnabled])
+
+  useEffect(() => {
+    if (!targetState.error) return
+    const serverTarget = currentTargetPlayerId ?? ''
+    lastServerTargetPlayerIdRef.current = serverTarget
+    setTargetPlayerId(serverTarget)
+  }, [targetState.error, currentTargetPlayerId])
+
+  useEffect(() => {
+    if (!waitingState.error) return
+    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
+  }, [waitingState.error, currentQuestionState])
+
+  useEffect(() => {
+    if (!scoreboardState.error) return
+    setScoreboardChecked(showScoreboardOverlay ?? false)
+  }, [scoreboardState.error, showScoreboardOverlay])
+
+  useEffect(() => {
+    if (!buzzerState.error) return
+    setBuzzerChecked(buzzerEnabled ?? true)
+  }, [buzzerState.error, buzzerEnabled])
+
   useEffect(() => {
     const nextServerId = currentRound?.id ?? ''
     setRoundId((prev) => {
@@ -208,6 +245,63 @@ export function HostRoundControls({
       return shouldSync ? nextServerTarget : prev
     })
   }, [currentTargetPlayerId])
+
+  // Chỉ update query params sau khi server action thành công (tránh navigation/refresh trước khi action chạy xong).
+  useEffect(() => {
+    if (!roundState.success || roundState.error) return
+    const submittedRoundType = lastSubmittedRoundTypeRef.current
+    const params = new URLSearchParams(baseParams)
+    params.delete('preview')
+    if (submittedRoundType && submittedRoundType !== 'khoi_dong') {
+      params.delete('kdSeat')
+    }
+    const qs = params.toString()
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname
+    if (lastAppliedUrlRef.current === nextUrl) return
+    lastAppliedUrlRef.current = nextUrl
+    router.replace(nextUrl)
+
+    // Optimistic UI: sau khi đổi vòng, đưa về màn chờ và tắt overlay.
+    setWaitingChecked(true)
+    setScoreboardChecked(false)
+    // Không tự bật buzzer ở đây; server đang set false.
+    setBuzzerChecked(false)
+
+    const submittedRoundId = lastSubmittedRoundIdRef.current
+    if (submittedRoundId) {
+      lastServerRoundIdRef.current = submittedRoundId
+      setRoundId(submittedRoundId)
+    }
+  }, [roundState.success, roundState.error, baseParams, pathname, router])
+
+  useEffect(() => {
+    if (!targetState.success || targetState.error) return
+
+    const params = new URLSearchParams(baseParams)
+    params.delete('preview')
+
+    if (isKhoiDong) {
+      const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
+      const selectedPlayer = submittedTargetId
+        ? players?.find((p) => p.id === submittedTargetId) ?? null
+        : null
+      const nextSeat = selectedPlayer?.seat_index
+      if (nextSeat != null) params.set('kdSeat', String(nextSeat))
+      else params.delete('kdSeat')
+    }
+
+    const qs = params.toString()
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname
+    if (lastAppliedUrlRef.current === nextUrl) return
+    lastAppliedUrlRef.current = nextUrl
+    router.replace(nextUrl)
+
+    const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
+    if (submittedTargetId != null) {
+      lastServerTargetPlayerIdRef.current = submittedTargetId
+      setTargetPlayerId(submittedTargetId)
+    }
+  }, [targetState.success, targetState.error, baseParams, pathname, router, isKhoiDong, players])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))
@@ -249,7 +343,16 @@ export function HostRoundControls({
 
   return (
     <div className="grid gap-3">
-      <form ref={roundFormRef} action={roundAction} className="grid gap-2">
+      <form
+        ref={roundFormRef}
+        action={roundAction}
+        className="grid gap-2"
+        onSubmit={() => {
+          lastSubmittedRoundIdRef.current = roundId
+          lastSubmittedRoundTypeRef.current = selectedRoundType
+          lastAppliedUrlRef.current = null
+        }}
+      >
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="roundType" value={selectedRoundType} />
         <Label className="sr-only">Chuyển vòng</Label>
@@ -264,6 +367,7 @@ export function HostRoundControls({
             className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
             required
             aria-label="Chọn vòng"
+            disabled={roundPending}
           >
             <option value="" disabled>
               Chọn vòng
@@ -274,7 +378,7 @@ export function HostRoundControls({
               </option>
             ))}
           </select>
-          <Button type="submit" size="sm" disabled={!roundId} aria-label="Chuyển vòng">
+          <Button type="submit" size="sm" disabled={!roundId || roundPending} aria-label="Chuyển vòng">
             Chuyển vòng
           </Button>
         </div>
@@ -290,16 +394,8 @@ export function HostRoundControls({
             action={targetAction}
             className="grid gap-2"
             onSubmit={() => {
-              // Trước khi submit, update URL query param để lọc danh sách câu theo ghế được chọn
-              const selectedPlayer = players.find((p) => p.id === targetPlayerId)
-              const nextSeat = selectedPlayer?.seat_index
-              const params = new URLSearchParams(baseParams)
-              if (nextSeat != null) params.set('kdSeat', String(nextSeat))
-              else params.delete('kdSeat')
-              // Đổi ghế/thi chung thì reset preview để tránh chọn câu không thuộc danh sách.
-              params.delete('preview')
-              const qs = params.toString()
-              router.replace(qs ? `${pathname}?${qs}` : pathname)
+              lastSubmittedTargetPlayerIdRef.current = targetPlayerId
+              lastAppliedUrlRef.current = null
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -315,6 +411,7 @@ export function HostRoundControls({
                 }}
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                 aria-label="Chọn ghế (Khởi động)"
+                disabled={targetPending}
               >
                 <option value="">Thi chung (DKA)</option>
                 {players
@@ -327,7 +424,13 @@ export function HostRoundControls({
                     </option>
                   ))}
               </select>
-              <Button type="submit" size="sm" aria-label="Xác nhận chọn ghế" title="Khởi động: chọn ghế để lọc câu, không cần chọn câu trước">
+              <Button
+                type="submit"
+                size="sm"
+                aria-label="Xác nhận chọn ghế"
+                title="Khởi động: chọn ghế để lọc câu, không cần chọn câu trước"
+                disabled={targetPending}
+              >
                 Xác nhận
               </Button>
             </div>
@@ -338,10 +441,8 @@ export function HostRoundControls({
             action={targetAction}
             className="grid gap-2"
             onSubmit={() => {
-              const params = new URLSearchParams(baseParams)
-              params.delete('preview')
-              const qs = params.toString()
-              router.replace(qs ? `${pathname}?${qs}` : pathname)
+              lastSubmittedTargetPlayerIdRef.current = targetPlayerId
+              lastAppliedUrlRef.current = null
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -357,7 +458,7 @@ export function HostRoundControls({
                 }}
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                 aria-label="Chọn thí sinh"
-                disabled={!allowTargetSelection}
+                disabled={!allowTargetSelection || targetPending}
               >
                 <option value="">
                   {!allowTargetSelection
@@ -372,7 +473,12 @@ export function HostRoundControls({
                   </option>
                 ))}
               </select>
-              <Button type="submit" size="sm" aria-label="Xác nhận chọn thí sinh" disabled={!canPickTarget}>
+              <Button
+                type="submit"
+                size="sm"
+                aria-label="Xác nhận chọn thí sinh"
+                disabled={!canPickTarget || targetPending}
+              >
                 Xác nhận
               </Button>
             </div>
@@ -390,7 +496,7 @@ export function HostRoundControls({
               value="question"
               checked={viewMode === 'question'}
               onChange={() => setViewMode('question')}
-              disabled={!currentRoundType}
+              disabled={!currentRoundType || waitingPending || scoreboardPending}
               aria-label="Câu hỏi"
             />
             Câu hỏi
@@ -402,7 +508,7 @@ export function HostRoundControls({
               value="waiting"
               checked={viewMode === 'waiting'}
               onChange={() => setViewMode('waiting')}
-              disabled={!currentRoundType}
+              disabled={!currentRoundType || waitingPending || scoreboardPending}
               aria-label="Màn chờ"
             />
             Màn chờ
@@ -414,7 +520,7 @@ export function HostRoundControls({
               value="scoreboard"
               checked={viewMode === 'scoreboard'}
               onChange={() => setViewMode('scoreboard')}
-              disabled={!currentRoundType}
+              disabled={!currentRoundType || waitingPending || scoreboardPending}
               aria-label="Bảng điểm"
             />
             Bảng điểm
@@ -446,7 +552,7 @@ export function HostRoundControls({
               setBuzzerChecked(next)
               queueMicrotask(() => buzzerFormRef.current?.requestSubmit())
             }}
-            disabled={!currentRoundType}
+            disabled={!currentRoundType || buzzerPending}
             aria-label="Bấm chuông"
           />
         </div>

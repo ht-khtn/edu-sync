@@ -16,8 +16,8 @@ export const getServerSupabase = async () => {
 export const getServerAuthContext = async (): Promise<ServerAuthContext> => {
   const supabase = await getSupabaseServer();
 
-  const tryGetAuthUidFromCookie = (): string | null => {
-    const cookieStore = cookies();
+  const tryGetAuthUidFromCookie = async (): Promise<string | null> => {
+    const cookieStore = await cookies();
     const token =
       cookieStore.get("sb-access-token")?.value ?? cookieStore.get("sb-access-token-public")?.value;
     if (!token) return null;
@@ -39,7 +39,7 @@ export const getServerAuthContext = async (): Promise<ServerAuthContext> => {
     }
   };
 
-  let authUid: string | null = tryGetAuthUidFromCookie();
+  let authUid: string | null = await tryGetAuthUidFromCookie();
   if (!authUid) {
     const { data: userRes } = await supabase.auth.getUser();
     authUid = userRes?.user?.id ?? null;

@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundControls'
+import { HostAutoSync } from '@/components/olympia/admin/matches/HostAutoSync'
 import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
@@ -1426,6 +1427,13 @@ export default async function OlympiaHostConsolePage({
               <CardDescription>Chọn vòng, chọn thí sinh (tuỳ vòng), chọn câu và thao tác nhanh.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <HostAutoSync
+                sessionId={liveSession?.id ?? null}
+                currentRoundType={liveSession?.current_round_type ?? null}
+                currentRoundQuestionId={liveSession?.current_round_question_id ?? null}
+                questionState={liveSession?.question_state ?? null}
+              />
+
               <HostRoundControls
                 matchId={match.id}
                 rounds={rounds}

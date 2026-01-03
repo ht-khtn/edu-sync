@@ -54,7 +54,9 @@ export function HostPreviewQuestionSelect({ value, options, disabled, triggerRes
                 <option value="" disabled>
                     Chưa có câu trong vòng
                 </option>
-            ) : null}
+            ) : (
+                <option value="">Chưa có câu hỏi</option>
+            )}
             {options.map((opt) => (
                 <option key={opt.id} value={opt.id}>
                     {opt.label}

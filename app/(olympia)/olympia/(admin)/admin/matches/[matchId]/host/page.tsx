@@ -1345,6 +1345,15 @@ export default async function OlympiaHostConsolePage({
 
                         const labels = getDecisionLabels(pl.id)
 
+                        const decisionFormAction = async (formData: FormData): Promise<void> => {
+                          if (isVcnv) {
+                            await confirmVcnvRowDecisionFormAction(formData)
+                            return
+                          }
+
+                          await confirmDecisionFormAction(formData)
+                        }
+
                         return (
                           <div key={pl.id} className="rounded-md border bg-background p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1366,7 +1375,7 @@ export default async function OlympiaHostConsolePage({
                             </p>
 
                             <div className="mt-3 grid grid-cols-3 gap-2">
-                              <form action={isVcnv ? confirmVcnvRowDecisionFormAction : confirmDecisionFormAction} className="col-span-1">
+                              <form action={decisionFormAction} className="col-span-1">
                                 <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
                                 <input type="hidden" name="playerId" value={pl.id} />
                                 <input type="hidden" name="decision" value="correct" />
@@ -1375,7 +1384,7 @@ export default async function OlympiaHostConsolePage({
                                   Đúng
                                 </Button>
                               </form>
-                              <form action={isVcnv ? confirmVcnvRowDecisionFormAction : confirmDecisionFormAction} className="col-span-1">
+                              <form action={decisionFormAction} className="col-span-1">
                                 <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
                                 <input type="hidden" name="playerId" value={pl.id} />
                                 <input type="hidden" name="decision" value="wrong" />
@@ -1384,7 +1393,7 @@ export default async function OlympiaHostConsolePage({
                                   Sai
                                 </Button>
                               </form>
-                              <form action={isVcnv ? confirmVcnvRowDecisionFormAction : confirmDecisionFormAction} className="col-span-1">
+                              <form action={decisionFormAction} className="col-span-1">
                                 <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
                                 <input type="hidden" name="playerId" value={pl.id} />
                                 <input type="hidden" name="decision" value="timeout" />

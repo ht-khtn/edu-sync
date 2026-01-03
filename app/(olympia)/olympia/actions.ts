@@ -2005,8 +2005,8 @@ export async function confirmDecisionAction(
 
 // Wrapper dùng trực tiếp cho <form action={...}> trong Server Component.
 // Next.js form action chỉ truyền 1 tham số (FormData).
-export async function confirmDecisionFormAction(formData: FormData): Promise<void> {
-  await confirmDecisionAction({}, formData);
+export async function confirmDecisionFormAction(formData: FormData): Promise<ActionState> {
+  return await confirmDecisionAction({}, formData);
 }
 
 export async function setGuestMediaControlAction(
@@ -2186,29 +2186,32 @@ export async function setCurrentQuestionAction(
     const { matchId, roundQuestionId, durationMs } = parsed.data;
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
-      .select("id, status, join_code")
+      .select("id, status")
       .eq("match_id", matchId)
       .maybeSingle();
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
     if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
 
-    const { data: roundQuestion, error: rqError } = await olympia
+    type RoundQuestionWithRoundType = {
+      id: string;
+      match_round_id: string;
+      match_rounds: { round_type: string | null } | Array<{ round_type: string | null }> | null;
+    };
+
+    const { data: roundQuestionRow, error: rqError } = await olympia
       .from("round_questions")
-      .select("id, match_round_id")
+      .select("id, match_round_id, match_rounds(round_type)")
       .eq("id", roundQuestionId)
       .maybeSingle();
     if (rqError) return { error: rqError.message };
-    if (!roundQuestion) return { error: "Không tìm thấy câu hỏi." };
+    if (!roundQuestionRow) return { error: "Không tìm thấy câu hỏi." };
 
-    const { data: matchRound, error: mrError } = await olympia
-      .from("match_rounds")
-      .select("id, round_type")
-      .eq("id", roundQuestion.match_round_id)
-      .maybeSingle();
-    if (mrError) return { error: mrError.message };
-
-    const resolvedRoundType = matchRound?.round_type ?? null;
+    const roundQuestion = roundQuestionRow as unknown as RoundQuestionWithRoundType;
+    const roundTypeJoin = Array.isArray(roundQuestion.match_rounds)
+      ? (roundQuestion.match_rounds[0] ?? null)
+      : roundQuestion.match_rounds;
+    const resolvedRoundType = roundTypeJoin?.round_type ?? null;
 
     const deadline =
       typeof durationMs === "number" && Number.isFinite(durationMs)
@@ -2285,33 +2288,101 @@ export async function advanceCurrentQuestionAction(
     if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
     if (!session.current_round_id) return { error: "Chưa chọn vòng hiện tại." };
 
-    const { data: questions, error: qError } = await olympia
-      .from("round_questions")
-      .select("id, order_index, target_player_id, meta")
-      .eq("match_round_id", session.current_round_id)
-      .order("order_index", { ascending: true });
-    if (qError) return { error: qError.message };
-    const list = questions ?? [];
-    if (list.length === 0) return { error: "Vòng này chưa có câu hỏi." };
+    type RoundQuestionRow = {
+      id: string;
+      order_index: number;
+      target_player_id: string | null;
+      meta: unknown;
+    };
 
-    const currentIdx = session.current_round_question_id
-      ? list.findIndex((q) => q.id === session.current_round_question_id)
-      : -1;
+    const { data: currentQuestion, error: currentErr } = session.current_round_question_id
+      ? await olympia
+          .from("round_questions")
+          .select("id, order_index, target_player_id, meta")
+          .eq("id", session.current_round_question_id)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (currentErr) return { error: currentErr.message };
 
-    const nextIdx =
-      direction === "next"
-        ? Math.min(list.length - 1, currentIdx + 1)
-        : Math.max(0, currentIdx - 1);
+    const currentOrderIndex = (currentQuestion as unknown as RoundQuestionRow | null)?.order_index;
 
-    const nextQuestion = list[nextIdx];
-    if (!nextQuestion) return { error: "Không tìm thấy câu tiếp theo." };
+    const fetchFirstQuestion = async (): Promise<RoundQuestionRow | null> => {
+      const { data, error } = await olympia
+        .from("round_questions")
+        .select("id, order_index, target_player_id, meta")
+        .eq("match_round_id", session.current_round_id)
+        .order("order_index", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as unknown as RoundQuestionRow | null;
+    };
+
+    const fetchLastQuestion = async (): Promise<RoundQuestionRow | null> => {
+      const { data, error } = await olympia
+        .from("round_questions")
+        .select("id, order_index, target_player_id, meta")
+        .eq("match_round_id", session.current_round_id)
+        .order("order_index", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as unknown as RoundQuestionRow | null;
+    };
+
+    const fetchNextByOrder = async (orderIndex: number): Promise<RoundQuestionRow | null> => {
+      const { data, error } = await olympia
+        .from("round_questions")
+        .select("id, order_index, target_player_id, meta")
+        .eq("match_round_id", session.current_round_id)
+        .gt("order_index", orderIndex)
+        .order("order_index", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as unknown as RoundQuestionRow | null;
+    };
+
+    const fetchPrevByOrder = async (orderIndex: number): Promise<RoundQuestionRow | null> => {
+      const { data, error } = await olympia
+        .from("round_questions")
+        .select("id, order_index, target_player_id, meta")
+        .eq("match_round_id", session.current_round_id)
+        .lt("order_index", orderIndex)
+        .order("order_index", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as unknown as RoundQuestionRow | null;
+    };
+
+    let nextQuestion: RoundQuestionRow | null = null;
+    try {
+      if (typeof currentOrderIndex !== "number" || !Number.isFinite(currentOrderIndex)) {
+        nextQuestion = await fetchFirstQuestion();
+      } else if (direction === "next") {
+        nextQuestion = (await fetchNextByOrder(currentOrderIndex)) ?? (await fetchLastQuestion());
+      } else {
+        nextQuestion = (await fetchPrevByOrder(currentOrderIndex)) ?? (await fetchFirstQuestion());
+      }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Không thể tải câu hỏi." };
+    }
+
+    if (!nextQuestion) return { error: "Vòng này chưa có câu hỏi." };
 
     // Mặc định: chuyển câu -> nếu autoShow=1 thì show ngay, còn lại bật màn chờ (hidden).
     let shouldAutoShow = autoShow;
     // Khởi động (thi riêng): khi sang câu của thí sinh khác hoặc sang thi chung,
     // không auto-show để tránh "nhảy" sang câu người khác ngay sau khi hết lượt.
-    if (session.current_round_type === "khoi_dong" && direction === "next" && currentIdx >= 0) {
-      const currentRow = list[currentIdx] as unknown as {
+    if (
+      session.current_round_type === "khoi_dong" &&
+      direction === "next" &&
+      currentQuestion &&
+      typeof currentOrderIndex === "number" &&
+      Number.isFinite(currentOrderIndex)
+    ) {
+      const currentRow = currentQuestion as unknown as {
         target_player_id?: string | null;
         meta?: unknown;
       };
@@ -2343,7 +2414,10 @@ export async function advanceCurrentQuestionAction(
       }
     }
 
-    const timerDeadline = shouldAutoShow ? new Date(Date.now() + durationMs).toISOString() : null;
+    const timerDeadline =
+      shouldAutoShow && typeof durationMs === "number" && Number.isFinite(durationMs)
+        ? new Date(Date.now() + durationMs).toISOString()
+        : null;
     const nextQuestionState = shouldAutoShow ? "showing" : "hidden";
 
     const { error: updateError } = await olympia

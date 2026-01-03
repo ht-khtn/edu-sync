@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { confirmDecisionFormAction } from '@/app/(olympia)/olympia/actions'
@@ -19,7 +19,7 @@ export function HostRoundDecisionPanel({
     enabledPlayerId,
     currentRoundQuestionId,
 }: Props) {
-    const router = useRouter()
+    const [pending, setPending] = useState(false)
 
     // Chỉ show panel nếu có thí sinh được chấm
     if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) {
@@ -27,6 +27,8 @@ export function HostRoundDecisionPanel({
     }
 
     const handleDecision = async (decision: 'correct' | 'wrong' | 'timeout') => {
+        if (pending) return
+        setPending(true)
         try {
             const formData = new FormData()
             formData.set('sessionId', sessionId)
@@ -34,7 +36,12 @@ export function HostRoundDecisionPanel({
             formData.set('decision', decision)
 
             // Gọi server action
-            await confirmDecisionFormAction(formData)
+            const result = await confirmDecisionFormAction(formData)
+
+            if (result?.error) {
+                toast.error(result.error)
+                return
+            }
 
             // Hiển thị toast thành công
             const labels: Record<string, string> = {
@@ -42,14 +49,11 @@ export function HostRoundDecisionPanel({
                 wrong: 'Sai ✗',
                 timeout: 'Hết giờ',
             }
-            toast.success(`${labels[decision]} - Chuyển câu...`)
-
-            // Tự động chuyển câu sau 800ms
-            setTimeout(() => {
-                router.refresh()
-            }, 800)
+            toast.success(`${labels[decision]} - Đã chấm điểm`)
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Lỗi chấm điểm')
+        } finally {
+            setPending(false)
         }
     }
 
@@ -63,6 +67,7 @@ export function HostRoundDecisionPanel({
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold text-lg h-16"
                     title="Đúng"
                     aria-label="Đúng"
+                    disabled={pending}
                 >
                     <Check className="w-6 h-6 mr-2" />
                     Đúng
@@ -74,6 +79,7 @@ export function HostRoundDecisionPanel({
                     className="flex-1 font-bold text-lg h-16"
                     title="Sai"
                     aria-label="Sai"
+                    disabled={pending}
                 >
                     <X className="w-6 h-6 mr-2" />
                     Sai
@@ -85,6 +91,7 @@ export function HostRoundDecisionPanel({
                     className="flex-1 font-bold text-lg h-16"
                     title="Hết giờ"
                     aria-label="Hết giờ"
+                    disabled={pending}
                 >
                     Hết giờ
                 </Button>

@@ -84,6 +84,11 @@ export function HostRoundControls({
   const [scoreboardState, scoreboardAction] = useActionState(setScoreboardOverlayAction, initialState)
   const [buzzerState, buzzerAction] = useActionState(setBuzzerEnabledAction, initialState)
   const [targetState, targetAction] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
+  const lastRoundToastRef = useRef<string | null>(null)
+  const lastWaitingToastRef = useRef<string | null>(null)
+  const lastScoreboardToastRef = useRef<string | null>(null)
+  const lastBuzzerToastRef = useRef<string | null>(null)
+  const lastTargetToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const waitingFormRef = useRef<HTMLFormElement | null>(null)
@@ -115,43 +120,68 @@ export function HostRoundControls({
 
   // Show toasts for messages
   useEffect(() => {
+    const message = roundState.error ?? roundState.success
+    if (!message) return
+    if (lastRoundToastRef.current === message) return
+    lastRoundToastRef.current = message
+
     if (roundState.error) {
-      toast.error(roundState.error)
-    } else if (roundState.success) {
-      toast.success(roundState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
       router.refresh()
     }
   }, [roundState.error, roundState.success, router])
 
   useEffect(() => {
+    const message = waitingState.error ?? waitingState.success
+    if (!message) return
+    if (lastWaitingToastRef.current === message) return
+    lastWaitingToastRef.current = message
+
     if (waitingState.error) {
-      toast.error(waitingState.error)
-    } else if (waitingState.success) {
-      toast.success(waitingState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
     }
   }, [waitingState.error, waitingState.success, router])
 
   useEffect(() => {
+    const message = scoreboardState.error ?? scoreboardState.success
+    if (!message) return
+    if (lastScoreboardToastRef.current === message) return
+    lastScoreboardToastRef.current = message
+
     if (scoreboardState.error) {
-      toast.error(scoreboardState.error)
-    } else if (scoreboardState.success) {
-      toast.success(scoreboardState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
     }
   }, [scoreboardState.error, scoreboardState.success, router])
 
   useEffect(() => {
+    const message = buzzerState.error ?? buzzerState.success
+    if (!message) return
+    if (lastBuzzerToastRef.current === message) return
+    lastBuzzerToastRef.current = message
+
     if (buzzerState.error) {
-      toast.error(buzzerState.error)
-    } else if (buzzerState.success) {
-      toast.success(buzzerState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
     }
   }, [buzzerState.error, buzzerState.success, router])
 
   useEffect(() => {
+    const message = targetState.error ?? targetState.success
+    if (!message) return
+    if (lastTargetToastRef.current === message) return
+    lastTargetToastRef.current = message
+
     if (targetState.error) {
-      toast.error(targetState.error)
-    } else if (targetState.success) {
-      toast.success(targetState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
       router.refresh()
     }
   }, [targetState.error, targetState.success, router])

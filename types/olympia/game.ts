@@ -122,21 +122,19 @@ export type BuzzerEventRow = {
   event_type?: string | null;
   result?: string | null;
   occurred_at?: string | null;
-  created_at?: string | null;
 };
 
 export type AnswerRow = {
   id: string;
   match_id?: string | null;
-  session_id?: string | null;
+  match_round_id?: string | null;
   round_question_id: string;
   player_id: string;
   answer_text: string | null;
-  notes?: string | null;
   is_correct?: boolean | null;
   points_awarded?: number | null;
+  response_time_ms?: number | null;
   submitted_at?: string | null;
-  created_at?: string | null;
 };
 
 export type ObstacleRow = {

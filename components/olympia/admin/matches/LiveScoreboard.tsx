@@ -1,8 +1,22 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+
+type ActionState = {
+  error?: string | null
+  success?: string | null
+  data?: Record<string, unknown> | null
+}
+
+type ResetScoresAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
+
+const initialState: ActionState = { error: null, success: null }
+const noopAction: ResetScoresAction = async (prevState) => prevState
 
 type PlayerScore = {
   playerId: string
@@ -20,21 +34,50 @@ type Props = {
   scores: PlayerScore[]
   showRoundBreakdown?: boolean
   maxScore?: number
+  resetScoresAction?: ResetScoresAction
 }
 
 export function LiveScoreboard({
+  matchId,
   title = 'Bảng xếp hạng',
   description = 'Điểm số các thí sinh trong trận thi',
   scores,
   maxScore,
+  resetScoresAction,
 }: Props) {
+  const [state, formAction, pending] = useActionState(resetScoresAction ?? noopAction, initialState)
+  const lastToastRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const message = state.error ?? state.success
+    if (!message) return
+    if (lastToastRef.current === message) return
+    lastToastRef.current = message
+
+    if (state.error) toast.error(message)
+    if (state.success) toast.success(message)
+  }, [state.error, state.success])
+
   const sortedScores = [...scores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0))
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+
+          {resetScoresAction ? (
+            <form action={formAction} className="flex">
+              <input type="hidden" name="matchId" value={matchId} />
+              <Button type="submit" variant="outline" size="sm" disabled={pending}>
+                Reset điểm
+              </Button>
+            </form>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent>
         {sortedScores.length === 0 ? (

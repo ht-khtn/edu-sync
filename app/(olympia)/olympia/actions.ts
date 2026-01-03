@@ -102,6 +102,14 @@ const scoreboardOverlaySchema = z.object({
     .transform((val) => val === "1"),
 });
 
+const resetMatchScoresSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+});
+
+const resetLiveSessionSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+});
+
 const MAX_QUESTION_SET_FILE_SIZE = 5 * 1024 * 1024; // 5MB safety limit
 
 /**
@@ -1250,6 +1258,114 @@ export async function setScoreboardOverlayFormAction(formData: FormData): Promis
   await setScoreboardOverlayAction({}, formData);
 }
 
+export async function resetMatchScoresAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = resetMatchScoresSchema.safeParse({
+      matchId: formData.get("matchId"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trận để reset điểm." };
+    }
+
+    const { matchId } = parsed.data;
+    const now = new Date().toISOString();
+
+    const { data: updatedRows, error } = await olympia
+      .from("match_scores")
+      .update({ points: 0, updated_at: now })
+      .eq("match_id", matchId)
+      .select("id");
+
+    if (error) return { error: error.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+
+    if (!updatedRows || updatedRows.length === 0) {
+      return { success: "Không có dữ liệu điểm để reset." };
+    }
+
+    return { success: "Đã reset điểm về 0." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể reset điểm." };
+  }
+}
+
+export async function resetLiveSessionAndScoresAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = resetLiveSessionSchema.safeParse({
+      matchId: formData.get("matchId"),
+    });
+    if (!parsed.success) {
+      return {
+        error: parsed.error.issues[0]?.message ?? "Thiếu thông tin trận để reset phiên live.",
+      };
+    }
+
+    const { matchId } = parsed.data;
+    const now = new Date().toISOString();
+
+    // Chọn phiên live hiện tại (ưu tiên running; nếu không có thì pending).
+    const { data: session, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select("id, status")
+      .eq("match_id", matchId)
+      .in("status", ["running", "pending"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (sessionErr) return { error: sessionErr.message };
+    if (!session?.id) return { error: "Không tìm thấy phiên live (running/pending) để reset." };
+
+    // Reset trạng thái vòng/câu về như mới khởi tạo (không đổi status để tránh đá văng người xem).
+    const { error: resetSessionErr } = await olympia
+      .from("live_sessions")
+      .update({
+        question_state: "hidden",
+        current_round_id: null,
+        current_round_type: null,
+        current_round_question_id: null,
+        timer_deadline: null,
+        buzzer_enabled: true,
+        show_scoreboard_overlay: false,
+        guest_media_control: {},
+      })
+      .eq("id", session.id);
+    if (resetSessionErr) return { error: resetSessionErr.message };
+
+    // Reset điểm về 0
+    const { error: resetScoresErr } = await olympia
+      .from("match_scores")
+      .update({ points: 0, updated_at: now })
+      .eq("match_id", matchId);
+    if (resetScoresErr) return { error: resetScoresErr.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+
+    return { success: "Đã reset phiên live + điểm về trạng thái ban đầu." };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Không thể reset phiên live + điểm.",
+    };
+  }
+}
+
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
     const { supabase, authUid, appUserId } = await getServerAuthContext();
@@ -1923,14 +2039,18 @@ export async function setGuestMediaControlAction(
     if (sessionErr) {
       const msg = sessionErr.message ?? "Không thể tải phòng live.";
       const lower = msg.toLowerCase();
-      if (
-        lower.includes("guest_media_control") ||
-        lower.includes("column") ||
-        lower.includes("schema cache")
-      ) {
+      if (lower.includes("guest_media_control")) {
         return {
           error:
-            "DB chưa có cột guest_media_control (chưa chạy migration). Vui lòng apply migration 20260103160000_add_guest_media_control_to_live_sessions.sql rồi thử lại.",
+            "API schema cache chưa nhận cột guest_media_control (hoặc DB chưa có cột). Vui lòng reload schema cache của Supabase/PostgREST rồi thử lại. Chi tiết: " +
+            msg,
+        };
+      }
+      if (lower.includes("updated_at")) {
+        return {
+          error:
+            "Bảng live_sessions không có cột updated_at (theo schema hiện tại), nên không thể update. Chi tiết: " +
+            msg,
         };
       }
       return { error: msg };
@@ -1959,20 +2079,24 @@ export async function setGuestMediaControlAction(
 
     const { error: updateErr } = await olympia
       .from("live_sessions")
-      .update({ guest_media_control: nextControl, updated_at: new Date().toISOString() })
+      .update({ guest_media_control: nextControl })
       .eq("id", sessionRow.id);
 
     if (updateErr) {
       const msg = updateErr.message ?? "Không thể cập nhật điều khiển media.";
       const lower = msg.toLowerCase();
-      if (
-        lower.includes("guest_media_control") ||
-        lower.includes("column") ||
-        lower.includes("schema cache")
-      ) {
+      if (lower.includes("guest_media_control")) {
         return {
           error:
-            "DB chưa có cột guest_media_control (chưa chạy migration). Vui lòng apply migration 20260103160000_add_guest_media_control_to_live_sessions.sql rồi thử lại.",
+            "API schema cache chưa nhận cột guest_media_control (hoặc DB chưa có cột). Vui lòng reload schema cache của Supabase/PostgREST rồi thử lại. Chi tiết: " +
+            msg,
+        };
+      }
+      if (lower.includes("updated_at")) {
+        return {
+          error:
+            "Bảng live_sessions không có cột updated_at (theo schema hiện tại), nên không thể update. Chi tiết: " +
+            msg,
         };
       }
       return { error: msg };

@@ -107,7 +107,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       const { data, error } = await olympia
         .from("answers")
         .select(
-          "id, match_id, session_id, round_question_id, player_id, answer_text, notes, is_correct, points_awarded, submitted_at, created_at"
+          "id, match_id, match_round_id, round_question_id, player_id, answer_text, is_correct, points_awarded, response_time_ms, submitted_at"
         )
         .eq("round_question_id", roundQuestionId)
         .order("submitted_at", { ascending: false })
@@ -174,9 +174,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             .maybeSingle(),
           olympia
             .from("buzzer_events")
-            .select(
-              "id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at"
-            )
+            .select("id, match_id, round_question_id, player_id, event_type, result, occurred_at")
             .eq("round_question_id", currentRqId)
             .order("occurred_at", { ascending: false })
             .limit(20),

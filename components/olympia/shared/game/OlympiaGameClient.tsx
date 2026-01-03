@@ -201,6 +201,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   void answers
   void starUses
+  void isKhoiDong
+  void targetPlayer
+  void stealWinnerLabel
 
   const viewerTotalScore = viewerPlayer?.id ? (scoreboard.find((s) => s.id === viewerPlayer.id)?.total ?? 0) : null
   void showQuestionText
@@ -254,7 +257,28 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       const element = mediaType === 'audio' ? guestAudioRef.current : guestVideoRef.current
 
       // Nếu media element chưa mount xong, để effect chạy lại khi UI render xong.
-      if (!element) return
+      if (!element) {
+        console.info('[Olympia][GuestMedia] element not mounted yet', {
+          mediaType,
+          action,
+          cmdId,
+          isWaitingScreen,
+          resolvedViewerMode,
+        })
+        return
+      }
+
+      console.info('[Olympia][GuestMedia] received command', {
+        mediaType,
+        action,
+        cmdId,
+        readyState: element.readyState,
+        paused: element.paused,
+        currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
+        muted: element.muted,
+        isWaitingScreen,
+        resolvedViewerMode,
+      })
 
       lastGuestMediaCmdRef.current = { ...lastGuestMediaCmdRef.current, [mediaType]: cmdId }
 
@@ -328,11 +352,25 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       try {
         if (action === 'pause') {
           element.pause()
+          console.info('[Olympia][GuestMedia] applied pause', {
+            mediaType,
+            cmdId,
+            paused: element.paused,
+            currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
+          })
           return
         }
 
         // play/restart
         await tryPlay(element, { restart: action === 'restart' })
+        console.info('[Olympia][GuestMedia] applied play', {
+          mediaType,
+          cmdId,
+          paused: element.paused,
+          currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
+          readyState: element.readyState,
+          muted: element.muted,
+        })
       } catch {
         // Trình duyệt có thể chặn autoplay; bỏ qua để tránh spam toast.
       }
@@ -340,7 +378,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
     void applyCommand('audio')
     void applyCommand('video')
-  }, [isGuest, isWaitingScreen, session.guest_media_control])
+  }, [isGuest, isWaitingScreen, resolvedViewerMode, session.guest_media_control])
 
   // Toast notification for session state
   useEffect(() => {
@@ -362,7 +400,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     if (relevantEvents.length === 0) return
 
     const getTimeMs = (e: (typeof relevantEvents)[number]) => {
-      const ts = e.occurred_at ?? e.created_at
+      const ts = e.occurred_at
       const parsed = ts ? Date.parse(ts) : NaN
       return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
     }
@@ -370,7 +408,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     const fastest = [...relevantEvents].sort((a, b) => getTimeMs(a) - getTimeMs(b))[0]
     if (!fastest) return
 
-    const fastestKey = fastest.id ?? `${fastest.player_id ?? 'unknown'}|${fastest.occurred_at ?? fastest.created_at ?? ''}`
+    const fastestKey = fastest.id ?? `${fastest.player_id ?? 'unknown'}|${fastest.occurred_at ?? ''}`
     const alreadyToasted =
       lastFastestBuzzerRef.current.roundQuestionId === currentQuestionId &&
       lastFastestBuzzerRef.current.key === fastestKey
@@ -399,7 +437,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       {/* HUD (ẩn ở guest) */}
       {!isGuest ? (
         <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-          <div className="min-w-0 flex flex-col gap-1">
+          <div className="min-w-0 flex flex-row gap-1">
             <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
               <p className="text-xs uppercase tracking-widest text-slate-200">
                 {questionTitle}
@@ -407,22 +445,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
               </p>
               <p className="text-sm text-slate-100 truncate">{match.name}</p>
             </div>
-            {/* Pha info - moved to top left, semi-transparent */}
-            {!isWaitingScreen && (
-              <div className="rounded-md px-3 py-1 bg-slate-900/40 border border-slate-700/30 inline-w-fit">
-                <p className="text-xs text-slate-300">
-                  {isKhoiDong
-                    ? targetPlayerId
-                      ? `Khởi động · Thi riêng · ${targetPlayer?.display_name ?? (targetPlayer?.seat_index != null ? `Ghế ${targetPlayer.seat_index}` : '—')}`
-                      : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
-                    : isVeDich
-                      ? isStealWindow
-                        ? `Về đích · Cửa sổ cướp ${stealWinnerLabel ? `· Winner: ${stealWinnerLabel}` : ''}`
-                        : 'Về đích'
-                      : questionTitle}
-                </p>
-              </div>
-            )}
+
           </div>
 
           <div className="flex items-center gap-3">
@@ -465,8 +488,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
               backgroundColor: '#000',
             }}
           />
-          <div className="absolute inset-0 bg-black/40" />
-
           <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
             <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
               <div className="flex items-center justify-between gap-3">
@@ -478,14 +499,14 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
               <div className="mt-6 grid gap-3">
                 {scoreboard.length > 0 ? (
-                  scoreboard.map((p, idx) => (
+                  scoreboard.map((p) => (
                     <div
                       key={p.id}
                       className="flex items-center justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 px-5 py-4"
                     >
                       <div className="min-w-0">
                         <p className="text-lg sm:text-xl font-semibold text-slate-50 truncate">
-                          {idx + 1}. {p.name}
+                          {p.name}
                         </p>
                         <p className="text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
                       </div>

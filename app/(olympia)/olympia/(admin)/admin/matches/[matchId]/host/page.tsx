@@ -8,6 +8,7 @@ import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/Ho
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
+import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -16,9 +17,6 @@ import {
   Check,
   Eye,
   Hand,
-  Pause,
-  Play,
-  RotateCcw,
   Sparkles,
   Timer,
   Undo2,
@@ -41,7 +39,8 @@ import {
   setScoreboardOverlayAction,
   setVeDichQuestionValueFormAction,
   setWaitingScreenAction,
-  setGuestMediaControlFormAction,
+  setGuestMediaControlAction,
+  resetMatchScoresAction,
   submitObstacleGuessByHostFormAction,
   toggleStarUseFormAction,
   undoLastScoreChangeFormAction,
@@ -573,7 +572,7 @@ export default async function OlympiaHostConsolePage({
       ? previewParam
       : liveSession?.current_round_question_id && filteredCurrentRoundQuestions.some((q) => q.id === liveSession.current_round_question_id)
         ? liveSession.current_round_question_id
-        : filteredCurrentRoundQuestions[0]?.id
+        : null
 
   const previewRoundQuestion = previewRoundQuestionId
     ? filteredCurrentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
@@ -850,7 +849,7 @@ export default async function OlympiaHostConsolePage({
                 </div>
 
                 <p className="mt-3 whitespace-pre-wrap text-lg font-semibold leading-relaxed">
-                  {previewQuestionText ?? (previewRoundQuestion ? `ID: ${getRoundQuestionLabel(previewRoundQuestion as unknown as RoundQuestionRow)}` : 'Chưa có nội dung câu hỏi')}
+                  {previewQuestionText ?? (previewRoundQuestion ? `ID: ${getRoundQuestionLabel(previewRoundQuestion as unknown as RoundQuestionRow)}` : 'Chưa có câu hỏi')}
                 </p>
 
                 {(() => {
@@ -891,33 +890,7 @@ export default async function OlympiaHostConsolePage({
                           )}
 
                           {kind === 'video' && liveSession?.status === 'running' ? (
-                            <div className="flex flex-wrap gap-2 pt-2">
-                              <p className="w-full text-[11px] text-muted-foreground">Điều khiển Guest (Video)</p>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="video" />
-                                <input type="hidden" name="command" value="play" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Phát video trên Guest" title="Play">
-                                  <Play className="h-4 w-4" />
-                                </Button>
-                              </form>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="video" />
-                                <input type="hidden" name="command" value="pause" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Tạm dừng video trên Guest" title="Pause">
-                                  <Pause className="h-4 w-4" />
-                                </Button>
-                              </form>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="video" />
-                                <input type="hidden" name="command" value="restart" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Phát lại video từ đầu trên Guest" title="Restart">
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                              </form>
-                            </div>
+                            <GuestMediaControlButtons matchId={match.id} mediaType="video" action={setGuestMediaControlAction} />
                           ) : null}
                         </div>
                       ) : null}
@@ -928,33 +901,7 @@ export default async function OlympiaHostConsolePage({
                           <audio controls src={audioUrl} className="w-full" />
 
                           {liveSession?.status === 'running' ? (
-                            <div className="flex flex-wrap gap-2 pt-2">
-                              <p className="w-full text-[11px] text-muted-foreground">Điều khiển Guest (Audio)</p>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="audio" />
-                                <input type="hidden" name="command" value="play" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Phát âm thanh trên Guest" title="Play">
-                                  <Play className="h-4 w-4" />
-                                </Button>
-                              </form>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="audio" />
-                                <input type="hidden" name="command" value="pause" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Tạm dừng âm thanh trên Guest" title="Pause">
-                                  <Pause className="h-4 w-4" />
-                                </Button>
-                              </form>
-                              <form action={setGuestMediaControlFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="mediaType" value="audio" />
-                                <input type="hidden" name="command" value="restart" />
-                                <Button type="submit" size="icon" variant="outline" aria-label="Phát lại âm thanh từ đầu trên Guest" title="Restart">
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                              </form>
-                            </div>
+                            <GuestMediaControlButtons matchId={match.id} mediaType="audio" action={setGuestMediaControlAction} />
                           ) : null}
                         </div>
                       ) : null}
@@ -1649,7 +1596,13 @@ export default async function OlympiaHostConsolePage({
           </Card>
 
           {scores.length > 0 ? (
-            <LiveScoreboard matchId={match.id} scores={scores} title="Xếp hạng" description="" />
+            <LiveScoreboard
+              matchId={match.id}
+              scores={scores}
+              title="Xếp hạng"
+              description=""
+              resetScoresAction={resetMatchScoresAction}
+            />
           ) : null}
         </div>
       </div>

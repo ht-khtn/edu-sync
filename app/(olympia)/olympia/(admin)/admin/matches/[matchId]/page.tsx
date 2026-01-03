@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 // Table components not used on this page
 import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
+import { ResetLiveSessionAndScoresButton } from '@/components/olympia/admin/matches/ResetLiveSessionAndScoresButton'
 import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/MatchQuestionSetSelector'
 import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
 import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
 import { CopyMatchIdButton } from '@/components/olympia/admin/matches/CopyMatchIdButton'
 import { getServerAuthContext } from '@/lib/server-auth'
+import { resetLiveSessionAndScoresAction } from '@/app/(olympia)/olympia/actions'
 
 // Force dynamic to avoid timing issues with Turbopack performance measurements
 export const dynamic = 'force-dynamic'
@@ -399,7 +401,10 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <LiveSessionControls matchId={match.id} liveSession={liveSession ?? undefined} />
+            <div className="space-y-3">
+              <LiveSessionControls matchId={match.id} liveSession={liveSession ?? undefined} />
+              <ResetLiveSessionAndScoresButton matchId={match.id} action={resetLiveSessionAndScoresAction} />
+            </div>
           </CardContent>
         </Card>
         <Card>

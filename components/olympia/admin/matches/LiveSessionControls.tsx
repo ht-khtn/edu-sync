@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Copy, Eye, EyeOff } from 'lucide-react'
@@ -84,22 +84,34 @@ function PasswordDisplay({ label, value }: { label: string; value: string }) {
 export function LiveSessionControls({ matchId, liveSession }: Props) {
   const [openState, openAction] = useActionState(openLiveSessionAction, initialState)
   const [endState, endAction] = useActionState(endLiveSessionAction, initialState)
+  const lastOpenToastRef = useRef<string | null>(null)
+  const lastEndToastRef = useRef<string | null>(null)
 
   // Show toast for open session errors/success
   useEffect(() => {
+    const message = openState.error ?? openState.success
+    if (!message) return
+    if (lastOpenToastRef.current === message) return
+    lastOpenToastRef.current = message
+
     if (openState.error) {
-      toast.error(openState.error)
-    } else if (openState.success) {
-      toast.success(openState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
     }
   }, [openState.error, openState.success])
 
   // Show toast for end session errors/success
   useEffect(() => {
+    const message = endState.error ?? endState.success
+    if (!message) return
+    if (lastEndToastRef.current === message) return
+    lastEndToastRef.current = message
+
     if (endState.error) {
-      toast.error(endState.error)
-    } else if (endState.success) {
-      toast.success(endState.success)
+      toast.error(message)
+    } else {
+      toast.success(message)
     }
   }, [endState.error, endState.success])
 
@@ -117,14 +129,15 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
   const { playerPassword, mcPassword } = extractPasswords(openState.success)
 
   // Save passwords to localStorage when newly extracted
-  if (typeof window !== 'undefined' && playerPassword && mcPassword) {
+  useEffect(() => {
+    if (!playerPassword || !mcPassword) return
     try {
       const passwords = { playerPassword, mcPassword }
       localStorage.setItem(`olympia-passwords-${matchId}`, JSON.stringify(passwords))
     } catch (e) {
       console.error('Failed to save passwords to localStorage:', e)
     }
-  }
+  }, [matchId, playerPassword, mcPassword])
 
   const disableOpen = liveSession?.status === 'running'
   const disableEnd = !liveSession || liveSession.status !== 'running'

@@ -82,7 +82,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         session.current_round_question_id
             ? olympia
                 .from('buzzer_events')
-                .select('id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at')
+                .select('id, match_id, round_question_id, player_id, event_type, result, occurred_at')
                 .eq('round_question_id', session.current_round_question_id)
                 .order('occurred_at', { ascending: false })
                 .limit(20)

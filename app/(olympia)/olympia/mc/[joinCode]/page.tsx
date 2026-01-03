@@ -70,7 +70,7 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
         session.current_round_question_id
             ? olympia
                 .from('buzzer_events')
-                .select('id, match_id, round_question_id, player_id, event_type, result, occurred_at, created_at')
+                .select('id, match_id, round_question_id, player_id, event_type, result, occurred_at')
                 .eq('round_question_id', session.current_round_question_id)
                 .order('occurred_at', { ascending: false })
                 .limit(20)
@@ -82,7 +82,7 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
         session.current_round_question_id
             ? olympia
                 .from('answers')
-                .select('id, match_id, session_id, round_question_id, player_id, answer_text, notes, is_correct, points_awarded, submitted_at, created_at')
+                .select('id, match_id, match_round_id, round_question_id, player_id, answer_text, is_correct, points_awarded, response_time_ms, submitted_at')
                 .eq('round_question_id', session.current_round_question_id)
                 .order('submitted_at', { ascending: false })
                 .limit(20)

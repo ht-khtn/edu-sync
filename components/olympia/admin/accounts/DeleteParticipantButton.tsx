@@ -1,6 +1,7 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { deleteParticipantAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { toast } from 'sonner'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -20,15 +22,36 @@ type DeleteParticipantButtonProps = {
 
 export function DeleteParticipantButton({ userId }: DeleteParticipantButtonProps) {
   const [open, setOpen] = useState(false)
-  const [state, formAction] = useActionState(deleteParticipantAction, initialState)
+  const router = useRouter()
+  const [nonce, setNonce] = useState(0)
+  const [state, formAction, pending] = useActionState(deleteParticipantAction, initialState)
+  const lastToastRef = useRef<string | null>(null)
 
   const handleOpenChange = (value: boolean) => {
-    if (state.success) {
-      setOpen(false)
-    } else {
-      setOpen(value)
-    }
+    setOpen(value)
+    if (!value) setNonce((n) => n + 1)
   }
+
+  useEffect(() => {
+    const message = state.error ?? state.success
+    if (!message) return
+    if (lastToastRef.current === message) return
+    lastToastRef.current = message
+
+    if (state.error) {
+      toast.error(message)
+      return
+    }
+
+    toast.success(message)
+    try {
+      router.refresh()
+    } catch {
+      // ignore
+    }
+    setOpen(false)
+    setNonce((n) => n + 1)
+  }, [router, state.error, state.success])
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -44,21 +67,15 @@ export function DeleteParticipantButton({ userId }: DeleteParticipantButtonProps
             Bạn có chắc muốn xóa tài khoản này? Hành động này không thể hoàn tác.
           </DialogDescription>
         </DialogHeader>
-        <form action={formAction} className="space-y-4">
+        <form action={formAction} className="space-y-4" key={nonce}>
           <input type="hidden" name="userId" value={userId} />
 
-          {state.error ? (
-            <p className="text-sm text-destructive">{state.error}</p>
-          ) : state.success ? (
-            <p className="text-sm text-green-600">{state.success}</p>
-          ) : null}
-
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
               Hủy
             </Button>
-            <Button type="submit" variant="destructive">
-              Xóa tài khoản
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending ? 'Đang xóa…' : 'Xóa tài khoản'}
             </Button>
           </div>
         </form>

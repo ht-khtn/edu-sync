@@ -106,6 +106,9 @@ export function HostRoundControls({
   const [roundId, setRoundId] = useState<string>(() => currentRound?.id ?? '')
   const selectedRoundType = roundId ? roundById.get(roundId)?.round_type ?? '' : ''
 
+  const lastServerRoundIdRef = useRef<string>('')
+  const lastServerTargetPlayerIdRef = useRef<string>('')
+
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
   const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
   const [scoreboardChecked, setScoreboardChecked] = useState<boolean>(() => (showScoreboardOverlay ?? false))
@@ -129,7 +132,6 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
-      router.refresh()
     }
   }, [roundState.error, roundState.success, router])
 
@@ -182,17 +184,30 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
-      router.refresh()
     }
   }, [targetState.error, targetState.success, router])
 
   useEffect(() => {
-    setRoundId(currentRound?.id ?? '')
-  }, [currentRound?.id, roundState.success])
+    const nextServerId = currentRound?.id ?? ''
+    setRoundId((prev) => {
+      const prevServerId = lastServerRoundIdRef.current
+      if (nextServerId === prevServerId) return prev
+      const shouldSync = prev.length === 0 || prev === prevServerId
+      lastServerRoundIdRef.current = nextServerId
+      return shouldSync ? nextServerId : prev
+    })
+  }, [currentRound?.id])
 
   useEffect(() => {
-    setTargetPlayerId(currentTargetPlayerId ?? '')
-  }, [currentTargetPlayerId, targetState.success])
+    const nextServerTarget = currentTargetPlayerId ?? ''
+    setTargetPlayerId((prev) => {
+      const prevServerTarget = lastServerTargetPlayerIdRef.current
+      if (nextServerTarget === prevServerTarget) return prev
+      const shouldSync = prev.length === 0 || prev === prevServerTarget
+      lastServerTargetPlayerIdRef.current = nextServerTarget
+      return shouldSync ? nextServerTarget : prev
+    })
+  }, [currentTargetPlayerId])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))

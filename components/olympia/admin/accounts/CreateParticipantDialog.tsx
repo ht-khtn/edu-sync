@@ -1,14 +1,15 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createParticipantAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { cn } from '@/utils/cn'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { sortByGivenName } from '@/lib/utils'
+import { toast } from 'sonner'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -23,17 +24,16 @@ type UserRow = {
 
 export function CreateParticipantDialog({ classes, users }: { classes?: ClassRow[]; users?: UserRow[] }) {
   const [open, setOpen] = useState(false)
-  const [state, formAction] = useActionState(createParticipantAction, initialState)
+  const [nonce, setNonce] = useState(0)
 
-  const hasMessage = state.error || state.success
-
-  // Close dialog on success
   const handleOpenChange = (value: boolean) => {
-    if (hasMessage && state.success) {
-      setOpen(false)
-    } else {
-      setOpen(value)
-    }
+    setOpen(value)
+    if (!value) setNonce((n) => n + 1)
+  }
+
+  const handleDone = () => {
+    setOpen(false)
+    setNonce((n) => n + 1)
   }
 
   return (
@@ -46,50 +46,73 @@ export function CreateParticipantDialog({ classes, users }: { classes?: ClassRow
           <DialogTitle>Thêm tài khoản Olympia</DialogTitle>
           <DialogDescription>Nhập thông tin để tạo tài khoản thí sinh hoặc admin mới.</DialogDescription>
         </DialogHeader>
-        <form action={formAction} className="space-y-4">
-          <AccountsUserSelector classes={classes} users={users} />
-
-          <div className="space-y-2">
-            <Label htmlFor="role">Vai trò</Label>
-            <select 
-              id="role" 
-              name="role" 
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              defaultValue="contestant"
-            >
-              <option value="contestant">Thí sinh</option>
-              <option value="AD">Admin</option>
-              <option value="MOD">Mod</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="contestantCode">Mã thí sinh (tùy chọn)</Label>
-            <Input 
-              id="contestantCode" 
-              name="contestantCode" 
-              placeholder="VD: THI001, A-001"
-            />
-            <p className="text-xs text-muted-foreground">
-              Để trống nếu không phải thí sinh
-            </p>
-          </div>
-
-          {hasMessage ? (
-            <p className={cn('text-sm', state.error ? 'text-destructive' : 'text-green-600')}>
-              {state.error ?? state.success}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Hủy
-            </Button>
-            <Button type="submit">Tạo tài khoản</Button>
-          </div>
-        </form>
+        <CreateParticipantForm key={nonce} classes={classes} users={users} onDone={handleDone} />
       </DialogContent>
     </Dialog>
+  )
+}
+
+function CreateParticipantForm({
+  classes,
+  users,
+  onDone,
+}: {
+  classes?: ClassRow[]
+  users?: UserRow[]
+  onDone: () => void
+}) {
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(createParticipantAction, initialState)
+  const lastToastRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const message = state.error ?? state.success
+    if (!message) return
+    if (lastToastRef.current === message) return
+    lastToastRef.current = message
+
+    if (state.error) {
+      toast.error(message)
+      return
+    }
+
+    toast.success(message)
+    try {
+      router.refresh()
+    } catch {
+      // ignore
+    }
+    onDone()
+  }, [onDone, router, state.error, state.success])
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <AccountsUserSelector classes={classes} users={users} />
+
+      <div className="space-y-2">
+        <Label htmlFor="role">Vai trò</Label>
+        <select id="role" name="role" className="w-full rounded-md border px-3 py-2 text-sm" defaultValue="contestant">
+          <option value="contestant">Thí sinh</option>
+          <option value="AD">Admin</option>
+          <option value="MOD">Mod</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="contestantCode">Mã thí sinh (tùy chọn)</Label>
+        <Input id="contestantCode" name="contestantCode" placeholder="VD: THI001, A-001" />
+        <p className="text-xs text-muted-foreground">Để trống nếu không phải thí sinh</p>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
+          Hủy
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Đang tạo…' : 'Tạo tài khoản'}
+        </Button>
+      </div>
+    </form>
   )
 }
 

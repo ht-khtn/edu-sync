@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import getSupabaseServer from "@/lib/supabase-server";
 
 export type ServerAuthContext = {
@@ -14,8 +15,35 @@ export const getServerSupabase = async () => {
 
 export const getServerAuthContext = async (): Promise<ServerAuthContext> => {
   const supabase = await getSupabaseServer();
-  const { data: userRes } = await supabase.auth.getUser();
-  const authUid = userRes?.user?.id ?? null;
+
+  const tryGetAuthUidFromCookie = (): string | null => {
+    const cookieStore = cookies();
+    const token =
+      cookieStore.get("sb-access-token")?.value ?? cookieStore.get("sb-access-token-public")?.value;
+    if (!token) return null;
+
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1];
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+
+    try {
+      const json = Buffer.from(padded, "base64").toString("utf8");
+      const parsed: unknown = JSON.parse(json);
+      if (!parsed || typeof parsed !== "object") return null;
+      const sub = (parsed as Record<string, unknown>)["sub"];
+      return typeof sub === "string" && sub.length > 0 ? sub : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let authUid: string | null = tryGetAuthUidFromCookie();
+  if (!authUid) {
+    const { data: userRes } = await supabase.auth.getUser();
+    authUid = userRes?.user?.id ?? null;
+  }
 
   let appUserId: string | null = null;
   if (authUid) {

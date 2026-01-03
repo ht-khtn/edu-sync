@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
     Dialog,
@@ -46,6 +47,7 @@ export function AddPlayersToMatch({
     currentPlayers,
     onAddSuccess,
 }: AddPlayersToMatchProps) {
+    const router = useRouter()
     const [isOpen, setIsOpen] = useState(false)
     const [selectedParticipant, setSelectedParticipant] = useState<string>('')
     const [selectedSeat, setSelectedSeat] = useState<string>('')
@@ -66,19 +68,6 @@ export function AddPlayersToMatch({
             return false
         }
         return !assignedParticipantIds.has(p.user_id)
-    })
-
-    console.log('[AddPlayersToMatch Debug]', {
-        availableParticipantsCount: availableParticipants.length,
-        availableParticipants: availableParticipants.map(p => ({
-            user_id: p.user_id,
-            role: p.role,
-            code: p.contestant_code
-        })),
-        currentPlayersCount: currentPlayers.length,
-        assignedParticipantIdsSize: assignedParticipantIds.size,
-        assignedParticipantIds: Array.from(assignedParticipantIds),
-        unassignedCount: unassignedParticipants.length,
     })
 
     // Get occupied seats
@@ -115,8 +104,11 @@ export function AddPlayersToMatch({
             setIsOpen(false)
             onAddSuccess?.()
 
-            // Refresh page to update available participants
-            setTimeout(() => window.location.reload(), 500)
+            try {
+                router.refresh()
+            } catch {
+                // ignore
+            }
         } catch (error) {
             console.error('[AddPlayersToMatch]', error)
             toast.error('Lỗi khi thêm thí sinh')
@@ -139,7 +131,16 @@ export function AddPlayersToMatch({
                 + Thêm thí sinh
             </Button>
 
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <Dialog
+                open={isOpen}
+                onOpenChange={(nextOpen) => {
+                    setIsOpen(nextOpen)
+                    if (!nextOpen) {
+                        setSelectedParticipant('')
+                        setSelectedSeat('')
+                    }
+                }}
+            >
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Thêm thí sinh vào trận</DialogTitle>
@@ -204,7 +205,7 @@ export function AddPlayersToMatch({
                                 onClick={handleAddPlayer}
                                 disabled={!selectedParticipant || !selectedSeat || isLoading}
                             >
-                                {isLoading ? 'Đang thêm...' : 'Thêm thí sinh'}
+                                {isLoading ? 'Đang thêm…' : 'Thêm thí sinh'}
                             </Button>
                         </div>
                     </div>

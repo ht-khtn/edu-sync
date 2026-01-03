@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -16,19 +16,41 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { deleteQuestionSetAction, type DeleteQuestionSetState } from '@/app/(olympia)/olympia/(admin)/admin/question-bank/actions'
+import { useRouter } from 'next/navigation'
 
 const initialState: DeleteQuestionSetState = { error: null, success: null }
 
 export function DeleteQuestionSetButton({ questionSetId, questionSetName }: { questionSetId: string; questionSetName: string }) {
-    const [state, formAction] = useActionState(deleteQuestionSetAction, initialState)
+    const [open, setOpen] = useState(false)
+    const [nonce, setNonce] = useState(0)
+    const router = useRouter()
+    const [state, formAction, pending] = useActionState(deleteQuestionSetAction, initialState)
+    const lastToastRef = useRef<string | null>(null)
 
     useEffect(() => {
-        if (state.error) toast.error(state.error)
-        if (state.success) toast.success(state.success)
-    }, [state.error, state.success])
+        const message = state.error ?? state.success
+        if (!message) return
+        if (lastToastRef.current === message) return
+        lastToastRef.current = message
+
+        if (state.error) toast.error(message)
+        if (state.success) {
+            toast.success(message)
+            setOpen(false)
+            router.refresh()
+        }
+    }, [router, state.error, state.success])
+
+    const handleOpenChange = (value: boolean) => {
+        setOpen(value)
+        if (!value) {
+            setNonce((v) => v + 1)
+            lastToastRef.current = null
+        }
+    }
 
     return (
-        <AlertDialog>
+        <AlertDialog open={open} onOpenChange={handleOpenChange}>
             <AlertDialogTrigger asChild>
                 <Button size="sm" variant="destructive">
                     Xóa
@@ -43,7 +65,7 @@ export function DeleteQuestionSetButton({ questionSetId, questionSetName }: { qu
                     </AlertDialogDescription>
                 </AlertDialogHeader>
 
-                <form action={formAction}>
+                <form key={nonce} action={formAction}>
                     <input type="hidden" name="questionSetId" value={questionSetId} />
                     <AlertDialogFooter>
                         <AlertDialogCancel asChild>
@@ -52,8 +74,8 @@ export function DeleteQuestionSetButton({ questionSetId, questionSetName }: { qu
                             </Button>
                         </AlertDialogCancel>
                         <AlertDialogAction asChild>
-                            <Button type="submit" variant="destructive">
-                                Xóa
+                            <Button type="submit" variant="destructive" disabled={pending}>
+                                {pending ? 'Đang xóa…' : 'Xóa'}
                             </Button>
                         </AlertDialogAction>
                     </AlertDialogFooter>

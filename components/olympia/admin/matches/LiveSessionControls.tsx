@@ -86,6 +86,10 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
   const [endState, endAction] = useActionState(endLiveSessionAction, initialState)
   const lastOpenToastRef = useRef<string | null>(null)
   const lastEndToastRef = useRef<string | null>(null)
+  const [persistedPasswords, setPersistedPasswords] = useState<{
+    playerPassword: string | null
+    mcPassword: string | null
+  } | null>(null)
 
   // Show toast for open session errors/success
   useEffect(() => {
@@ -128,12 +132,23 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
 
   const { playerPassword, mcPassword } = extractPasswords(openState.success)
 
+  // Load persisted passwords after mount to avoid SSR/client hydration mismatch.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`olympia-passwords-${matchId}`)
+      setPersistedPasswords(saved ? (JSON.parse(saved) as { playerPassword: string | null; mcPassword: string | null }) : null)
+    } catch {
+      setPersistedPasswords(null)
+    }
+  }, [matchId])
+
   // Save passwords to localStorage when newly extracted
   useEffect(() => {
     if (!playerPassword || !mcPassword) return
     try {
       const passwords = { playerPassword, mcPassword }
       localStorage.setItem(`olympia-passwords-${matchId}`, JSON.stringify(passwords))
+      setPersistedPasswords(passwords)
     } catch (e) {
       console.error('Failed to save passwords to localStorage:', e)
     }
@@ -169,17 +184,8 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
       </form>
 
       {liveSession?.status !== 'ended' && (() => {
-        let persisted: { playerPassword: string | null; mcPassword: string | null } | null = null
-        if (typeof window !== 'undefined') {
-          try {
-            const saved = localStorage.getItem(`olympia-passwords-${matchId}`)
-            persisted = saved ? JSON.parse(saved) : null
-          } catch {
-            // ignore parse errors
-          }
-        }
-        const pPlayer = playerPassword || persisted?.playerPassword
-        const pMc = mcPassword || persisted?.mcPassword
+        const pPlayer = playerPassword || persistedPasswords?.playerPassword
+        const pMc = mcPassword || persistedPasswords?.mcPassword
         return pPlayer && pMc ? (
           <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
             <p className="text-xs font-semibold text-green-900">Phòng đã mở thành công!</p>

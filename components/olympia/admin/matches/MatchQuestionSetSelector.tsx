@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { updateMatchQuestionSetsAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { cn } from '@/utils/cn'
+import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 type QuestionSetOption = {
   id: string
@@ -22,8 +23,22 @@ type Props = {
 const initialState: ActionState = { error: null, success: null }
 
 export function MatchQuestionSetSelector({ matchId, questionSets, selectedIds }: Props) {
-  const [state, formAction] = useActionState(updateMatchQuestionSetsAction, initialState)
-  const hasMessage = state.error || state.success
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(updateMatchQuestionSetsAction, initialState)
+  const lastToastRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const message = state.error ?? state.success
+    if (!message) return
+    if (lastToastRef.current === message) return
+    lastToastRef.current = message
+
+    if (state.error) toast.error(message)
+    if (state.success) {
+      toast.success(message)
+      router.refresh()
+    }
+  }, [router, state.error, state.success])
 
   return (
     <form action={formAction} className="space-y-4">
@@ -47,6 +62,7 @@ export function MatchQuestionSetSelector({ matchId, questionSets, selectedIds }:
                     value={set.id}
                     defaultChecked={checked}
                     className="mt-1 h-4 w-4 accent-primary"
+                    disabled={pending}
                   />
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-slate-900">{set.name}</p>
@@ -64,15 +80,9 @@ export function MatchQuestionSetSelector({ matchId, questionSets, selectedIds }:
         )}
       </div>
 
-      {hasMessage ? (
-        <p className={cn('text-sm', state.error ? 'text-destructive' : 'text-green-600')}>
-          {state.error ?? state.success}
-        </p>
-      ) : null}
-
       <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={questionSets.length === 0}>
-          Lưu gán bộ đề
+        <Button type="submit" size="sm" disabled={questionSets.length === 0 || pending}>
+          {pending ? 'Đang lưu…' : 'Lưu gán bộ đề'}
         </Button>
       </div>
     </form>

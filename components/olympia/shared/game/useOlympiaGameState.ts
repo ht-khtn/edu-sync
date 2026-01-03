@@ -72,11 +72,18 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabase>> | null>(null);
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
   const sessionRef = useRef(initialData.session);
+  const obstacleIdRef = useRef<string | null>(initialData.obstacle?.id ?? null);
 
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    obstacleIdRef.current = obstacle?.id ?? null;
+  }, [obstacle?.id]);
 
   const questionState = session.question_state ?? "hidden";
   const roundType = session.current_round_type ?? "unknown";
@@ -229,11 +236,30 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   useEffect(() => {
     let mounted = true;
 
+    const clearRetryTimer = () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+
     const subscribe = async () => {
       try {
         const supabase = await getSupabase();
         if (!mounted) return;
         supabaseRef.current = supabase;
+
+        clearRetryTimer();
+        // Đảm bảo không giữ channel cũ khi subscribe lại.
+        if (channelRef.current) {
+          try {
+            supabase.removeChannel(channelRef.current);
+          } catch {
+            channelRef.current.unsubscribe();
+          }
+          channelRef.current = null;
+        }
+
         const channel = supabase
           .channel(`olympia-game-${sessionId}`)
           // NOTE: live_sessions drives question_state + timer.
@@ -388,8 +414,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             (payload) => {
               const row = payload.new as ObstacleTileRow | null;
               if (!row) return;
-              if (!obstacle?.id) return;
-              if (row.obstacle_id !== obstacle.id) return;
+              const obstacleId = obstacleIdRef.current;
+              if (!obstacleId) return;
+              if (row.obstacle_id !== obstacleId) return;
               setObstacleTiles((prev) => {
                 const next = [...prev];
                 const idx = next.findIndex((t) => t.id === row.id);
@@ -405,8 +432,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             (payload) => {
               const row = payload.new as ObstacleGuessRow | null;
               if (!row) return;
-              if (!obstacle?.id) return;
-              if (row.obstacle_id !== obstacle.id) return;
+              const obstacleId = obstacleIdRef.current;
+              if (!obstacleId) return;
+              if (row.obstacle_id !== obstacleId) return;
               setObstacleGuesses((prev) => [row, ...prev].slice(0, 20));
             }
           );
@@ -415,10 +443,22 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
             setStatusMessage(null);
+            retryCountRef.current = 0;
           }
-          if (status === "CHANNEL_ERROR") {
-            console.error("Olympia game channel error");
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            setRealtimeReady(false);
+
+            const nextCount = Math.min(retryCountRef.current + 1, 6);
+            retryCountRef.current = nextCount;
+            const delayMs = Math.min(10000, 500 * Math.pow(2, nextCount));
+            console.warn("[Olympia] realtime channel status", status, "retry in", delayMs, "ms");
             setStatusMessage("Mất kết nối realtime · đang thử lại…");
+
+            clearRetryTimer();
+            retryTimerRef.current = setTimeout(() => {
+              if (!mounted) return;
+              void subscribe();
+            }, delayMs);
           }
         });
 
@@ -444,6 +484,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
       }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
@@ -454,7 +498,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId, obstacle?.id, session.current_round_id, pollSnapshot]);
+  }, [sessionId, matchId, pollSnapshot]);
 
   // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
   useEffect(() => {

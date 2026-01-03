@@ -1920,7 +1920,21 @@ export async function setGuestMediaControlAction(
       .eq("match_id", matchId)
       .maybeSingle();
 
-    if (sessionErr) return { error: sessionErr.message };
+    if (sessionErr) {
+      const msg = sessionErr.message ?? "Không thể tải phòng live.";
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes("guest_media_control") ||
+        lower.includes("column") ||
+        lower.includes("schema cache")
+      ) {
+        return {
+          error:
+            "DB chưa có cột guest_media_control (chưa chạy migration). Vui lòng apply migration 20260103160000_add_guest_media_control_to_live_sessions.sql rồi thử lại.",
+        };
+      }
+      return { error: msg };
+    }
     if (!sessionRow?.id) return { error: "Trận chưa mở phòng live." };
     if (sessionRow.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
 
@@ -1948,7 +1962,21 @@ export async function setGuestMediaControlAction(
       .update({ guest_media_control: nextControl, updated_at: new Date().toISOString() })
       .eq("id", sessionRow.id);
 
-    if (updateErr) return { error: updateErr.message };
+    if (updateErr) {
+      const msg = updateErr.message ?? "Không thể cập nhật điều khiển media.";
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes("guest_media_control") ||
+        lower.includes("column") ||
+        lower.includes("schema cache")
+      ) {
+        return {
+          error:
+            "DB chưa có cột guest_media_control (chưa chạy migration). Vui lòng apply migration 20260103160000_add_guest_media_control_to_live_sessions.sql rồi thử lại.",
+        };
+      }
+      return { error: msg };
+    }
 
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
 

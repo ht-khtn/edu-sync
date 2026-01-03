@@ -277,7 +277,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         })
       }
 
-      const tryPlay = async (el: HTMLMediaElement) => {
+      const tryPlay = async (el: HTMLMediaElement, opts?: { restart?: boolean }) => {
         try {
           // Một số trình duyệt cần load trước khi play (đặc biệt khi src mới set).
           if (el.readyState === 0) {
@@ -290,12 +290,38 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
           await waitForCanPlay(el)
 
+          if (opts?.restart) {
+            try {
+              el.currentTime = 0
+            } catch {
+              // ignore
+            }
+          }
+
           const p = el.play()
           if (p && typeof (p as Promise<void>).then === 'function') {
             await p
           }
         } catch {
-          // Autoplay có thể bị chặn; bỏ qua để tránh spam.
+          // Autoplay có thể bị chặn. Thử phát ở chế độ muted (thường được phép autoplay).
+          const prevMuted = el.muted
+          try {
+            el.muted = true
+            const p2 = el.play()
+            if (p2 && typeof (p2 as Promise<void>).then === 'function') {
+              await p2
+            }
+          } catch (err) {
+            console.info('[Olympia][GuestMedia] play blocked', {
+              mediaType,
+              action: cmd.action,
+              readyState: el.readyState,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          } finally {
+            // Khôi phục trạng thái muted (nếu autoplay chỉ chạy được khi muted, user có thể tự bật âm thủ công).
+            el.muted = prevMuted
+          }
         }
       }
 
@@ -305,16 +331,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
           return
         }
 
-        if (action === 'restart') {
-          try {
-            element.currentTime = 0
-          } catch {
-            // ignore
-          }
-        }
-
         // play/restart
-        await tryPlay(element)
+        await tryPlay(element, { restart: action === 'restart' })
       } catch {
         // Trình duyệt có thể chặn autoplay; bỏ qua để tránh spam toast.
       }

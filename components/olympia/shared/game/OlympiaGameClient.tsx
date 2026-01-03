@@ -416,7 +416,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                   <div className="space-y-2">
                     <p className="text-xs text-slate-300">Ảnh/Video</p>
                     {mediaKind === 'image' ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={mediaUrl}
                         alt="Media câu hỏi"

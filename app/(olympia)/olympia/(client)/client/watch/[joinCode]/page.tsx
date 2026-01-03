@@ -109,11 +109,17 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
             <p className="text-sm text-muted-foreground">
               Unlock toàn quyền quản lý trận: xem đầy đủ trạng thái câu hỏi, điểm số chi tiết, và log realtime.
             </p>
-            <McPasswordGate joinCode={session.join_code}>
-              <Button asChild className="w-full">
-                <Link href={`/olympia/mc/${session.join_code}`}>Mở màn hình MC →</Link>
-              </Button>
-            </McPasswordGate>
+            {session ? (
+              <McPasswordGate joinCode={session.join_code}>
+                <Button asChild className="w-full">
+                  <Link href={`/olympia/mc/${session.join_code}`}>Mở màn hình MC →</Link>
+                </Button>
+              </McPasswordGate>
+            ) : (
+              <Alert>
+                <AlertDescription>Chưa mở live session nên chưa có mã join để vào màn hình MC.</AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       </div>

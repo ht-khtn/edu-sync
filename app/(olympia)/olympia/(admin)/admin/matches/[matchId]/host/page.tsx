@@ -126,13 +126,13 @@ type RoundQuestionRow = {
   answer_text: string | null
   note: string | null
   questions?:
-    | { image_url?: string | null; audio_url?: string | null }
-    | Array<{ image_url?: string | null; audio_url?: string | null }>
-    | null
+  | { image_url?: string | null; audio_url?: string | null }
+  | Array<{ image_url?: string | null; audio_url?: string | null }>
+  | null
   question_set_items?:
-    | { image_url?: string | null; audio_url?: string | null }
-    | Array<{ image_url?: string | null; audio_url?: string | null }>
-    | null
+  | { image_url?: string | null; audio_url?: string | null }
+  | Array<{ image_url?: string | null; audio_url?: string | null }>
+  | null
 }
 
 function isUuid(value: string) {

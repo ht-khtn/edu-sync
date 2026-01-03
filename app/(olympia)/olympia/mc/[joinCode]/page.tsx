@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { OlympiaGameClient } from '@/components/olympia/shared/game'
 import { SessionInfoSidebar } from '@/components/olympia/client/game/SessionInfoSidebar'
 import { McPasswordGate } from '@/components/olympia/shared/McPasswordGate'
+import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import { getServerSupabase } from '@/lib/server-auth'
 import type { AnswerRow, GameSessionPayload } from '@/types/olympia/game'
 
@@ -115,10 +116,21 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
             : Promise.resolve({ obstacle: null, tiles: [], guesses: [] }),
     ])
 
+    const participantIds = (players ?? [])
+        .map((p) => (p as { participant_id?: string | null }).participant_id ?? null)
+        .filter((id): id is string => Boolean(id))
+    const nameMap = await resolveDisplayNamesForUserIds(supabase, participantIds)
+    const normalizedPlayers = (players ?? []).map((p) => {
+        const row = p as { participant_id?: string | null; display_name?: string | null }
+        const pid = row.participant_id ?? null
+        const resolved = pid ? nameMap.get(pid) ?? null : null
+        return { ...p, display_name: row.display_name ?? resolved }
+    })
+
     return {
         session,
         match,
-        players: players ?? [],
+        players: normalizedPlayers,
         scores: scores ?? [],
         roundQuestions: roundQuestions ?? [],
         buzzerEvents: buzzerEvents ?? [],

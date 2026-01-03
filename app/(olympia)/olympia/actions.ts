@@ -418,6 +418,7 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
     revalidatePath("/olympia/admin");
     revalidatePath(`/olympia/admin/matches/${createdMatch.id}`);
     revalidatePath(`/olympia/admin/matches/${createdMatch.id}/host`);
+
     return { success: "Đã tạo trận mới và khởi tạo cấu hình 4 vòng thi." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể tạo trận." };
@@ -1056,12 +1057,7 @@ export async function setLiveSessionRoundAction(
       return { error: "Phòng chưa ở trạng thái running." };
     }
 
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
-    const joinCode = updatedRows?.[0]?.join_code as string | null | undefined;
-    if (joinCode) {
-      revalidatePath(`/olympia/client/game/${joinCode}`);
-    }
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: `Đã chuyển sang vòng ${roundType}.` };
   } catch (err) {
@@ -1104,7 +1100,7 @@ export async function setQuestionStateAction(
 
     if (error) return { error: error.message };
 
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: `Đã cập nhật trạng thái câu hỏi: ${questionState}.` };
   } catch (err) {
@@ -1184,8 +1180,7 @@ export async function setBuzzerEnabledAction(
     if (!updatedRows || updatedRows.length === 0) {
       return { error: "Phòng chưa ở trạng thái running." };
     }
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: enabled ? "Đã bật bấm chuông." : "Đã tắt bấm chuông." };
   } catch (err) {
@@ -1223,8 +1218,7 @@ export async function setScoreboardOverlayAction(
       return { error: "Không tìm thấy phòng để cập nhật bảng điểm." };
     }
 
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: enabled ? "Đã bật bảng điểm lớn." : "Đã tắt bảng điểm lớn." };
   } catch (err) {
@@ -1847,10 +1841,7 @@ export async function confirmDecisionAction(
       console.warn("[Olympia] insertScoreChange(confirmDecision) failed:", auditErr);
     }
 
-    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
-    if (session.join_code) {
-      revalidatePath(`/olympia/client/game/${session.join_code}`);
-    }
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: `Đã xác nhận: ${decision}. Điểm mới: ${nextPoints}.` };
   } catch (err) {
@@ -1980,11 +1971,7 @@ export async function setCurrentQuestionAction(
 
     if (updateError) return { error: updateError.message };
 
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
-    if (session.join_code) {
-      revalidatePath(`/olympia/client/game/${session.join_code}`);
-    }
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
     return { success: "Đã hiển thị câu hỏi." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật câu hỏi." };
@@ -2020,7 +2007,9 @@ export async function advanceCurrentQuestionAction(
 
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
-      .select("id, status, current_round_id, current_round_question_id, join_code")
+      .select(
+        "id, status, current_round_id, current_round_type, current_round_question_id, join_code"
+      )
       .eq("match_id", matchId)
       .maybeSingle();
     if (sessionError) return { error: sessionError.message };
@@ -2030,7 +2019,7 @@ export async function advanceCurrentQuestionAction(
 
     const { data: questions, error: qError } = await olympia
       .from("round_questions")
-      .select("id, order_index")
+      .select("id, order_index, target_player_id, meta")
       .eq("match_round_id", session.current_round_id)
       .order("order_index", { ascending: true });
     if (qError) return { error: qError.message };
@@ -2049,8 +2038,45 @@ export async function advanceCurrentQuestionAction(
     const nextQuestion = list[nextIdx];
     if (!nextQuestion) return { error: "Không tìm thấy câu tiếp theo." };
 
-    const timerDeadline = autoShow ? new Date(Date.now() + durationMs).toISOString() : null;
-    const nextQuestionState = autoShow ? "showing" : "hidden";
+    // Mặc định: chuyển câu -> nếu autoShow=1 thì show ngay, còn lại bật màn chờ (hidden).
+    let shouldAutoShow = autoShow;
+    // Khởi động (thi riêng): khi sang câu của thí sinh khác hoặc sang thi chung,
+    // không auto-show để tránh "nhảy" sang câu người khác ngay sau khi hết lượt.
+    if (session.current_round_type === "khoi_dong" && direction === "next" && currentIdx >= 0) {
+      const currentRow = list[currentIdx] as unknown as {
+        target_player_id?: string | null;
+        meta?: unknown;
+      };
+      const nextRow = nextQuestion as unknown as {
+        target_player_id?: string | null;
+        meta?: unknown;
+      };
+
+      const currentInfo = !currentRow?.target_player_id
+        ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
+        : null;
+      const nextInfo = !nextRow?.target_player_id
+        ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
+        : null;
+
+      const currentIsPersonal = Boolean(
+        currentRow?.target_player_id || currentInfo?.kind === "personal"
+      );
+      const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
+      const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
+      const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
+
+      // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
+      const crossingToAnotherPlayer =
+        currentIsPersonal &&
+        (!nextIsPersonal || (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
+      if (crossingToAnotherPlayer) {
+        shouldAutoShow = false;
+      }
+    }
+
+    const timerDeadline = shouldAutoShow ? new Date(Date.now() + durationMs).toISOString() : null;
+    const nextQuestionState = shouldAutoShow ? "showing" : "hidden";
 
     const { error: updateError } = await olympia
       .from("live_sessions")
@@ -2065,12 +2091,10 @@ export async function advanceCurrentQuestionAction(
 
     if (updateError) return { error: updateError.message };
 
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath("/olympia/client");
-    if (session.join_code) {
-      revalidatePath(`/olympia/client/game/${session.join_code}`);
-    }
-    return { success: autoShow ? "Đã chuyển & hiển thị câu mới." : "Đã chuyển câu & bật màn chờ." };
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
+    return {
+      success: shouldAutoShow ? "Đã chuyển & hiển thị câu mới." : "Đã chuyển câu & bật màn chờ.",
+    };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể chuyển câu hỏi." };
   }
@@ -3109,7 +3133,7 @@ export async function setRoundQuestionTargetPlayerAction(
 
     // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
     // Đây là hành vi yêu cầu để tránh UI giữ câu cũ khi đổi ghế/thí sinh.
-    const { data: resetRows, error: resetErr } = await olympia
+    const { error: resetErr } = await olympia
       .from("live_sessions")
       .update({
         current_round_question_id: null,
@@ -3118,16 +3142,10 @@ export async function setRoundQuestionTargetPlayerAction(
         buzzer_enabled: false,
       })
       .eq("match_id", parsed.data.matchId)
-      .eq("status", "running")
-      .select("join_code");
+      .eq("status", "running");
     if (resetErr) return { error: resetErr.message };
 
-    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
-    revalidatePath("/olympia/client");
-    const joinCode = resetRows?.[0]?.join_code as string | null | undefined;
-    if (joinCode) {
-      revalidatePath(`/olympia/client/game/${joinCode}`);
-    }
+    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return {
       success: parsed.data.playerId

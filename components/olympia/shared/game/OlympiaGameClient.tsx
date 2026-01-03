@@ -299,7 +299,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                 <p className="text-xs text-slate-300">
                   {isKhoiDong
                     ? targetPlayerId
-                      ? `Khởi động · Thi riêng · ${targetPlayer ? `Ghế ${targetPlayer.seat_index ?? '—'}` : '—'}`
+                      ? `Khởi động · Thi riêng · ${targetPlayer?.display_name ?? (targetPlayer?.seat_index != null ? `Ghế ${targetPlayer.seat_index}` : '—')}`
                       : 'Khởi động · Thi chung · Bấm chuông để giành quyền'
                     : isVeDich
                       ? isStealWindow

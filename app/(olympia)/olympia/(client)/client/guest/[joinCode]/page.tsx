@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { OlympiaGameClient } from '@/components/olympia/shared/game/OlympiaGameClient'
+import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import { getServerSupabase } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
 
@@ -121,11 +122,22 @@ async function getGuestSessionData(
         })()
         : { obstacle: null, tiles: [], guesses: [] }
 
+    const participantIds = (players ?? [])
+        .map((p) => (p as { participant_id?: string | null }).participant_id ?? null)
+        .filter((id): id is string => Boolean(id))
+    const nameMap = await resolveDisplayNamesForUserIds(supabase, participantIds)
+    const normalizedPlayers = (players ?? []).map((p) => {
+        const row = p as { participant_id?: string | null; display_name?: string | null }
+        const pid = row.participant_id ?? null
+        const resolved = pid ? nameMap.get(pid) ?? null : null
+        return { ...p, display_name: row.display_name ?? resolved }
+    })
+
     return {
         payload: {
             session: resolvedSession,
             match,
-            players: players ?? [],
+            players: normalizedPlayers,
             scores: scores ?? [],
             roundQuestions: roundQuestions ?? [],
             buzzerEvents: buzzerEvents ?? [],

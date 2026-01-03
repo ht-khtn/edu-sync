@@ -10,6 +10,7 @@ import { InitializeRoundsButton } from '@/components/olympia/admin/matches/Initi
 import { ScoreboardOverlayToggle } from '@/components/olympia/admin/matches/ScoreboardOverlayToggle'
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
 import { getServerAuthContext } from '@/lib/server-auth'
+import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
   ArrowLeft,
   ArrowRight,
@@ -251,6 +252,20 @@ async function fetchHostData(matchCode: string) {
   if (playersError) console.warn('[Olympia] Failed to load match players:', playersError.message)
   if (scoresError) console.warn('[Olympia] Failed to load match scores:', scoresError.message)
 
+  const participantIds = (players ?? [])
+    .map((p) => (p as { participant_id?: string | null }).participant_id ?? null)
+    .filter((id): id is string => Boolean(id))
+  const resolvedNameMap = await resolveDisplayNamesForUserIds(supabase, participantIds)
+  const normalizedPlayers = (players ?? []).map((p) => {
+    const row = p as { participant_id?: string | null; display_name?: string | null }
+    const pid = row.participant_id ?? null
+    const resolved = pid ? resolvedNameMap.get(pid) ?? null : null
+    return {
+      ...p,
+      display_name: row.display_name ?? resolved,
+    }
+  })
+
   const scoreLookup = new Map<string, number>()
   for (const s of scores ?? []) {
     const prev = scoreLookup.get(s.player_id) ?? 0
@@ -376,10 +391,14 @@ async function fetchHostData(matchCode: string) {
     match,
     liveSession,
     rounds: rounds ?? [],
-    players: players ?? [],
-    scores: (players ?? []).map((p) => ({
+    players: normalizedPlayers,
+    scores: normalizedPlayers.map((p) => ({
       playerId: p.id,
-      displayName: p.display_name ?? `Ghế ${p.seat_index}`,
+      displayName:
+        (p.display_name ??
+          resolvedNameMap.get((p as { participant_id?: string | null }).participant_id ?? '') ??
+          null) ??
+        `Ghế ${p.seat_index}`,
       seatNumber: p.seat_index,
       totalScore: scoreLookup.get(p.id) ?? 0,
     })),

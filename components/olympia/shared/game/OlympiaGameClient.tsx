@@ -207,6 +207,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
 
+  const playerTurnSuffix =
+    resolvedViewerMode === 'player' && !isWaitingScreen && targetPlayerId
+      ? ` · Lượt: ${formatPlayerLabel(targetPlayerId)}`
+      : ''
+
   const mediaKind = useMemo(() => {
     if (!mediaUrl) return null
     const lower = mediaUrl.toLowerCase()
@@ -245,11 +250,54 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       if (!cmd) return
       const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
       if (cmdId <= lastGuestMediaCmdRef.current[mediaType]) return
-      lastGuestMediaCmdRef.current = { ...lastGuestMediaCmdRef.current, [mediaType]: cmdId }
-
       const action = cmd.action
       const element = mediaType === 'audio' ? guestAudioRef.current : guestVideoRef.current
+
+      // Nếu media element chưa mount xong, để effect chạy lại khi UI render xong.
       if (!element) return
+
+      lastGuestMediaCmdRef.current = { ...lastGuestMediaCmdRef.current, [mediaType]: cmdId }
+
+      const waitForCanPlay = async (el: HTMLMediaElement) => {
+        if (el.readyState >= 2) return
+
+        await new Promise<void>((resolve) => {
+          let done = false
+          const finish = () => {
+            if (done) return
+            done = true
+            el.removeEventListener('canplay', finish)
+            el.removeEventListener('loadeddata', finish)
+            resolve()
+          }
+
+          el.addEventListener('canplay', finish)
+          el.addEventListener('loadeddata', finish)
+          window.setTimeout(finish, 1200)
+        })
+      }
+
+      const tryPlay = async (el: HTMLMediaElement) => {
+        try {
+          // Một số trình duyệt cần load trước khi play (đặc biệt khi src mới set).
+          if (el.readyState === 0) {
+            try {
+              el.load()
+            } catch {
+              // ignore
+            }
+          }
+
+          await waitForCanPlay(el)
+
+          const p = el.play()
+          if (p && typeof (p as Promise<void>).then === 'function') {
+            await p
+          }
+        } catch {
+          // Autoplay có thể bị chặn; bỏ qua để tránh spam.
+        }
+      }
 
       try {
         if (action === 'pause') {
@@ -265,11 +313,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
           }
         }
 
-        // play
-        const p = element.play()
-        if (p && typeof (p as Promise<void>).then === 'function') {
-          await p
-        }
+        // play/restart
+        await tryPlay(element)
       } catch {
         // Trình duyệt có thể chặn autoplay; bỏ qua để tránh spam toast.
       }
@@ -277,7 +322,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
     void applyCommand('audio')
     void applyCommand('video')
-  }, [isGuest, session.guest_media_control])
+  }, [isGuest, isWaitingScreen, session.guest_media_control])
 
   // Toast notification for session state
   useEffect(() => {
@@ -338,7 +383,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
           <div className="min-w-0 flex flex-col gap-1">
             <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
-              <p className="text-xs uppercase tracking-widest text-slate-200">{questionTitle}</p>
+              <p className="text-xs uppercase tracking-widest text-slate-200">
+                {questionTitle}
+                {playerTurnSuffix}
+              </p>
               <p className="text-sm text-slate-100 truncate">{match.name}</p>
             </div>
             {/* Pha info - moved to top left, semi-transparent */}
@@ -637,7 +685,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         )}
 
         {/* Top scoreboard mini */}
-        {!isGuest && scoreboard.length > 0 ? (
+        {isMc && scoreboard.length > 0 ? (
           <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
             <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
             <div className="mt-1 space-y-1">

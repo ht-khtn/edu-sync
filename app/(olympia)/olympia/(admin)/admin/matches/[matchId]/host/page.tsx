@@ -7,7 +7,6 @@ import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundC
 import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
-import { ScoreboardOverlayToggle } from '@/components/olympia/admin/matches/ScoreboardOverlayToggle'
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
@@ -17,6 +16,9 @@ import {
   Check,
   Eye,
   Hand,
+  Pause,
+  Play,
+  RotateCcw,
   Sparkles,
   Timer,
   Undo2,
@@ -36,6 +38,7 @@ import {
   setBuzzerEnabledAction,
   setLiveSessionRoundAction,
   setRoundQuestionTargetPlayerAction,
+  setScoreboardOverlayAction,
   setVeDichQuestionValueFormAction,
   setWaitingScreenAction,
   setGuestMediaControlFormAction,
@@ -894,19 +897,25 @@ export default async function OlympiaHostConsolePage({
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="video" />
                                 <input type="hidden" name="command" value="play" />
-                                <Button type="submit" size="sm" variant="outline">Play</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Phát video trên Guest" title="Play">
+                                  <Play className="h-4 w-4" />
+                                </Button>
                               </form>
                               <form action={setGuestMediaControlFormAction}>
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="video" />
                                 <input type="hidden" name="command" value="pause" />
-                                <Button type="submit" size="sm" variant="outline">Pause</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Tạm dừng video trên Guest" title="Pause">
+                                  <Pause className="h-4 w-4" />
+                                </Button>
                               </form>
                               <form action={setGuestMediaControlFormAction}>
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="video" />
                                 <input type="hidden" name="command" value="restart" />
-                                <Button type="submit" size="sm" variant="outline">Restart</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Phát lại video từ đầu trên Guest" title="Restart">
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
                               </form>
                             </div>
                           ) : null}
@@ -925,19 +934,25 @@ export default async function OlympiaHostConsolePage({
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="audio" />
                                 <input type="hidden" name="command" value="play" />
-                                <Button type="submit" size="sm" variant="outline">Play</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Phát âm thanh trên Guest" title="Play">
+                                  <Play className="h-4 w-4" />
+                                </Button>
                               </form>
                               <form action={setGuestMediaControlFormAction}>
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="audio" />
                                 <input type="hidden" name="command" value="pause" />
-                                <Button type="submit" size="sm" variant="outline">Pause</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Tạm dừng âm thanh trên Guest" title="Pause">
+                                  <Pause className="h-4 w-4" />
+                                </Button>
                               </form>
                               <form action={setGuestMediaControlFormAction}>
                                 <input type="hidden" name="matchId" value={match.id} />
                                 <input type="hidden" name="mediaType" value="audio" />
                                 <input type="hidden" name="command" value="restart" />
-                                <Button type="submit" size="sm" variant="outline">Restart</Button>
+                                <Button type="submit" size="icon" variant="outline" aria-label="Phát lại âm thanh từ đầu trên Guest" title="Restart">
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
                               </form>
                             </div>
                           ) : null}
@@ -1470,6 +1485,7 @@ export default async function OlympiaHostConsolePage({
                 players={players}
                 setLiveSessionRoundAction={setLiveSessionRoundAction}
                 setWaitingScreenAction={setWaitingScreenAction}
+                setScoreboardOverlayAction={setScoreboardOverlayAction}
                 setBuzzerEnabledAction={setBuzzerEnabledAction}
                 setRoundQuestionTargetPlayerAction={setRoundQuestionTargetPlayerAction}
                 allowTargetSelection={allowTargetSelection}
@@ -1479,14 +1495,8 @@ export default async function OlympiaHostConsolePage({
                 currentRoundType={liveSession?.current_round_type}
                 currentQuestionState={liveSession?.question_state}
                 buzzerEnabled={liveSession?.buzzer_enabled ?? null}
+                showScoreboardOverlay={liveSession?.show_scoreboard_overlay ?? null}
               />
-
-              {liveSession ? (
-                <ScoreboardOverlayToggle
-                  matchId={match.id}
-                  enabled={liveSession.show_scoreboard_overlay === true}
-                />
-              ) : null}
 
               {allowTargetSelection ? (
                 <div className="grid gap-2">

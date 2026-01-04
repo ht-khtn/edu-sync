@@ -113,12 +113,47 @@ async function preloadAudios(urls: string[], onProgress: () => void): Promise<vo
     await Promise.all(workers)
 }
 
-export function OlympiaQuestionsPreloadOverlay(props: { roundQuestions: RoundQuestionForPreload[] }) {
-    const { roundQuestions } = props
+function hashUrls(urls: string[]): string {
+    let h = 5381
+    for (const url of urls) {
+        for (let i = 0; i < url.length; i += 1) {
+            h = ((h << 5) + h) ^ url.charCodeAt(i)
+        }
+    }
+    return String(h >>> 0)
+}
+
+function readPreloadDone(key: string): boolean {
+    if (typeof window === 'undefined') return false
+    try {
+        return window.sessionStorage.getItem(key) === '1'
+    } catch {
+        return false
+    }
+}
+
+function writePreloadDone(key: string) {
+    if (typeof window === 'undefined') return
+    try {
+        window.sessionStorage.setItem(key, '1')
+    } catch {
+        // ignore
+    }
+}
+
+export function OlympiaQuestionsPreloadOverlay(props: { roundQuestions: RoundQuestionForPreload[]; storageKey?: string }) {
+    const { roundQuestions, storageKey } = props
     const assets = useMemo(() => extractAssetUrls(roundQuestions), [roundQuestions])
     const total = assets.images.length + assets.audios.length
 
-    const [isPreloading, setIsPreloading] = useState(true)
+    const computedKey = useMemo(() => {
+        const urls = [...assets.images, ...assets.audios].sort()
+        const h = hashUrls(urls)
+        if (storageKey) return `${storageKey}:${h}`
+        return `olympia:preload:client:${h}`
+    }, [assets.audios, assets.images, storageKey])
+
+    const [isPreloading, setIsPreloading] = useState(() => !readPreloadDone(computedKey))
     const [done, setDone] = useState(0)
 
     useEffect(() => {
@@ -129,13 +164,25 @@ export function OlympiaQuestionsPreloadOverlay(props: { roundQuestions: RoundQue
             setDone((v) => v + 1)
         }
 
+        if (readPreloadDone(computedKey)) {
+            queueMicrotask(() => {
+                setIsPreloading(false)
+            })
+            return () => {
+                cancelled = true
+            }
+        }
+
         const run = async () => {
             setIsPreloading(true)
             setDone(0)
 
             if (total === 0) {
                 await Promise.resolve()
-                if (!cancelled) setIsPreloading(false)
+                if (!cancelled) {
+                    writePreloadDone(computedKey)
+                    setIsPreloading(false)
+                }
                 return
             }
 
@@ -144,7 +191,10 @@ export function OlympiaQuestionsPreloadOverlay(props: { roundQuestions: RoundQue
                 preloadAudios(assets.audios, bump),
             ])
 
-            if (!cancelled) setIsPreloading(false)
+            if (!cancelled) {
+                writePreloadDone(computedKey)
+                setIsPreloading(false)
+            }
         }
 
         void run()
@@ -152,7 +202,7 @@ export function OlympiaQuestionsPreloadOverlay(props: { roundQuestions: RoundQue
         return () => {
             cancelled = true
         }
-    }, [assets.audios, assets.images, total])
+    }, [assets.audios, assets.images, computedKey, total])
 
     if (!isPreloading) return null
 

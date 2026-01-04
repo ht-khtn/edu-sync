@@ -465,7 +465,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   return (
     <>
-      <OlympiaQuestionsPreloadOverlay roundQuestions={preloadRoundQuestions} />
+      <OlympiaQuestionsPreloadOverlay
+        roundQuestions={preloadRoundQuestions}
+        storageKey={`olympia:preload:client:${session.id}`}
+      />
       <div
         className="min-h-screen bg-black text-white flex flex-col"
         style={{

@@ -61,6 +61,7 @@ type Props = {
     descriptionText: string
     options: Array<{ id: string; label: string }>
     questions: HostPreviewRoundQuestion[]
+    preloadQuestions?: HostPreviewRoundQuestion[]
     initialPreviewId: string | null
     triggerReset?: boolean
     questionsDebug: {
@@ -123,6 +124,37 @@ function extractAssetUrls(questions: HostPreviewRoundQuestion[]): { images: stri
     }
 
     return { images: Array.from(imgSet), audios: Array.from(audioSet) }
+}
+
+function hashUrls(urls: string[]): string {
+    // Hash nhẹ để dùng làm key trong sessionStorage; tránh lưu chuỗi URL dài.
+    // djb2-ish
+    let h = 5381
+    for (const url of urls) {
+        for (let i = 0; i < url.length; i += 1) {
+            h = ((h << 5) + h) ^ url.charCodeAt(i)
+        }
+    }
+    // Convert to unsigned 32-bit
+    return String(h >>> 0)
+}
+
+function readPreloadDone(key: string): boolean {
+    if (typeof window === 'undefined') return false
+    try {
+        return window.sessionStorage.getItem(key) === '1'
+    } catch {
+        return false
+    }
+}
+
+function writePreloadDone(key: string) {
+    if (typeof window === 'undefined') return
+    try {
+        window.sessionStorage.setItem(key, '1')
+    } catch {
+        // ignore
+    }
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
@@ -209,6 +241,7 @@ export function HostQuestionPreviewCard(props: Props) {
         descriptionText,
         options,
         questions,
+        preloadQuestions,
         initialPreviewId,
         triggerReset,
         questionsDebug,
@@ -218,7 +251,16 @@ export function HostQuestionPreviewCard(props: Props) {
     } = props
 
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
-    const [isPreloading, setIsPreloading] = useState(true)
+    const questionsForPreload = preloadQuestions ?? questions
+    const assets = useMemo(() => extractAssetUrls(questionsForPreload), [questionsForPreload])
+    const preloadTotal = assets.images.length + assets.audios.length
+    const preloadKey = useMemo(() => {
+        const urls = [...assets.images, ...assets.audios].sort()
+        const h = hashUrls(urls)
+        return `olympia:preload:host:${matchId}:${h}`
+    }, [assets.audios, assets.images, matchId])
+
+    const [isPreloading, setIsPreloading] = useState(() => !readPreloadDone(preloadKey))
     const [preloadDoneCount, setPreloadDoneCount] = useState(0)
     const prevTriggerRef = useRef(triggerReset)
 
@@ -256,11 +298,18 @@ export function HostQuestionPreviewCard(props: Props) {
     const previewAnswerText = previewRoundQuestion?.answer_text ?? null
     const previewNoteText = previewRoundQuestion?.note ?? null
 
-    const assets = useMemo(() => extractAssetUrls(questions), [questions])
-    const preloadTotal = assets.images.length + assets.audios.length
-
     useEffect(() => {
         let cancelled = false
+
+        // Nếu đã preload xong (trong sessionStorage) thì không chạy lại.
+        if (readPreloadDone(preloadKey)) {
+            queueMicrotask(() => {
+                setIsPreloading(false)
+            })
+            return () => {
+                cancelled = true
+            }
+        }
 
         const run = async () => {
             setIsPreloading(true)
@@ -274,7 +323,10 @@ export function HostQuestionPreviewCard(props: Props) {
             // Nếu không có gì để preload thì vẫn chờ 1 microtask để overlay không bị giật.
             if (preloadTotal === 0) {
                 await Promise.resolve()
-                if (!cancelled) setIsPreloading(false)
+                if (!cancelled) {
+                    writePreloadDone(preloadKey)
+                    setIsPreloading(false)
+                }
                 return
             }
 
@@ -283,7 +335,10 @@ export function HostQuestionPreviewCard(props: Props) {
                 preloadAudios(assets.audios, bump),
             ])
 
-            if (!cancelled) setIsPreloading(false)
+            if (!cancelled) {
+                writePreloadDone(preloadKey)
+                setIsPreloading(false)
+            }
         }
 
         void run()
@@ -291,7 +346,7 @@ export function HostQuestionPreviewCard(props: Props) {
         return () => {
             cancelled = true
         }
-    }, [assets.audios, assets.images, preloadTotal])
+    }, [assets.audios, assets.images, preloadKey, preloadTotal])
 
     return (
         <Card>

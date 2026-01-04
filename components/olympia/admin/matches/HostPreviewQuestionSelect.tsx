@@ -64,7 +64,6 @@ export function HostPreviewQuestionSelect({ value, options, disabled, triggerRes
 
         const t = setTimeout(() => run(), 0)
         return () => clearTimeout(t)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pathname, router, options, baseParams])
 
     // Reset preview chỉ khi triggerReset thực sự thay đổi từ false → true

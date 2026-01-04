@@ -23,15 +23,16 @@ export function HostRoundDecisionPanel({
     const initialState: ActionState = { error: null, success: null }
     const [state, formAction, pending] = useActionState(confirmDecisionAction, initialState)
 
+    useEffect(() => {
+        if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) return
+        if (state.error) toast.error(state.error)
+        if (state.success) toast.success(state.success)
+    }, [currentRoundQuestionId, enabledPlayerId, sessionId, state.error, state.success])
+
     // Chỉ show panel nếu có thí sinh được chấm
     if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) {
         return null
     }
-
-    useEffect(() => {
-        if (state.error) toast.error(state.error)
-        if (state.success) toast.success(state.success)
-    }, [state.error, state.success])
 
     return (
         <div className="mt-6 border-t pt-4">

@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { JoinQuickTabs } from '@/components/olympia/client/client/JoinQuickTabs'
+import { OlympiaAccountMenu } from '@/components/olympia/client/OlympiaAccountMenu'
 import { Users, Eye, Gamepad2, HelpCircle } from 'lucide-react'
 
 export const metadata = {
@@ -14,6 +15,9 @@ export const metadata = {
 export default function JoinPage() {
     return (
         <section className="space-y-8">
+            <div className="flex justify-end">
+                <OlympiaAccountMenu loginRedirectTo="/olympia/client/join" />
+            </div>
             {/* Header */}
             <div className="text-center space-y-2 py-4">
                 <h1 className="text-4xl font-bold tracking-tight">🎯 Tham gia phòng thi</h1>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 
 import getSupabase from '@/lib/supabase'
@@ -31,9 +31,20 @@ export function HostRealtimeEventsListener({
 }: Props) {
     const router = useRouter()
 
+    const supabaseRef = useRef<SupabaseClient | null>(null)
+
     const channelRef = useRef<RealtimeChannel | null>(null)
     const pendingRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const lastRefreshAtRef = useRef<number>(0)
+
+    const queuedReasonsRef = useRef<Set<string>>(new Set())
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const reconnectAttemptsRef = useRef<number>(0)
+
+    const currentRoundQuestionIdRef = useRef<string | null>(null)
+    useEffect(() => {
+        currentRoundQuestionIdRef.current = currentRoundQuestionId
+    }, [currentRoundQuestionId])
 
     const lastWinnerToastRef = useRef<{ roundQuestionId: string | null; buzzerEventId: string | null }>({
         roundQuestionId: null,
@@ -51,34 +62,78 @@ export function HostRealtimeEventsListener({
         const scheduleRefresh = (reason: string) => {
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
 
+            queuedReasonsRef.current.add(reason)
+
             const now = Date.now()
             const elapsed = now - lastRefreshAtRef.current
-            const delay = elapsed < 200 ? 200 - elapsed : 60
+            const minGap = 900
+            const debounceMs = 250
+            const delay = elapsed < minGap ? Math.max(minGap - elapsed, debounceMs) : debounceMs
 
             if (pendingRefreshRef.current) return
             pendingRefreshRef.current = setTimeout(() => {
                 pendingRefreshRef.current = null
                 lastRefreshAtRef.current = Date.now()
-                console.debug('[HostRealtimeEventsListener] router.refresh()', reason)
+                const reasons = Array.from(queuedReasonsRef.current)
+                queuedReasonsRef.current.clear()
+                console.debug('[HostRealtimeEventsListener] router.refresh()', reasons.join(','))
                 router.refresh()
             }, delay)
         }
 
-        const subscribe = async () => {
+        const cleanupChannel = async () => {
+            if (pendingRefreshRef.current) {
+                clearTimeout(pendingRefreshRef.current)
+                pendingRefreshRef.current = null
+            }
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current)
+                reconnectTimerRef.current = null
+            }
+
+            const channel = channelRef.current
+            if (!channel) return
+            channelRef.current = null
+
+            try {
+                const supabase = supabaseRef.current ?? (await getSupabase())
+                supabaseRef.current = supabase
+                try {
+                    channel.unsubscribe()
+                } catch {
+                    // ignore
+                }
+                supabase.removeChannel(channel)
+            } catch {
+                try {
+                    channel.unsubscribe()
+                } catch {
+                    // ignore
+                }
+            }
+        }
+
+        const scheduleReconnect = (reason: string) => {
+            if (!mounted) return
+            if (reconnectTimerRef.current) return
+            const attempt = reconnectAttemptsRef.current
+            const delay = attempt === 0 ? 400 : attempt === 1 ? 1200 : 3000
+            reconnectTimerRef.current = setTimeout(() => {
+                reconnectTimerRef.current = null
+                reconnectAttemptsRef.current = Math.min(reconnectAttemptsRef.current + 1, 10)
+                void subscribe(`reconnect:${reason}`)
+            }, delay)
+        }
+
+        const subscribe = async (why: string) => {
             if (!matchId) return
 
             try {
-                const supabase = await getSupabase()
+                const supabase = supabaseRef.current ?? (await getSupabase())
+                supabaseRef.current = supabase
                 if (!mounted) return
 
-                if (channelRef.current) {
-                    try {
-                        supabase.removeChannel(channelRef.current)
-                    } catch {
-                        channelRef.current.unsubscribe()
-                    }
-                    channelRef.current = null
-                }
+                await cleanupChannel()
 
                 const channel = supabase
                     .channel(`olympia-host-events-${matchId}`)
@@ -91,16 +146,6 @@ export function HostRealtimeEventsListener({
                             ...(sessionId ? { filter: `id=eq.${sessionId}` } : {}),
                         },
                         () => scheduleRefresh('live_sessions')
-                    )
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'match_scores', filter: `match_id=eq.${matchId}` },
-                        () => scheduleRefresh('match_scores')
-                    )
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'score_changes', filter: `match_id=eq.${matchId}` },
-                        () => scheduleRefresh('score_changes')
                     )
                     .on(
                         'postgres_changes',
@@ -124,14 +169,15 @@ export function HostRealtimeEventsListener({
                             // Toast chỉ cho người nhanh nhất.
                             if (payload.eventType !== 'INSERT') return
                             if (row.result !== 'win') return
-                            if (!currentRoundQuestionId || row.round_question_id !== currentRoundQuestionId) return
+                            const activeQ = currentRoundQuestionIdRef.current
+                            if (!activeQ || row.round_question_id !== activeQ) return
 
                             const alreadyToasted =
-                                lastWinnerToastRef.current.roundQuestionId === currentRoundQuestionId &&
+                                lastWinnerToastRef.current.roundQuestionId === activeQ &&
                                 lastWinnerToastRef.current.buzzerEventId === row.id
                             if (alreadyToasted) return
 
-                            lastWinnerToastRef.current = { roundQuestionId: currentRoundQuestionId, buzzerEventId: row.id }
+                            lastWinnerToastRef.current = { roundQuestionId: activeQ, buzzerEventId: row.id }
 
                             const label = (row.player_id && playerLabelsRef.current[row.player_id]) || 'Một thí sinh'
                             toast.success(`${label} bấm chuông nhanh nhất`)
@@ -140,11 +186,16 @@ export function HostRealtimeEventsListener({
 
                 channel.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
-                        scheduleRefresh('subscribed')
+                        reconnectAttemptsRef.current = 0
+                        scheduleRefresh(`subscribed:${why}`)
                         return
                     }
                     if (status === 'CHANNEL_ERROR') {
-                        console.error('[HostRealtimeEventsListener] realtime error')
+                        console.error('[HostRealtimeEventsListener] realtime error', { matchId, sessionId })
+                        scheduleReconnect('CHANNEL_ERROR')
+                    }
+                    if (status === 'TIMED_OUT' || status === 'CLOSED') {
+                        scheduleReconnect(status)
                     }
                 })
 
@@ -154,30 +205,13 @@ export function HostRealtimeEventsListener({
             }
         }
 
-        void subscribe()
+        void subscribe('mount')
 
         return () => {
             mounted = false
-            if (pendingRefreshRef.current) {
-                clearTimeout(pendingRefreshRef.current)
-                pendingRefreshRef.current = null
-            }
-
-            const cleanup = async () => {
-                const channel = channelRef.current
-                if (!channel) return
-                try {
-                    const supabase = await getSupabase()
-                    supabase.removeChannel(channel)
-                } catch {
-                    channel.unsubscribe()
-                }
-                if (channelRef.current === channel) channelRef.current = null
-            }
-
-            void cleanup()
+            void cleanupChannel()
         }
-    }, [currentRoundQuestionId, matchId, router, sessionId])
+    }, [matchId, router, sessionId])
 
     return null
 }

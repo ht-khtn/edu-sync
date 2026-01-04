@@ -1,7 +1,10 @@
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { OlympiaGameClient } from '@/components/olympia/shared/game/OlympiaGameClient'
 import { PlayerPasswordGate } from '@/components/olympia/client/game/PlayerPasswordGate'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import { getServerAuthContext } from '@/lib/server-auth'
 import type { GameSessionPayload } from '@/types/olympia/game'
@@ -157,6 +160,39 @@ export default async function OlympiaGamePage({ params }: PageProps) {
     const data = await getGameSessionData(supabase, joinCode)
     if (!data) {
         notFound()
+    }
+
+    // Chặn: chỉ thí sinh thuộc match_players mới được vào mode player.
+    // Nếu user đã đăng nhập nhưng chưa có appUserId (chưa kích hoạt trong hệ thống) => cũng chặn.
+    if (authUid) {
+        const isMember =
+            appUserId != null &&
+            (data.players ?? []).some((p) => {
+                const pid = (p as { participant_id?: string | null }).participant_id ?? null
+                return pid === appUserId
+            })
+
+        if (!isMember) {
+            return (
+                <section className="mx-auto max-w-2xl px-4 py-8 space-y-4">
+                    <Alert>
+                        <AlertTitle>Bạn không thuộc phòng thi này</AlertTitle>
+                        <AlertDescription>
+                            Tài khoản hiện tại không có trong danh sách thí sinh của trận. Bạn có thể xem ở chế độ khách hoặc quay lại trang tham gia.
+                        </AlertDescription>
+                    </Alert>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline">
+                            <Link href="/olympia/client/join">Về trang tham gia</Link>
+                        </Button>
+                        <Button asChild>
+                            <Link href={`/olympia/client/guest/${encodeURIComponent(joinCode)}`}>Xem chế độ khách</Link>
+                        </Button>
+                    </div>
+                </section>
+            )
+        }
     }
 
     // Check if user has already verified this session (cross-device persistence)

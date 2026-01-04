@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { lookupJoinCodeAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { toast } from 'sonner'
 import type { LiveSessionRow } from '@/types/olympia/game'
+import { OlympiaAccountMenu } from '@/components/olympia/client/OlympiaAccountMenu'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -54,7 +55,10 @@ export function PlayerPasswordGate({ session, userAlreadyVerified = false, child
 
   // Show password gate
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-6 relative">
+      <div className="absolute top-4 right-4">
+        <OlympiaAccountMenu loginRedirectTo={`/olympia/client/game/${session.join_code}`} />
+      </div>
       <div className="w-full max-w-md">
         <div className="text-center space-y-2">
           <p className="text-xs uppercase tracking-widest text-slate-200">OLYMPIA</p>

@@ -33,3 +33,8 @@ Provide project context and coding guidelines that AI should follow when generat
 
 8. Other coding rules
    - Do not use any or unknown type, always use a specific type (strict rule)
+
+9. Multi-step tasks
+   - For multi-step tasks, always break down the task into smaller sub-tasks and create a to-do list before starting.
+   - After completing each sub-task, review the changes and ensure everything is correct before moving on to the next step.
+   - Always do all steps in a single response, do not wait for my confirmation to proceed to the next step.

@@ -1077,7 +1077,8 @@ export async function setLiveSessionRoundAction(
         current_round_question_id: null,
         question_state: "hidden",
         timer_deadline: null,
-        buzzer_enabled: false,
+        // Khởi động thi chung: chuông bật sẵn. Các vòng khác: mặc định tắt.
+        buzzer_enabled: roundType === "khoi_dong",
       })
       .eq("match_id", matchId)
       .eq("status", "running")
@@ -2280,12 +2281,14 @@ export async function setCurrentQuestionAction(
     type RoundQuestionWithRoundType = {
       id: string;
       match_round_id: string;
+      target_player_id?: string | null;
+      meta?: unknown;
       match_rounds: { round_type: string | null } | Array<{ round_type: string | null }> | null;
     };
 
     const { data: roundQuestionRow, error: rqError } = await olympia
       .from("round_questions")
-      .select("id, match_round_id, match_rounds(round_type)")
+      .select("id, match_round_id, target_player_id, meta, match_rounds(round_type)")
       .eq("id", roundQuestionId)
       .maybeSingle();
     if (rqError) return { error: rqError.message };
@@ -2296,6 +2299,26 @@ export async function setCurrentQuestionAction(
       ? (roundQuestion.match_rounds[0] ?? null)
       : roundQuestion.match_rounds;
     const resolvedRoundType = roundTypeJoin?.round_type ?? null;
+
+    const isKhoiDong = resolvedRoundType === "khoi_dong";
+    const rqTarget = (roundQuestion as unknown as { target_player_id?: string | null })
+      ?.target_player_id;
+    const khoiDongInfo =
+      isKhoiDong && !rqTarget
+        ? parseKhoiDongCodeInfoFromMeta((roundQuestion as unknown as { meta?: unknown })?.meta)
+        : null;
+    const isKhoiDongPersonal = Boolean(rqTarget || khoiDongInfo?.kind === "personal");
+
+    // Khởi động thi chung: reset khóa lượt mỗi câu để buzzer hoạt động đúng theo câu.
+    if (isKhoiDong && !isKhoiDongPersonal) {
+      const { error: resetErr } = await olympia
+        .from("round_questions")
+        .update({ target_player_id: null })
+        .eq("id", roundQuestion.id);
+      if (resetErr) {
+        console.warn("[Olympia] reset target_player_id failed:", resetErr.message);
+      }
+    }
 
     const deadline =
       typeof durationMs === "number" && Number.isFinite(durationMs)
@@ -2311,8 +2334,8 @@ export async function setCurrentQuestionAction(
         // Đổi câu luôn tự tắt màn chờ để hiển thị câu mới.
         question_state: "showing",
         timer_deadline: deadline,
-        // Mặc định tắt chuông khi show câu; host sẽ bật lại nếu cần.
-        buzzer_enabled: false,
+        // Khởi động thi chung: chuông bật sẵn. Các trường hợp khác: mặc định tắt.
+        buzzer_enabled: isKhoiDong && !isKhoiDongPersonal,
       })
       .eq("id", session.id);
 
@@ -2456,7 +2479,8 @@ export async function advanceCurrentQuestionAction(
     if (!nextQuestion) return { error: "Vòng này chưa có câu hỏi." };
 
     // Mặc định: chuyển câu -> nếu autoShow=1 thì show ngay, còn lại bật màn chờ (hidden).
-    let shouldAutoShow = autoShow;
+    // Lưu ý: autoShow=1 (từ "chấm & chuyển") phải được tôn trọng tuyệt đối.
+    let shouldAutoShow = Boolean(autoShow);
     // Khởi động (thi riêng): khi sang câu của thí sinh khác hoặc sang thi chung,
     // không auto-show để tránh "nhảy" sang câu người khác ngay sau khi hết lượt.
     if (
@@ -2466,35 +2490,40 @@ export async function advanceCurrentQuestionAction(
       typeof currentOrderIndex === "number" &&
       Number.isFinite(currentOrderIndex)
     ) {
-      const currentRow = currentQuestion as unknown as {
-        target_player_id?: string | null;
-        meta?: unknown;
-      };
-      const nextRow = nextQuestion as unknown as {
-        target_player_id?: string | null;
-        meta?: unknown;
-      };
+      if (autoShow) {
+        // explicit autoShow: không áp rule chặn auto-show.
+      } else {
+        const currentRow = currentQuestion as unknown as {
+          target_player_id?: string | null;
+          meta?: unknown;
+        };
+        const nextRow = nextQuestion as unknown as {
+          target_player_id?: string | null;
+          meta?: unknown;
+        };
 
-      const currentInfo = !currentRow?.target_player_id
-        ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
-        : null;
-      const nextInfo = !nextRow?.target_player_id
-        ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
-        : null;
+        const currentInfo = !currentRow?.target_player_id
+          ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
+          : null;
+        const nextInfo = !nextRow?.target_player_id
+          ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
+          : null;
 
-      const currentIsPersonal = Boolean(
-        currentRow?.target_player_id || currentInfo?.kind === "personal"
-      );
-      const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
-      const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
-      const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
+        const currentIsPersonal = Boolean(
+          currentRow?.target_player_id || currentInfo?.kind === "personal"
+        );
+        const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
+        const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
+        const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
 
-      // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
-      const crossingToAnotherPlayer =
-        currentIsPersonal &&
-        (!nextIsPersonal || (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
-      if (crossingToAnotherPlayer) {
-        shouldAutoShow = false;
+        // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
+        const crossingToAnotherPlayer =
+          currentIsPersonal &&
+          (!nextIsPersonal ||
+            (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
+        if (crossingToAnotherPlayer) {
+          shouldAutoShow = false;
+        }
       }
     }
 
@@ -2504,6 +2533,30 @@ export async function advanceCurrentQuestionAction(
         : null;
     const nextQuestionState = shouldAutoShow ? "showing" : "hidden";
 
+    const nextInfo =
+      session.current_round_type === "khoi_dong" && !nextQuestion.target_player_id
+        ? parseKhoiDongCodeInfoFromMeta((nextQuestion as unknown as { meta?: unknown })?.meta)
+        : null;
+    const nextIsKhoiDongPersonal =
+      session.current_round_type === "khoi_dong" &&
+      Boolean(nextQuestion.target_player_id || nextInfo?.kind === "personal");
+
+    // Khởi động thi chung: reset khóa lượt để buzzer reset theo câu.
+    if (session.current_round_type === "khoi_dong" && !nextIsKhoiDongPersonal) {
+      const { error: resetErr } = await olympia
+        .from("round_questions")
+        .update({ target_player_id: null })
+        .eq("id", nextQuestion.id);
+      if (resetErr) {
+        console.warn("[Olympia] reset target_player_id failed:", resetErr.message);
+      }
+    }
+
+    const nextBuzzerEnabled =
+      nextQuestionState === "showing" &&
+      session.current_round_type === "khoi_dong" &&
+      !nextIsKhoiDongPersonal;
+
     const { error: updateError } = await olympia
       .from("live_sessions")
       .update({
@@ -2511,7 +2564,7 @@ export async function advanceCurrentQuestionAction(
         // Khi chuyển câu: mặc định bật màn chờ (hidden) + tắt chuông. Nếu autoShow=1 thì hiển thị ngay.
         question_state: nextQuestionState,
         timer_deadline: timerDeadline,
-        buzzer_enabled: false,
+        buzzer_enabled: nextBuzzerEnabled,
       })
       .eq("id", session.id);
 

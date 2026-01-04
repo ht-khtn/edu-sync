@@ -2009,6 +2009,12 @@ export async function confirmDecisionFormAction(formData: FormData): Promise<Act
   return await confirmDecisionAction({}, formData);
 }
 
+// Dùng cho <form action={...}> khi không cần nhận ActionState trả về.
+// Tránh tạo inline action trong Server Component (dễ bị coi là function thường).
+export async function confirmDecisionVoidFormAction(formData: FormData): Promise<void> {
+  await confirmDecisionAction({}, formData);
+}
+
 export async function setGuestMediaControlAction(
   _: ActionState,
   formData: FormData

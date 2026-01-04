@@ -27,6 +27,7 @@ import {
   autoScoreTangTocFormAction,
   confirmDecisionAndAdvanceFormAction,
   confirmDecisionFormAction,
+  confirmDecisionVoidFormAction,
   confirmObstacleGuessFormAction,
   confirmVcnvRowDecisionFormAction,
   confirmVeDichMainDecisionFormAction,
@@ -1345,14 +1346,9 @@ export default async function OlympiaHostConsolePage({
 
                         const labels = getDecisionLabels(pl.id)
 
-                        const decisionFormAction = async (formData: FormData): Promise<void> => {
-                          if (isVcnv) {
-                            await confirmVcnvRowDecisionFormAction(formData)
-                            return
-                          }
-
-                          await confirmDecisionFormAction(formData)
-                        }
+                        const decisionFormAction = isVcnv
+                          ? confirmVcnvRowDecisionFormAction
+                          : confirmDecisionVoidFormAction
 
                         return (
                           <div key={pl.id} className="rounded-md border bg-background p-3">

@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useCallback } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympia
 import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
 import { toast } from 'sonner'
+import { OlympiaQuestionsPreloadOverlay } from '@/components/olympia/shared/game/OlympiaQuestionsPreloadOverlay'
 
 import { cn } from '@/utils/cn'
 
@@ -69,6 +70,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
 
+  // Blocking preload overlay (không có nút huỷ)
+  // Ưu tiên preload từ initialData để chạy ngay khi mount.
+  const preloadRoundQuestions = useMemo(() => initialData.roundQuestions ?? [], [initialData.roundQuestions])
+
   // Toast notifications for feedback
   useEffect(() => {
     const answerFeedback = answerState.error ?? answerState.success
@@ -80,7 +85,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       }
     }
   }, [answerState.error, answerState.success])
-
 
   useEffect(() => {
     const buzzerFeedback = buzzerState.error ?? buzzerState.success
@@ -136,14 +140,14 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     key: null,
   })
 
-  const formatPlayerLabel = (playerId: string | null | undefined) => {
+  const formatPlayerLabel = useCallback((playerId: string | null | undefined) => {
     if (!playerId) return '—'
     const p = players.find((row) => row.id === playerId)
     if (!p) return playerId
     const seat = typeof p.seat_index === 'number' ? p.seat_index : '—'
     const name = p.display_name ?? 'Thí sinh'
     return `Ghế ${seat} · ${name}`
-  }
+  }, [players])
 
   const currentQuestionId = session.current_round_question_id
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
@@ -188,7 +192,12 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       currentQuestionId &&
       ((questionState === 'showing' && isViewerTarget) || (isStealWindow && isViewerStealWinner))
     )
-  const disableAnswerSubmit = isVeDich ? !canSubmitVeDich : disableInteractions
+
+  // Quy tắc chung: ngoài VCNV, nếu đã có target_player_id thì chỉ target mới được gửi.
+  // (target có thể là lượt cá nhân hoặc người bấm chuông thắng).
+  const isLockedToTarget = roundType !== 'vcnv' && Boolean(targetPlayerId)
+  const canSubmitGeneric = !disableInteractions && (!isLockedToTarget || Boolean(isViewerTarget))
+  const disableAnswerSubmit = isVeDich ? !canSubmitVeDich : !canSubmitGeneric
 
   const canBuzzVeDich =
     !disableInteractions &&
@@ -199,6 +208,37 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     )
   const disableBuzz = (session.buzzer_enabled === false) || (isVeDich ? !canBuzzVeDich : disableInteractions)
 
+  const isSessionRunning = session.status === 'running'
+  const isWaitingScreen = !isMc && questionState === 'hidden'
+
+  const viewerSeatNameText = useMemo(() => {
+    if (resolvedViewerMode !== 'player') return null
+    if (!viewerPlayer) return null
+    const seat = typeof viewerPlayer.seat_index === 'number' ? viewerPlayer.seat_index : null
+    const name = viewerPlayer.display_name ?? 'Thí sinh'
+    return seat != null ? `Ghế ${seat} · ${name}` : name
+  }, [resolvedViewerMode, viewerPlayer])
+
+  const turnStatusText = useMemo(() => {
+    if (resolvedViewerMode !== 'player') return null
+    if (isWaitingScreen) return null
+    if (!currentQuestionId) return 'Chưa có câu hỏi'
+
+    // Ưu tiên hiển thị trạng thái buzzer (nếu có người thắng) để đúng trường hợp cướp chuông.
+    const winnerBuzzId =
+      buzzerEvents
+        ?.filter((e) => e.round_question_id === currentQuestionId)
+        .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
+        ?.player_id ?? null
+
+    if (winnerBuzzId) return `Đang trả lời: ${formatPlayerLabel(winnerBuzzId)}`
+    if (session.buzzer_enabled !== false && (questionState === 'showing' || isStealWindow)) {
+      return 'Chưa ai bấm chuông'
+    }
+    if (targetPlayerId) return `Lượt: ${formatPlayerLabel(targetPlayerId)}`
+    return '—'
+  }, [buzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, questionState, resolvedViewerMode, session.buzzer_enabled, targetPlayerId])
+
   void answers
   void starUses
   void isKhoiDong
@@ -207,9 +247,6 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   const viewerTotalScore = viewerPlayer?.id ? (scoreboard.find((s) => s.id === viewerPlayer.id)?.total ?? 0) : null
   void showQuestionText
-  const isSessionRunning = session.status === 'running'
-  const isWaitingScreen = !isMc && questionState === 'hidden'
-
   const playerTurnSuffix =
     resolvedViewerMode === 'player' && !isWaitingScreen && targetPlayerId
       ? ` · Lượt: ${formatPlayerLabel(targetPlayerId)}`
@@ -427,398 +464,409 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   }, [buzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
 
   return (
-    <div
-      className="min-h-screen bg-black text-white flex flex-col"
-      style={{
-        backgroundImage: isWaitingScreen
-          ? `url('/olympia-theme/pointscreen_default_O22_new.png')`
-          : `url('/olympia-theme/default_background.png')`,
-        backgroundSize: 'contain',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        backgroundColor: '#000',
-      }}
-    >
-      {/* HUD (ẩn ở guest) */}
-      {!isGuest ? (
-        <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-          <div className="min-w-0 flex flex-row gap-1">
-            <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
-              <p className="text-xs uppercase tracking-widest text-slate-200">
-                {questionTitle}
-                {playerTurnSuffix}
-              </p>
-              <p className="text-sm text-slate-100 truncate">{match.name}</p>
+    <>
+      <OlympiaQuestionsPreloadOverlay roundQuestions={preloadRoundQuestions} />
+      <div
+        className="min-h-screen bg-black text-white flex flex-col"
+        style={{
+          backgroundImage: isWaitingScreen
+            ? `url('/olympia-theme/pointscreen_default_O22_new.png')`
+            : `url('/olympia-theme/default_background.png')`,
+          backgroundSize: 'contain',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: '#000',
+        }}
+      >
+        {/* HUD (ẩn ở guest) */}
+        {!isGuest ? (
+          <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+            <div className="min-w-0 flex flex-row gap-1">
+              <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 inline-w-fit">
+                <p className="text-xs uppercase tracking-widest text-slate-200">
+                  {questionTitle}
+                  {playerTurnSuffix}
+                </p>
+                <p className="text-sm text-slate-100 truncate">{match.name}</p>
+              </div>
             </div>
 
-          </div>
+            <div className="min-w-0 flex-1 flex justify-center">
+              {viewerSeatNameText || turnStatusText ? (
+                <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center max-w-[520px]">
+                  <p className="text-xs uppercase tracking-widest text-slate-200 truncate">{viewerSeatNameText ?? '—'}</p>
+                  <p className="text-sm text-slate-100 truncate">{turnStatusText ?? '—'}</p>
+                </div>
+              ) : null}
+            </div>
 
-          <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
-                session.timer_deadline
-                  ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
-                  : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
+                  session.timer_deadline
+                    ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
+                    : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+                )}
+              >
+                {timerLabel}
+              </div>
+
+              {viewerTotalScore != null ? (
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
+                  <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
+                </div>
+              ) : (
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
+                  <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
+                </div>
               )}
-            >
-              {timerLabel}
             </div>
+          </header>
+        ) : null}
 
-            {viewerTotalScore != null ? (
-              <div className="text-right">
-                <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
-                <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
-              </div>
-            ) : (
-              <div className="text-right">
-                <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
-                <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
-              </div>
-            )}
-          </div>
-        </header>
-      ) : null}
+        {/* Overlay bảng điểm lớn (đồng bộ theo host) */}
+        {showBigScoreboard ? (
+          <div className="fixed inset-0 z-[60]">
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage: `url('/olympia-theme/Result.png')`,
+                backgroundSize: 'contain',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                backgroundColor: '#000',
+              }}
+            />
+            <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
+              <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
+                    <p className="text-sm text-slate-100 truncate">{match.name}</p>
+                  </div>
+                </div>
 
-      {/* Overlay bảng điểm lớn (đồng bộ theo host) */}
-      {showBigScoreboard ? (
-        <div className="fixed inset-0 z-[60]">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `url('/olympia-theme/Result.png')`,
-              backgroundSize: 'contain',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
-              backgroundColor: '#000',
-            }}
-          />
-          <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
-            <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
-                  <p className="text-sm text-slate-100 truncate">{match.name}</p>
+                <div className="mt-6 grid gap-3">
+                  {scoreboard.length > 0 ? (
+                    scoreboard.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 px-5 py-4"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-lg sm:text-xl font-semibold text-slate-50 truncate">
+                            {p.name}
+                          </p>
+                          <p className="text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
+                        </div>
+                        <p className="text-3xl sm:text-4xl font-mono font-semibold text-white">{p.total}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center text-slate-200">Chưa có dữ liệu điểm.</div>
+                  )}
                 </div>
               </div>
-
-              <div className="mt-6 grid gap-3">
-                {scoreboard.length > 0 ? (
-                  scoreboard.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 px-5 py-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-lg sm:text-xl font-semibold text-slate-50 truncate">
-                          {p.name}
-                        </p>
-                        <p className="text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
-                      </div>
-                      <p className="text-3xl sm:text-4xl font-mono font-semibold text-white">{p.total}</p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-slate-200">Chưa có dữ liệu điểm.</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* MAIN SCREEN */}
-      <main
-        className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-44"
-
-      >
-        {!isSessionRunning ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80">
-            <div className="text-center space-y-2">
-              <p className="text-xs uppercase tracking-widest text-slate-200">Trạng thái</p>
-              <p className="text-2xl font-semibold">Phòng chưa mở</p>
-              <p className="text-sm text-slate-200">Hiện tại: {questionStateText}</p>
             </div>
           </div>
         ) : null}
 
-        {isWaitingScreen ? (
-          <div className=""></div>
-        ) : (
-          <div className="w-full max-w-5xl text-center">
-            <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
-              {questionText?.trim() ? questionText : '—'}
-            </p>
+        {/* MAIN SCREEN */}
+        <main
+          className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-44"
 
-            {(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') ? (
-              <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
-                {mediaUrl ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-slate-300">Ảnh/Video</p>
-                    {mediaKind === 'image' ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={mediaUrl}
-                        alt="Media câu hỏi"
-                        className="w-full max-h-[420px] object-contain rounded"
-                      />
-                    ) : mediaKind === 'video' ? (
-                      <video
-                        ref={syncedVideoRef}
-                        playsInline
-                        src={mediaUrl}
-                        className="w-full max-h-[420px] rounded bg-black pointer-events-none"
-                        tabIndex={-1}
-                      />
-                    ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                      <div className="aspect-video w-full overflow-hidden rounded bg-black">
-                        <iframe
-                          src={youtubeEmbedUrl}
-                          title="Video câu hỏi"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                          className="h-full w-full"
-                        />
-                      </div>
-                    ) : (
-                      <a
-                        href={mediaUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-sky-300 hover:underline break-all"
-                      >
-                        {mediaUrl}
-                      </a>
-                    )}
-                  </div>
-                ) : null}
-
-                {audioUrl && isGuest ? (
-                  // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
-                  <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
-                ) : null}
+        >
+          {!isSessionRunning ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80">
+              <div className="text-center space-y-2">
+                <p className="text-xs uppercase tracking-widest text-slate-200">Trạng thái</p>
+                <p className="text-2xl font-semibold">Phòng chưa mở</p>
+                <p className="text-sm text-slate-200">Hiện tại: {questionStateText}</p>
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {roundType === 'vcnv' && obstacle ? (
-              (() => {
-                const byPos = new Map<number, (typeof obstacleTiles)[number]>()
-                for (const t of obstacleTiles ?? []) {
-                  if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
-                }
+          {isWaitingScreen ? (
+            <div className=""></div>
+          ) : (
+            <div className="w-full max-w-5xl text-center">
+              <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
+                {questionText?.trim() ? questionText : '—'}
+              </p>
 
-                const getRqAnswer = (rqId: string | null | undefined) => {
-                  if (!rqId) return ''
-                  const rq = roundQuestions.find((q) => q.id === rqId) ?? null
-                  const raw = (rq?.answer_text ?? '').trim()
-                  return raw
-                }
-
-                const buildBoxes = (answerText: string, reveal: boolean) => {
-                  const chars = Array.from(answerText)
-                  return (
-                    <div className="flex flex-wrap justify-center gap-1">
-                      {chars.map((ch, idx) => {
-                        if (ch === ' ') return <span key={idx} className="w-2" />
-                        return (
-                          <span
-                            key={idx}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/60 text-sm font-semibold"
-                            aria-label={reveal ? ch.toUpperCase() : 'Ô chữ'}
-                          >
-                            {reveal ? ch.toUpperCase() : ''}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  )
-                }
-
-                const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
-                  { pos: 1, label: '1', className: 'left-2 top-2' },
-                  { pos: 2, label: '2', className: 'right-2 top-2' },
-                  { pos: 3, label: '3', className: 'left-2 bottom-2' },
-                  { pos: 4, label: '4', className: 'right-2 bottom-2' },
-                  { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
-                ]
-
-                const renderRow = (pos: number, title: string) => {
-                  const tile = byPos.get(pos) ?? null
-                  const answer = getRqAnswer(tile?.round_question_id)
-                  const reveal = Boolean(tile?.is_open)
-
-                  return (
-                    <div className="space-y-1">
-                      <p className="text-xs text-slate-300">{title}</p>
-                      {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-slate-400">(Chưa có đáp án)</p>}
-                    </div>
-                  )
-                }
-
-                return (
-                  <div className="mt-8 grid gap-6 md:grid-cols-2 md:items-start text-left">
+              {(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') ? (
+                <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
+                  {mediaUrl ? (
                     <div className="space-y-2">
-                      <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
-                        {obstacle.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={obstacle.image_url}
-                            alt={obstacle.title ?? 'Chướng ngại vật'}
-                            className="h-64 w-full object-cover"
+                      <p className="text-xs text-slate-300">Ảnh/Video</p>
+                      {mediaKind === 'image' ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="Media câu hỏi"
+                          className="w-full max-h-[420px] object-contain rounded"
+                        />
+                      ) : mediaKind === 'video' ? (
+                        <video
+                          ref={syncedVideoRef}
+                          playsInline
+                          src={mediaUrl}
+                          className="w-full max-h-[420px] rounded bg-black pointer-events-none"
+                          tabIndex={-1}
+                        />
+                      ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                        <div className="aspect-video w-full overflow-hidden rounded bg-black">
+                          <iframe
+                            src={youtubeEmbedUrl}
+                            title="Video câu hỏi"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            className="h-full w-full"
                           />
-                        ) : (
-                          <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
-                            (Chưa có ảnh CNV)
-                          </div>
-                        )}
+                        </div>
+                      ) : (
+                        <a
+                          href={mediaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-sky-300 hover:underline break-all"
+                        >
+                          {mediaUrl}
+                        </a>
+                      )}
+                    </div>
+                  ) : null}
 
-                        {tilesForImage.map((t) => {
-                          const tile = byPos.get(t.pos) ?? null
-                          if (tile?.is_open) return null
+                  {audioUrl && isGuest ? (
+                    // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
+                    <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
+                  ) : null}
+                </div>
+              ) : null}
+
+              {roundType === 'vcnv' && obstacle ? (
+                (() => {
+                  const byPos = new Map<number, (typeof obstacleTiles)[number]>()
+                  for (const t of obstacleTiles ?? []) {
+                    if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
+                  }
+
+                  const getRqAnswer = (rqId: string | null | undefined) => {
+                    if (!rqId) return ''
+                    const rq = roundQuestions.find((q) => q.id === rqId) ?? null
+                    const raw = (rq?.answer_text ?? '').trim()
+                    return raw
+                  }
+
+                  const buildBoxes = (answerText: string, reveal: boolean) => {
+                    const chars = Array.from(answerText)
+                    return (
+                      <div className="flex flex-wrap justify-center gap-1">
+                        {chars.map((ch, idx) => {
+                          if (ch === ' ') return <span key={idx} className="w-2" />
                           return (
-                            <div
-                              key={t.pos}
-                              className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border border-slate-700 bg-slate-950/70`}
-                              aria-label={`Ô ${t.label} (che)`}
+                            <span
+                              key={idx}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/60 text-sm font-semibold"
+                              aria-label={reveal ? ch.toUpperCase() : 'Ô chữ'}
                             >
-                              <span className="text-sm font-semibold text-slate-100">{t.label}</span>
-                            </div>
+                              {reveal ? ch.toUpperCase() : ''}
+                            </span>
                           )
                         })}
                       </div>
+                    )
+                  }
 
-                      <p className="text-xs text-slate-300">
-                        CNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
-                      </p>
-                    </div>
+                  const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
+                    { pos: 1, label: '1', className: 'left-2 top-2' },
+                    { pos: 2, label: '2', className: 'right-2 top-2' },
+                    { pos: 3, label: '3', className: 'left-2 bottom-2' },
+                    { pos: 4, label: '4', className: 'right-2 bottom-2' },
+                    { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
+                  ]
 
-                    <div className="space-y-3 text-center">
-                      {renderRow(1, 'Hàng 1')}
-                      {renderRow(2, 'Hàng 2')}
-                      {renderRow(3, 'Hàng 3')}
-                      {renderRow(4, 'Hàng 4')}
-                      {renderRow(5, 'Trung tâm')}
-                      {!disableInteractions ? (
-                        <p className="mt-2 text-xs text-slate-300">
-                          Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.
+                  const renderRow = (pos: number, title: string) => {
+                    const tile = byPos.get(pos) ?? null
+                    const answer = getRqAnswer(tile?.round_question_id)
+                    const reveal = Boolean(tile?.is_open)
+
+                    return (
+                      <div className="space-y-1">
+                        <p className="text-xs text-slate-300">{title}</p>
+                        {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-slate-400">(Chưa có đáp án)</p>}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="mt-8 grid gap-6 md:grid-cols-2 md:items-start text-left">
+                      <div className="space-y-2">
+                        <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
+                          {obstacle.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={obstacle.image_url}
+                              alt={obstacle.title ?? 'Chướng ngại vật'}
+                              className="h-64 w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
+                              (Chưa có ảnh CNV)
+                            </div>
+                          )}
+
+                          {tilesForImage.map((t) => {
+                            const tile = byPos.get(t.pos) ?? null
+                            if (tile?.is_open) return null
+                            return (
+                              <div
+                                key={t.pos}
+                                className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border border-slate-700 bg-slate-950/70`}
+                                aria-label={`Ô ${t.label} (che)`}
+                              >
+                                <span className="text-sm font-semibold text-slate-100">{t.label}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        <p className="text-xs text-slate-300">
+                          CNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
                         </p>
-                      ) : null}
+                      </div>
+
+                      <div className="space-y-3 text-center">
+                        {renderRow(1, 'Hàng 1')}
+                        {renderRow(2, 'Hàng 2')}
+                        {renderRow(3, 'Hàng 3')}
+                        {renderRow(4, 'Hàng 4')}
+                        {renderRow(5, 'Trung tâm')}
+                        {!disableInteractions ? (
+                          <p className="mt-2 text-xs text-slate-300">
+                            Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                )
-              })()
-            ) : null}
+                  )
+                })()
+              ) : null}
 
-            {isMc && (answerText || noteText) ? (
-              <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
-                {answerText ? (
-                  <p className="text-sm whitespace-pre-wrap">
-                    <span className="text-slate-200">Đáp án:</span> {answerText}
-                  </p>
-                ) : null}
-                {noteText ? (
-                  <p className="mt-2 text-sm whitespace-pre-wrap">
-                    <span className="text-slate-200">Ghi chú:</span> {noteText}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {/* Top scoreboard mini */}
-        {isMc && scoreboard.length > 0 ? (
-          <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
-            <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
-            <div className="mt-1 space-y-1">
-              {scoreboard.slice(0, 4).map((p, idx) => (
-                <div key={p.id} className="flex items-center justify-between gap-3">
-                  <span className="text-slate-100">
-                    {idx + 1}. Ghế {p.seat ?? '—'}
-                  </span>
-                  <span className="font-mono text-white">{p.total}</span>
+              {isMc && (answerText || noteText) ? (
+                <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
+                  {answerText ? (
+                    <p className="text-sm whitespace-pre-wrap">
+                      <span className="text-slate-200">Đáp án:</span> {answerText}
+                    </p>
+                  ) : null}
+                  {noteText ? (
+                    <p className="mt-2 text-sm whitespace-pre-wrap">
+                      <span className="text-slate-200">Ghi chú:</span> {noteText}
+                    </p>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-
-      </main>
-
-      {/* INTERACTION BAR (ẩn ở guest) */}
-      {!isGuest ? (
-        <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-          {disableInteractions ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-slate-200">
-                {isMc
-                  ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
-                  : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-1 md:items-center">
-              {/* Answer section - center, only show when NOT waiting screen */}
-              {!isWaitingScreen && (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex flex-wrap gap-3 justify-center">
-                    {roundType !== 'khoi_dong' ? (
-                      <form action={answerAction} className="flex items-center gap-2">
-                        <input type="hidden" name="sessionId" value={session.id} />
-                        <Input
-                          name="answer"
-                          placeholder="Nhập đáp án"
-                          disabled={disableAnswerSubmit}
-                          className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                        />
-                        <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
-                      </form>
-                    ) : null}
-
-                  </div>
-                </div>
-              )}
+              ) : null}
             </div>
           )}
 
-          {/* Refresh button - footer right */}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2">
-            <Button
-              size="icon"
-              variant="outline"
-              className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
-              onClick={refreshFromServer}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
+          {/* Top scoreboard mini */}
+          {isMc && scoreboard.length > 0 ? (
+            <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+              <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
+              <div className="mt-1 space-y-1">
+                {scoreboard.slice(0, 4).map((p, idx) => (
+                  <div key={p.id} className="flex items-center justify-between gap-3">
+                    <span className="text-slate-100">
+                      {idx + 1}. Ghế {p.seat ?? '—'}
+                    </span>
+                    <span className="font-mono text-white">{p.total}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+
+        </main>
+
+        {/* INTERACTION BAR (ẩn ở guest) */}
+        {!isGuest ? (
+          <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+            {disableInteractions ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-200">
+                  {isMc
+                    ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
+                    : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-1 md:items-center">
+                {/* Answer section - center, only show when NOT waiting screen */}
+                {!isWaitingScreen && (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-wrap gap-3 justify-center">
+                      {roundType !== 'khoi_dong' ? (
+                        <form action={answerAction} className="flex items-center gap-2">
+                          <input type="hidden" name="sessionId" value={session.id} />
+                          <Input
+                            name="answer"
+                            placeholder="Nhập đáp án"
+                            disabled={disableAnswerSubmit}
+                            className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                          />
+                          <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
+                        </form>
+                      ) : null}
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Refresh button - footer right */}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <Button
+                size="icon"
+                variant="outline"
+                className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
+                onClick={refreshFromServer}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+          </footer>
+        ) : null}
+
+        {/* Buzzer FAB - bottom right corner */}
+        {!disableInteractions && session.buzzer_enabled !== false && (
+          <div className="fixed bottom-24 right-4 z-50">
+            <form action={buzzerAction}>
+              <input type="hidden" name="sessionId" value={session.id} />
+              <Button
+                type="submit"
+                disabled={disableBuzz}
+                size="lg"
+                className={cn(
+                  'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
+                  'bg-blue-600 hover:bg-blue-700 text-white',
+                  'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100'
+                )}
+                variant="default"
+              >
+                <Bell className="w-24 h-24" />
+              </Button>
+            </form>
           </div>
-        </footer>
-      ) : null}
-
-      {/* Buzzer FAB - bottom right corner */}
-      {!disableInteractions && session.buzzer_enabled !== false && (
-        <div className="fixed bottom-24 right-4 z-50">
-          <form action={buzzerAction}>
-            <input type="hidden" name="sessionId" value={session.id} />
-            <Button
-              type="submit"
-              disabled={disableBuzz}
-              size="lg"
-              className={cn(
-                'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
-                'bg-blue-600 hover:bg-blue-700 text-white',
-                'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100'
-              )}
-              variant="default"
-            >
-              <Bell className="w-24 h-24" />
-            </Button>
-          </form>
-        </div>
-      )}
+        )}
 
 
-    </div>
+      </div>
+    </>
   )
 }

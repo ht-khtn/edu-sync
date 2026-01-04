@@ -1682,6 +1682,18 @@ export async function triggerBuzzerAction(
 
     if (insertError) return { error: insertError.message };
 
+    // Khi có người bấm chuông thắng (không phải cửa cướp Về đích), coi như "lượt cá nhân".
+    // Mục tiêu: khóa quyền gửi đáp án cho các thí sinh khác và bật chấm điểm nhanh cho đúng người.
+    if (isWinner && eventType === "buzz" && session.current_round_type !== "vcnv") {
+      const { error: lockErr } = await olympia
+        .from("round_questions")
+        .update({ target_player_id: playerRow.id })
+        .eq("id", session.current_round_question_id);
+      if (lockErr) {
+        console.warn("[Olympia][Buzzer] Failed to set target_player_id", lockErr.message);
+      }
+    }
+
     // Về đích: nếu đang ở cửa cướp và bạn là người thắng, cho 3 giây trả lời và đóng chuông.
     if (isWinner && eventType === "steal") {
       const deadline = new Date(Date.now() + 3000).toISOString();
@@ -1899,6 +1911,13 @@ export async function confirmDecisionAction(
         currentTargetPlayerId !== playerId
       ) {
         return { error: "Đây là lượt cá nhân, chỉ được chấm cho thí sinh đang thi." };
+      }
+
+      // Enforce chung: nếu câu đang lock target_player_id (do bấm chuông giành quyền / thi riêng)
+      // thì chỉ được chấm cho đúng thí sinh đó.
+      // (VCNV có cơ chế riêng, không áp dụng rule này ở đây.)
+      if (roundType !== "vcnv" && currentTargetPlayerId && currentTargetPlayerId !== playerId) {
+        return { error: "Chỉ được chấm cho thí sinh đang giành quyền trả lời." };
       }
 
       // Enforce: vòng Về đích chỉ chấm cho thí sinh chính.

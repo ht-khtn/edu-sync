@@ -10,6 +10,7 @@ import { MatchQuestionSetSelector } from '@/components/olympia/admin/matches/Mat
 import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPlayersReorder'
 import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
 import { CopyMatchIdButton } from '@/components/olympia/admin/matches/CopyMatchIdButton'
+import { CopyRoomLinksPanel } from '@/components/olympia/admin/matches/CopyRoomLinksPanel'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resetLiveSessionAndScoresAction } from '@/app/(olympia)/olympia/actions'
 
@@ -407,24 +408,36 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Thông tin giải đấu</CardTitle>
-            <CardDescription>Giải mà trận này trực thuộc.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            {tournament ? (
-              <>
-                <p className="text-base font-medium text-slate-900">{tournament.name}</p>
-                <p>Trạng thái: {tournament.status ?? '—'}</p>
-                <p>Bắt đầu: {formatDate(tournament.starts_at)}</p>
-                <p>Kết thúc: {formatDate(tournament.ends_at)}</p>
-              </>
-            ) : (
-              <p>Trận chưa được gán vào giải đấu cụ thể.</p>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Link phòng thi</CardTitle>
+              <CardDescription>Copy nhanh link vào phòng thi cho thí sinh / MC / Guest.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CopyRoomLinksPanel joinCode={liveSession?.join_code ?? null} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Thông tin giải đấu</CardTitle>
+              <CardDescription>Giải mà trận này trực thuộc.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              {tournament ? (
+                <>
+                  <p className="text-base font-medium text-slate-900">{tournament.name}</p>
+                  <p>Trạng thái: {tournament.status ?? '—'}</p>
+                  <p>Bắt đầu: {formatDate(tournament.starts_at)}</p>
+                  <p>Kết thúc: {formatDate(tournament.ends_at)}</p>
+                </>
+              ) : (
+                <p>Trận chưa được gán vào giải đấu cụ thể.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card>

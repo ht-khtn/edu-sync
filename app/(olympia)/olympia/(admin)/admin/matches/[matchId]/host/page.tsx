@@ -5,19 +5,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { HostRoundControls } from '@/components/olympia/admin/matches/HostRoundControls'
 import { HostAutoSync } from '@/components/olympia/admin/matches/HostAutoSync'
-import { HostPreviewQuestionSelect } from '@/components/olympia/admin/matches/HostPreviewQuestionSelect'
 import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboard'
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
-import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/HostRealtimeEventsListener'
+import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/HostQuestionPreviewCard'
+import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuickScorePanel'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
   ArrowLeft,
-  ArrowRight,
   Check,
-  Eye,
   Hand,
   Sparkles,
   Timer,
@@ -214,9 +212,29 @@ async function fetchHostData(matchCode: string) {
   // Route param historically is match UUID, nhưng user cũng hay copy/paste join_code.
   // Hỗ trợ cả 2 để tránh 404.
   let realMatchId: string | null = null
+
+  // 1) Nếu là UUID: ưu tiên coi là matchId, nhưng fallback nếu thực tế là sessionId.
   if (isUuid(matchCode)) {
-    realMatchId = matchCode
+    const { data: matchDirect, error: matchDirectError } = await olympia
+      .from('matches')
+      .select('id, name, status')
+      .eq('id', matchCode)
+      .maybeSingle()
+    if (matchDirectError) throw matchDirectError
+    if (matchDirect) {
+      realMatchId = matchDirect.id
+    } else {
+      // Fallback: treat UUID as live_sessions.id (nhiều người copy nhầm), hoặc join_code (trường hợp join_code dạng UUID).
+      const { data: sessionByIdOrJoin, error: sessionByIdOrJoinError } = await olympia
+        .from('live_sessions')
+        .select('match_id')
+        .or(`id.eq.${matchCode},join_code.eq.${matchCode}`)
+        .maybeSingle()
+      if (sessionByIdOrJoinError) throw sessionByIdOrJoinError
+      realMatchId = sessionByIdOrJoin?.match_id ?? null
+    }
   } else {
+    // 2) Nếu không phải UUID: coi là join_code.
     const { data: sessionByJoin, error: sessionByJoinError } = await olympia
       .from('live_sessions')
       .select('match_id')
@@ -225,6 +243,7 @@ async function fetchHostData(matchCode: string) {
     if (sessionByJoinError) throw sessionByJoinError
     realMatchId = sessionByJoin?.match_id ?? null
   }
+
   if (!realMatchId) return null
 
   const { data: match, error: matchError } = await olympia
@@ -427,34 +446,6 @@ async function fetchHostData(matchCode: string) {
   }
 }
 
-function pickJoin<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null
-  return Array.isArray(value) ? value[0] ?? null : value
-}
-
-function detectMediaKind(url: string | null): 'youtube' | 'video' | 'image' | 'link' | null {
-  if (!url) return null
-  const lower = url.toLowerCase()
-  if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube'
-  if (/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/.test(lower)) return 'video'
-  if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/.test(lower)) return 'image'
-  return 'link'
-}
-
-function toYoutubeEmbed(url: string): string | null {
-  try {
-    const parsed = new URL(url)
-    if (parsed.hostname.includes('youtu.be')) {
-      const id = parsed.pathname.replace('/', '').trim()
-      return id ? `https://www.youtube.com/embed/${id}` : null
-    }
-    const v = parsed.searchParams.get('v')
-    return v ? `https://www.youtube.com/embed/${v}` : null
-  } catch {
-    return null
-  }
-}
-
 export default async function OlympiaHostConsolePage({
   params,
   searchParams,
@@ -577,28 +568,6 @@ export default async function OlympiaHostConsolePage({
         ? liveSession.current_round_question_id
         : null
 
-  const previewRoundQuestion = previewRoundQuestionId
-    ? filteredCurrentRoundQuestions.find((q) => q.id === previewRoundQuestionId) ?? null
-    : null
-
-  const previewIndex = previewRoundQuestionId
-    ? filteredCurrentRoundQuestions.findIndex((q) => q.id === previewRoundQuestionId)
-    : -1
-  const previewPrevId = previewIndex > 0 ? filteredCurrentRoundQuestions[previewIndex - 1]?.id ?? null : null
-  const previewNextId =
-    previewIndex >= 0 && previewIndex < filteredCurrentRoundQuestions.length - 1
-      ? filteredCurrentRoundQuestions[previewIndex + 1]?.id ?? null
-      : null
-
-  const hostPath = `/olympia/admin/matches/${matchId}/host`
-  const buildHostHref = (nextPreviewId: string | null) => {
-    const params = new URLSearchParams()
-    if (nextPreviewId) params.set('preview', nextPreviewId)
-    if (kdSeat != null) params.set('kdSeat', String(kdSeat))
-    const qs = params.toString()
-    return qs ? `${hostPath}?${qs}` : hostPath
-  }
-
   const veDichValueRaw =
     currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
       ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
@@ -674,33 +643,6 @@ export default async function OlympiaHostConsolePage({
     return null
   })()
 
-  type PreviewQuestionType = {
-    code: string
-    category: string | null
-    question_text: string
-    answer_text: string
-    note: string | null
-    image_url: string | null
-    audio_url: string | null
-  }
-
-  const previewJoinedQuestion: PreviewQuestionType | null = previewRoundQuestion ? {
-    code: '',
-    category: null,
-    question_text: (previewRoundQuestion as unknown as RoundQuestionRow).question_text ?? '',
-    answer_text: (previewRoundQuestion as unknown as RoundQuestionRow).answer_text ?? '',
-    note: (previewRoundQuestion as unknown as RoundQuestionRow).note ?? null,
-    image_url: null,
-    audio_url: null,
-  } : null
-  const previewQuestionText = previewJoinedQuestion?.question_text ?? null
-  const previewAnswerText = previewJoinedQuestion?.answer_text ?? null
-  const previewNoteText = previewJoinedQuestion?.note ?? null
-  const previewQuestionCode = previewRoundQuestion
-    ? getMetaCode((previewRoundQuestion as unknown as RoundQuestionRow).meta)
-    : null
-
-
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
@@ -731,544 +673,334 @@ export default async function OlympiaHostConsolePage({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <CardTitle className="text-base">Câu hỏi</CardTitle>
-                  <CardDescription>
-                    {(() => {
-                      if (!liveSession?.current_round_type) return 'Chưa chọn vòng'
-                      const roundText = roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type
-                      if (!allowTargetSelection) return roundText
-                      if (isKhoiDong) {
-                        return typeof kdSeat === 'number'
-                          ? `${roundText} · Thi riêng · Ghế ${kdSeat}`
-                          : `${roundText} · Thi chung`
+          <HostQuestionPreviewCard
+            matchId={match.id}
+            liveSession={liveSession ? {
+              id: liveSession.id ?? null,
+              status: liveSession.status ?? null,
+              question_state: liveSession.question_state ?? null,
+              current_round_type: liveSession.current_round_type ?? null,
+              current_round_id: liveSession.current_round_id ?? null,
+              current_round_question_id: liveSession.current_round_question_id ?? null,
+            } : null}
+            descriptionText={(() => {
+              if (!liveSession?.current_round_type) return 'Chưa chọn vòng'
+              const roundText = roundLabelMap[liveSession.current_round_type] ?? liveSession.current_round_type
+              if (!allowTargetSelection) return roundText
+              if (isKhoiDong) {
+                return typeof kdSeat === 'number'
+                  ? `${roundText} · Thi riêng · Ghế ${kdSeat}`
+                  : `${roundText} · Thi chung`
+              }
+              if (selectedTargetPlayerId) {
+                const p = players.find((x) => x.id === selectedTargetPlayerId)
+                const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
+                return `${roundText} · Thí sinh: ${label}`
+              }
+              return roundText
+            })()}
+            options={filteredCurrentRoundQuestions.map((q) => ({
+              id: q.id,
+              label: `#${q.order_index ?? '?'} · ${getRoundQuestionLabel(q as unknown as RoundQuestionRow)}`,
+            }))}
+            questions={filteredCurrentRoundQuestions as unknown as import('@/components/olympia/admin/matches/HostQuestionPreviewCard').HostPreviewRoundQuestion[]}
+            initialPreviewId={previewRoundQuestionId}
+            triggerReset={liveSession?.current_round_question_id === null}
+            questionsDebug={{
+              totalRoundQuestions: roundQuestions.length,
+              currentRoundQuestionsCount: currentRoundQuestions.length,
+              currentRoundType: liveSession?.current_round_type ?? null,
+              currentRoundId: liveSession?.current_round_id ?? null,
+              byRoundType: questionsByRoundTypeEntries,
+            }}
+            winnerBuzz={winnerBuzz}
+            setCurrentQuestionFormAction={setCurrentQuestionFormAction}
+            setGuestMediaControlAction={setGuestMediaControlAction}
+          />
+
+          {isVcnv && obstacle ? (
+            (() => {
+              const byPos = new Map<number, HostObstacleTileRow>()
+              for (const t of obstacleTiles) {
+                if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
+              }
+
+              const getRq = (rqId: string | null) => {
+                if (!rqId) return null
+                return (
+                  roundQuestions.find((q) => (q as unknown as RoundQuestionRow).id === rqId) as unknown as RoundQuestionRow | undefined
+                ) ?? null
+              }
+
+              const normalizeWord = (text: string | null | undefined) => {
+                const raw = (text ?? '').trim()
+                if (!raw) return ''
+                return raw
+              }
+
+              const buildBoxes = (answerText: string, reveal: boolean) => {
+                const chars = Array.from(answerText)
+                return (
+                  <div className="flex flex-wrap gap-1">
+                    {chars.map((ch, idx) => {
+                      if (ch === ' ') {
+                        return <span key={idx} className="w-2" />
                       }
-                      if (selectedTargetPlayerId) {
-                        const p = players.find((x) => x.id === selectedTargetPlayerId)
-                        const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
-                        return `${roundText} · Thí sinh: ${label}`
-                      }
-                      return roundText
-                    })()}
-                  </CardDescription>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {previewPrevId ? (
-                    <Button asChild size="icon-sm" variant="outline" title="Xem câu trước" aria-label="Xem câu trước">
-                      <Link href={buildHostHref(previewPrevId)}>
-                        <ArrowLeft />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button size="icon-sm" variant="outline" disabled title="Xem câu trước" aria-label="Xem câu trước">
-                      <ArrowLeft />
-                    </Button>
-                  )}
-
-                  <HostPreviewQuestionSelect
-                    value={previewRoundQuestionId ?? ''}
-                    disabled={filteredCurrentRoundQuestions.length === 0}
-                    options={filteredCurrentRoundQuestions.map((q) => ({
-                      id: q.id,
-                      label: `#${q.order_index ?? '?'} · ${getRoundQuestionLabel(q as unknown as RoundQuestionRow)}`,
-                    }))}
-                    triggerReset={liveSession?.current_round_question_id === null}
-                  />
-
-                  {previewNextId ? (
-                    <Button asChild size="icon-sm" variant="outline" title="Xem câu sau" aria-label="Xem câu sau">
-                      <Link href={buildHostHref(previewNextId)}>
-                        <ArrowRight />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button size="icon-sm" variant="outline" disabled title="Xem câu sau" aria-label="Xem câu sau">
-                      <ArrowRight />
-                    </Button>
-                  )}
-
-                  <form action={setCurrentQuestionFormAction} className="flex">
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="roundQuestionId" value={previewRoundQuestionId ?? ''} />
-                    <input type="hidden" name="durationMs" value={5000} />
-                    <Button
-                      type="submit"
-                      size="icon-sm"
-                      disabled={!previewRoundQuestionId}
-                      title="Show lên (đổi câu đang live)"
-                      aria-label="Show lên (đổi câu đang live)"
-                    >
-                      <Eye />
-                    </Button>
-                  </form>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg border bg-background p-4">
-                <details className="mb-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Debug danh sách câu theo vòng
-                  </summary>
-                  <div className="mt-2 space-y-2 text-xs text-muted-foreground">
-                    <p>
-                      current_round_type: <span className="font-mono">{liveSession?.current_round_type ?? '—'}</span>
-                      {' '}· current_round_id: <span className="font-mono">{liveSession?.current_round_id ?? '—'}</span>
-                      {' '}· total RQ: <span className="font-mono">{roundQuestions.length}</span>
-                      {' '}· RQ in current round: <span className="font-mono">{currentRoundQuestions.length}</span>
-                    </p>
-                    {questionsByRoundTypeEntries.length === 0 ? (
-                      <p>(Không có round_questions)</p>
-                    ) : (
-                      <div className="space-y-1">
-                        {questionsByRoundTypeEntries.map((entry) => (
-                          <p key={entry.roundType}>
-                            <span className="font-mono">{entry.roundType}</span>
-                            {': '}
-                            {entry.codes.join(', ')}
-                          </p>
-                        ))}
-                      </div>
-                    )}
+                      const show = reveal ? ch.toUpperCase() : ''
+                      return (
+                        <span
+                          key={idx}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded border bg-white text-sm font-semibold"
+                          aria-label={reveal ? show : 'Ô chữ'}
+                        >
+                          {show}
+                        </span>
+                      )
+                    })}
                   </div>
-                </details>
+                )
+              }
 
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {previewQuestionCode ? `Mã: ${previewQuestionCode}` : null}
-                    {previewQuestionCode ? ' · ' : ''}
-                    {liveSession?.current_round_question_id ? `Live RQ: ${liveSession.current_round_question_id}` : 'Chưa show câu'}
-                    {previewRoundQuestionId && previewRoundQuestionId !== liveSession?.current_round_question_id ? ` · Đang xem: ${previewRoundQuestionId}` : ''}
-                  </p>
-                  {winnerBuzz ? (
-                    <p className="text-xs text-muted-foreground">
-                      Winner: Ghế {normalizePlayerSummary(winnerBuzz.match_players)?.seat_index ?? '—'}
-                    </p>
-                  ) : null}
-                </div>
+              const computeTileStatus = (tile: HostObstacleTileRow | null) => {
+                if (!tile?.round_question_id) return { attempted: false, anyCorrect: false, locked: false }
+                const rows = vcnvAnswerSummary.filter((a) => a.round_question_id === tile.round_question_id)
+                // Chỉ coi là "đã có kết quả" khi host đã chấm (is_correct != null).
+                const attempted = rows.some((r) => r.is_correct != null)
+                const anyCorrect = rows.some((r) => r.is_correct === true)
+                const locked = attempted && !anyCorrect && tile.is_open === false
+                return { attempted, anyCorrect, locked }
+              }
 
-                <p className="mt-3 whitespace-pre-wrap text-lg font-semibold leading-relaxed">
-                  {previewQuestionText ?? (previewRoundQuestion ? `ID: ${getRoundQuestionLabel(previewRoundQuestion as unknown as RoundQuestionRow)}` : 'Chưa có câu hỏi')}
-                </p>
+              const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
+                { pos: 1, label: '1', className: 'left-2 top-2' },
+                { pos: 2, label: '2', className: 'right-2 top-2' },
+                { pos: 3, label: '3', className: 'left-2 bottom-2' },
+                { pos: 4, label: '4', className: 'right-2 bottom-2' },
+                { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
+              ]
 
-                {(() => {
-                  const rq = previewRoundQuestion as unknown as RoundQuestionRow | null
-                  const qsi = pickJoin(rq?.question_set_items)
-                  const q = pickJoin(rq?.questions)
-                  const mediaUrl = (qsi?.image_url ?? q?.image_url ?? null)?.trim() || null
-                  const audioUrl = (qsi?.audio_url ?? q?.audio_url ?? null)?.trim() || null
-                  const kind = detectMediaKind(mediaUrl)
-                  const yt = kind === 'youtube' && mediaUrl ? toYoutubeEmbed(mediaUrl) : null
+              const renderRow = (pos: number, title: string) => {
+                const tile = byPos.get(pos) ?? null
+                const rq = getRq(tile?.round_question_id ?? null)
+                const answer = normalizeWord(rq?.answer_text)
+                const { locked } = computeTileStatus(tile)
+                const reveal = Boolean(tile?.is_open)
 
-                  if (!mediaUrl && !audioUrl) return null
-
-                  return (
-                    <div className="mt-4 rounded-md border bg-white p-3 space-y-3">
-                      {mediaUrl ? (
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold text-slate-700">Ảnh/Video</p>
-                          {kind === 'image' ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={mediaUrl} alt="Media câu hỏi" className="w-full max-h-[360px] object-contain rounded" />
-                          ) : kind === 'video' ? (
-                            <video controls playsInline src={mediaUrl} className="w-full max-h-[360px] rounded bg-black" />
-                          ) : kind === 'youtube' && yt ? (
-                            <div className="aspect-video w-full overflow-hidden rounded bg-black">
-                              <iframe
-                                src={yt}
-                                title="Video câu hỏi"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                allowFullScreen
-                                className="h-full w-full"
-                              />
-                            </div>
-                          ) : (
-                            <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
-                              {mediaUrl}
-                            </a>
-                          )}
-
-                          {kind === 'video' && liveSession?.status === 'running' ? (
-                            <GuestMediaControlButtons matchId={match.id} mediaType="video" action={setGuestMediaControlAction} />
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {audioUrl ? (
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold text-slate-700">Âm thanh</p>
-                          <audio controls src={audioUrl} className="w-full" />
-
-                          {liveSession?.status === 'running' ? (
-                            <GuestMediaControlButtons matchId={match.id} mediaType="audio" action={setGuestMediaControlAction} />
-                          ) : null}
-                        </div>
-                      ) : null}
+                return (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">{title}</p>
+                      <p className="text-xs text-muted-foreground">{reveal ? 'Mở' : locked ? 'Đóng' : 'Chưa mở'}</p>
                     </div>
-                  )
-                })()}
-
-                {previewAnswerText ? (
-                  <div className="mt-4 rounded-md border bg-slate-50 p-3">
-                    <p className="text-xs font-semibold text-slate-700">Đáp án</p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{previewAnswerText}</p>
-                    {previewNoteText ? (
-                      <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">Ghi chú: {previewNoteText}</p>
-                    ) : null}
+                    {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-muted-foreground">(Chưa có đáp án)</p>}
                   </div>
-                ) : null}
+                )
+              }
 
-                {isVcnv && obstacle ? (
-                  (() => {
-                    const byPos = new Map<number, HostObstacleTileRow>()
-                    for (const t of obstacleTiles) {
-                      if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
-                    }
+              return (
+                <div className="rounded-md border bg-background p-3">
+                  <p className="text-xs text-muted-foreground mb-3">
+                    VCNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
+                  </p>
 
-                    const getRq = (rqId: string | null) => {
-                      if (!rqId) return null
-                      return (
-                        roundQuestions.find((q) => (q as unknown as RoundQuestionRow).id === rqId) as unknown as RoundQuestionRow | undefined
-                      ) ?? null
-                    }
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <div className="relative overflow-hidden rounded-md border bg-slate-50">
+                        {obstacle.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={obstacle.image_url}
+                            alt={obstacle.title ?? 'Chướng ngại vật'}
+                            className="h-64 w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground">
+                            (Chưa có ảnh CNV)
+                          </div>
+                        )}
 
-                    const normalizeWord = (text: string | null | undefined) => {
-                      const raw = (text ?? '').trim()
-                      if (!raw) return ''
-                      return raw
-                    }
+                        {tilesForImage.map((t) => {
+                          const tile = byPos.get(t.pos) ?? null
+                          const { locked } = computeTileStatus(tile)
+                          const hidden = Boolean(tile?.is_open)
+                          if (hidden) return null
+                          return (
+                            <div
+                              key={t.pos}
+                              className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border ${locked ? 'bg-slate-200' : 'bg-slate-100'}`}
+                              aria-label={locked ? `Ô ${t.label} (đóng)` : `Ô ${t.label} (che)`}
+                            >
+                              <span className="text-sm font-semibold text-slate-700">{t.label}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
 
-                    const buildBoxes = (answerText: string, reveal: boolean) => {
-                      const chars = Array.from(answerText)
-                      return (
-                        <div className="flex flex-wrap gap-1">
-                          {chars.map((ch, idx) => {
-                            if (ch === ' ') {
-                              return <span key={idx} className="w-2" />
-                            }
-                            const show = reveal ? ch.toUpperCase() : ''
+                    <div className="space-y-3">
+                      {renderRow(1, 'Hàng 1')}
+                      {renderRow(2, 'Hàng 2')}
+                      {renderRow(3, 'Hàng 3')}
+                      {renderRow(4, 'Hàng 4')}
+                      {renderRow(5, 'Trung tâm')}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3">
+                    <div className="rounded-md border bg-slate-50 p-3">
+                      <p className="text-xs font-semibold text-slate-700">Chuông đoán CNV (miệng)</p>
+                      <form action={submitObstacleGuessByHostFormAction} className="mt-2 flex flex-wrap gap-2">
+                        <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                        <select
+                          name="playerId"
+                          className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                          aria-label="Chọn thí sinh đoán CNV"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>
+                            Chọn thí sinh…
+                          </option>
+                          {players.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              Ghế {p.seat_index}{p.display_name ? ` · ${p.display_name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          name="guessText"
+                          className="flex-1 min-w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                          placeholder="Nhập từ khóa CNV…"
+                          aria-label="Từ khóa CNV"
+                        />
+                        <Button type="submit" size="sm" className="h-9">
+                          Ghi nhận
+                        </Button>
+                      </form>
+                    </div>
+
+                    {obstacleGuesses.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">Lượt đoán CNV gần đây</p>
+                        <div className="grid gap-2">
+                          {obstacleGuesses.map((g) => {
+                            const seat = normalizePlayerSummary(g.match_players)?.seat_index
+                            const statusText = g.is_correct ? 'Đúng' : 'Chưa xác nhận/Sai'
                             return (
-                              <span
-                                key={idx}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded border bg-white text-sm font-semibold"
-                                aria-label={reveal ? show : 'Ô chữ'}
-                              >
-                                {show}
-                              </span>
+                              <div key={g.id} className="rounded-md border bg-background p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-medium">Ghế {seat ?? '—'}</p>
+                                  <Badge variant={g.is_correct ? 'default' : 'outline'}>{statusText}</Badge>
+                                </div>
+                                <p className="mt-2 text-sm font-semibold">{g.guess_text}</p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <form action={confirmObstacleGuessFormAction}>
+                                    <input type="hidden" name="guessId" value={g.id} />
+                                    <input type="hidden" name="decision" value="correct" />
+                                    <Button type="submit" size="sm" disabled={g.is_correct} title="Xác nhận đúng" aria-label="Xác nhận đúng">
+                                      <Check className="h-4 w-4 mr-1" />
+                                      Đúng
+                                    </Button>
+                                  </form>
+                                  <form action={confirmObstacleGuessFormAction}>
+                                    <input type="hidden" name="guessId" value={g.id} />
+                                    <input type="hidden" name="decision" value="wrong" />
+                                    <Button type="submit" size="sm" variant="outline" disabled={g.is_correct} title="Xác nhận sai (loại quyền CNV)" aria-label="Xác nhận sai (loại quyền CNV)">
+                                      <X className="h-4 w-4 mr-1" />
+                                      Sai
+                                    </Button>
+                                  </form>
+                                </div>
+                              </div>
                             )
                           })}
                         </div>
-                      )
-                    }
-
-                    const computeTileStatus = (tile: HostObstacleTileRow | null) => {
-                      if (!tile?.round_question_id) return { attempted: false, anyCorrect: false, locked: false }
-                      const rows = vcnvAnswerSummary.filter((a) => a.round_question_id === tile.round_question_id)
-                      // Chỉ coi là "đã có kết quả" khi host đã chấm (is_correct != null).
-                      const attempted = rows.some((r) => r.is_correct != null)
-                      const anyCorrect = rows.some((r) => r.is_correct === true)
-                      const locked = attempted && !anyCorrect && tile.is_open === false
-                      return { attempted, anyCorrect, locked }
-                    }
-
-                    const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
-                      { pos: 1, label: '1', className: 'left-2 top-2' },
-                      { pos: 2, label: '2', className: 'right-2 top-2' },
-                      { pos: 3, label: '3', className: 'left-2 bottom-2' },
-                      { pos: 4, label: '4', className: 'right-2 bottom-2' },
-                      { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
-                    ]
-
-                    const renderRow = (pos: number, title: string) => {
-                      const tile = byPos.get(pos) ?? null
-                      const rq = getRq(tile?.round_question_id ?? null)
-                      const answer = normalizeWord(rq?.answer_text)
-                      const { locked } = computeTileStatus(tile)
-                      const reveal = Boolean(tile?.is_open)
-
-                      return (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs text-muted-foreground">{title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {reveal ? 'Mở' : locked ? 'Đóng' : 'Chưa mở'}
-                            </p>
-                          </div>
-                          {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-muted-foreground">(Chưa có đáp án)</p>}
-                        </div>
-                      )
-                    }
-
-                    return (
-                      <div className="mt-4 rounded-md border bg-background p-3">
-                        <p className="text-xs text-muted-foreground mb-3">
-                          VCNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
-                        </p>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <div className="relative overflow-hidden rounded-md border bg-slate-50">
-                              {obstacle.image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={obstacle.image_url}
-                                  alt={obstacle.title ?? 'Chướng ngại vật'}
-                                  className="h-64 w-full object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-64 w-full items-center justify-center text-sm text-muted-foreground">
-                                  (Chưa có ảnh CNV)
-                                </div>
-                              )}
-
-                              {tilesForImage.map((t) => {
-                                const tile = byPos.get(t.pos) ?? null
-                                const { locked } = computeTileStatus(tile)
-                                const hidden = Boolean(tile?.is_open)
-                                if (hidden) return null
-                                return (
-                                  <div
-                                    key={t.pos}
-                                    className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border ${locked ? 'bg-slate-200' : 'bg-slate-100'}`}
-                                    aria-label={locked ? `Ô ${t.label} (đóng)` : `Ô ${t.label} (che)`}
-                                  >
-                                    <span className="text-sm font-semibold text-slate-700">{t.label}</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="space-y-3">
-                            {renderRow(1, 'Hàng 1')}
-                            {renderRow(2, 'Hàng 2')}
-                            {renderRow(3, 'Hàng 3')}
-                            {renderRow(4, 'Hàng 4')}
-                            {renderRow(5, 'Trung tâm')}
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-3">
-                          <div className="rounded-md border bg-slate-50 p-3">
-                            <p className="text-xs font-semibold text-slate-700">Chuông đoán CNV (miệng)</p>
-                            <form action={submitObstacleGuessByHostFormAction} className="mt-2 flex flex-wrap gap-2">
-                              <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                              <select
-                                name="playerId"
-                                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                                aria-label="Chọn thí sinh đoán CNV"
-                                defaultValue=""
-                              >
-                                <option value="" disabled>
-                                  Chọn thí sinh…
-                                </option>
-                                {players.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    Ghế {p.seat_index}{p.display_name ? ` · ${p.display_name}` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                              <input
-                                name="guessText"
-                                className="flex-1 min-w-[220px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                                placeholder="Nhập từ khóa CNV…"
-                                aria-label="Từ khóa CNV"
-                              />
-                              <Button type="submit" size="sm" className="h-9">
-                                Ghi nhận
-                              </Button>
-                            </form>
-                          </div>
-
-                          {obstacleGuesses.length > 0 ? (
-                            <div className="space-y-2">
-                              <p className="text-xs text-muted-foreground">Lượt đoán CNV gần đây</p>
-                              <div className="grid gap-2">
-                                {obstacleGuesses.map((g) => {
-                                  const seat = normalizePlayerSummary(g.match_players)?.seat_index
-                                  const statusText = g.is_correct ? 'Đúng' : 'Chưa xác nhận/Sai'
-                                  return (
-                                    <div key={g.id} className="rounded-md border bg-background p-3">
-                                      <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <p className="text-sm font-medium">Ghế {seat ?? '—'}</p>
-                                        <Badge variant={g.is_correct ? 'default' : 'outline'}>{statusText}</Badge>
-                                      </div>
-                                      <p className="mt-2 text-sm font-semibold">{g.guess_text}</p>
-                                      <div className="mt-3 flex flex-wrap gap-2">
-                                        <form action={confirmObstacleGuessFormAction}>
-                                          <input type="hidden" name="guessId" value={g.id} />
-                                          <input type="hidden" name="decision" value="correct" />
-                                          <Button type="submit" size="sm" disabled={g.is_correct} title="Xác nhận đúng" aria-label="Xác nhận đúng">
-                                            <Check className="h-4 w-4 mr-1" />
-                                            Đúng
-                                          </Button>
-                                        </form>
-                                        <form action={confirmObstacleGuessFormAction}>
-                                          <input type="hidden" name="guessId" value={g.id} />
-                                          <input type="hidden" name="decision" value="wrong" />
-                                          <Button type="submit" size="sm" variant="outline" disabled={g.is_correct} title="Xác nhận sai (loại quyền CNV)" aria-label="Xác nhận sai (loại quyền CNV)">
-                                            <X className="h-4 w-4 mr-1" />
-                                            Sai
-                                          </Button>
-                                        </form>
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
                       </div>
-                    )
-                  })()
-                ) : null}
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })()
+          ) : null}
 
-                {(isKhoiDong || isVeDich) ? (
-                  (() => {
-                    const hasLiveQuestion = Boolean(liveSession?.id && liveSession?.current_round_question_id)
-                    const enabledScoringPlayerId = (() => {
-                      if (!hasLiveQuestion) return null
-                      if (isKhoiDong) {
-                        // Ưu tiên xác định thi riêng theo mã câu KD{seat}-.
-                        if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
-                        if (currentRoundQuestion?.target_player_id) return currentRoundQuestion.target_player_id
-                        return winnerBuzz?.player_id ?? null
-                      }
-                      if (isVeDich) {
-                        return currentRoundQuestion?.target_player_id ?? null
-                      }
-                      return null
-                    })()
+          {(isKhoiDong || isVeDich) ? (
+            (() => {
+              const hasLiveQuestion = Boolean(liveSession?.id && liveSession?.current_round_question_id)
+              const enabledScoringPlayerId = (() => {
+                if (!hasLiveQuestion) return null
+                if (isKhoiDong) {
+                  // Ưu tiên xác định thi riêng theo mã câu KD{seat}-.
+                  if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
+                  if (currentRoundQuestion?.target_player_id) return currentRoundQuestion.target_player_id
+                  return winnerBuzz?.player_id ?? null
+                }
+                if (isVeDich) {
+                  return currentRoundQuestion?.target_player_id ?? null
+                }
+                return null
+              })()
 
-                    const durationMs = (() => {
-                      if (isKhoiDong) return 5000
-                      if (isVeDich) return veDichValue === 30 ? 20000 : 15000
-                      return 5000
-                    })()
+              const durationMs = (() => {
+                if (isKhoiDong) return 5000
+                if (isVeDich) return veDichValue === 30 ? 20000 : 15000
+                return 5000
+              })()
 
-                    const disabled = !enabledScoringPlayerId
-                    const hint = (() => {
-                      if (!hasLiveQuestion) {
-                        return 'Bạn đang xem câu (preview). Hãy bấm Show để bắt đầu chấm nhanh.'
-                      }
-                      if (isKhoiDong && khoiDongPersonalSeat != null && !khoiDongPersonalPlayerId) {
-                        return `Khởi động thi riêng (KD${khoiDongPersonalSeat}): không tìm thấy thí sinh ghế ${khoiDongPersonalSeat}.`
-                      }
-                      if (isKhoiDong && !enabledScoringPlayerId) return 'Khởi động thi chung: cần có thí sinh bấm chuông thắng.'
-                      if (isVeDich && !enabledScoringPlayerId) return 'Về đích: cần chọn thí sinh chính trước.'
-                      return 'Chấm nhanh (tự trừ điểm và chuyển sang câu tiếp theo).'
-                    })()
+              const disabled = !enabledScoringPlayerId
+              const hint = (() => {
+                if (!hasLiveQuestion) {
+                  return 'Bạn đang xem câu (preview). Hãy bấm Show để bắt đầu chấm nhanh.'
+                }
+                if (isKhoiDong && khoiDongPersonalSeat != null && !khoiDongPersonalPlayerId) {
+                  return `Khởi động thi riêng (KD${khoiDongPersonalSeat}): không tìm thấy thí sinh ghế ${khoiDongPersonalSeat}.`
+                }
+                if (isKhoiDong && !enabledScoringPlayerId) return 'Khởi động thi chung: cần có thí sinh bấm chuông thắng.'
+                if (isVeDich && !enabledScoringPlayerId) return 'Về đích: cần chọn thí sinh chính trước.'
+                return 'Chấm nhanh (tự trừ điểm và chuyển sang câu tiếp theo).'
+              })()
 
-                    return (
-                      <div className="mt-4 rounded-md border bg-background p-3">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <p className="text-xs text-muted-foreground">{hint}</p>
-                          {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' ? (
-                            <div className="flex items-center gap-2">
-                              {liveSession?.timer_deadline ? (
-                                <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
-                              ) : null}
+              const scoringPlayerLabel = enabledScoringPlayerId
+                ? (() => {
+                  const p = players.find((x) => x.id === enabledScoringPlayerId)
+                  if (!p) return '—'
+                  const seat = p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh'
+                  return p.display_name ? `${seat} · ${p.display_name}` : seat
+                })()
+                : null
 
-                              {liveSession?.timer_deadline ? (
-                                <form action={confirmDecisionAndAdvanceFormAction}>
-                                  <input type="hidden" name="matchId" value={match.id} />
-                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                  <input type="hidden" name="playerId" value={enabledScoringPlayerId ?? ''} />
-                                  <input type="hidden" name="durationMs" value={durationMs} />
-                                  <input type="hidden" name="decision" value="timeout" />
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-8 px-3 text-xs disabled:opacity-40"
-                                    disabled={disabled}
-                                    title="Hết giờ"
-                                    aria-label="Hết giờ"
-                                  >
-                                    Hết giờ
-                                  </Button>
-                                </form>
-                              ) : (
-                                <form action={startSessionTimerFormAction}>
-                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                  <input type="hidden" name="durationMs" value={durationMs} />
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    variant="default"
-                                    className="h-8 px-3 text-xs disabled:opacity-40"
-                                    disabled={disabled}
-                                    title="Bấm giờ"
-                                    aria-label="Bấm giờ"
-                                  >
-                                    Bấm giờ
-                                  </Button>
-                                </form>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          {isVeDich ? (
-                            <>
-                              <form action={confirmVeDichMainDecisionFormAction}>
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="decision" value="correct" />
-                                <Button type="submit" size="lg" className="w-full font-bold text-base disabled:opacity-40" disabled={disabled} title="Đúng" aria-label="Đúng">
-                                  <Check className="w-5 h-5 mr-1" />
-                                  Đúng
-                                </Button>
-                              </form>
+              const showTimeoutButton = Boolean(
+                isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline
+              )
+              const showTimerStartButton = Boolean(
+                isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && !liveSession?.timer_deadline
+              )
 
-                              <form action={confirmVeDichMainDecisionFormAction}>
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="decision" value="wrong" />
-                                <Button type="submit" size="lg" variant="outline" className="w-full font-bold text-base disabled:opacity-40" disabled={disabled} title="Sai" aria-label="Sai">
-                                  <X className="w-5 h-5 mr-1" />
-                                  Sai
-                                </Button>
-                              </form>
-                            </>
-                          ) : (
-                            <>
-                              <form action={confirmDecisionAndAdvanceFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={enabledScoringPlayerId ?? ''} />
-                                <input type="hidden" name="durationMs" value={durationMs} />
-                                <input type="hidden" name="decision" value="correct" />
-                                <Button type="submit" size="lg" className="w-full font-bold text-base disabled:opacity-40" disabled={disabled} title="Đúng" aria-label="Đúng">
-                                  <Check className="w-5 h-5 mr-1" />
-                                  Đúng
-                                </Button>
-                              </form>
+              return (
+                <div>
+                  {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline ? (
+                    <div className="mb-2">
+                      <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
+                    </div>
+                  ) : null}
 
-                              <form action={confirmDecisionAndAdvanceFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={enabledScoringPlayerId ?? ''} />
-                                <input type="hidden" name="durationMs" value={durationMs} />
-                                <input type="hidden" name="decision" value="wrong" />
-                                <Button type="submit" size="lg" variant="outline" className="w-full font-bold text-base disabled:opacity-40" disabled={disabled} title="Sai" aria-label="Sai">
-                                  <X className="w-5 h-5 mr-1" />
-                                  Sai
-                                </Button>
-                              </form>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+                  <HostQuickScorePanel
+                    hint={hint}
+                    scoringPlayerLabel={scoringPlayerLabel}
+                    isVeDich={isVeDich}
+                    showTimeoutButton={showTimeoutButton}
+                    showTimerStartButton={showTimerStartButton}
+                    disabled={disabled}
+                    matchId={match.id}
+                    sessionId={liveSession?.id ?? ''}
+                    playerId={enabledScoringPlayerId ?? ''}
+                    durationMs={durationMs}
+                    confirmDecisionAndAdvanceFormAction={confirmDecisionAndAdvanceFormAction}
+                    startSessionTimerFormAction={startSessionTimerFormAction}
+                    confirmVeDichMainDecisionFormAction={confirmVeDichMainDecisionFormAction}
+                  />
+                </div>
+              )
+            })()
+          ) : null}
 
           <Card>
             <CardHeader className="pb-3">

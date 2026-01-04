@@ -168,6 +168,11 @@ const questionStateSchema = z.object({
   questionState: z.enum(["hidden", "showing", "answer_revealed", "completed"]),
 });
 
+const startTimerSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  durationMs: z.number().int().min(1000).max(120000),
+});
+
 const submitAnswerSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
   answer: z
@@ -1116,12 +1121,10 @@ export async function setQuestionStateAction(
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
 
-    const nextDeadline =
-      questionState === "showing" ? new Date(Date.now() + 5000).toISOString() : null;
-
     const { error } = await olympia
       .from("live_sessions")
-      .update({ question_state: questionState, timer_deadline: nextDeadline })
+      // Countdown không tự chạy khi bấm Show; host sẽ bấm "Bấm giờ" để bắt đầu.
+      .update({ question_state: questionState, timer_deadline: null })
       .eq("id", session.id);
 
     if (error) return { error: error.message };
@@ -1132,6 +1135,62 @@ export async function setQuestionStateAction(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái." };
   }
+}
+
+export async function startSessionTimerAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = startTimerSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      durationMs: formData.get("durationMs") ? Number(formData.get("durationMs")) : NaN,
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm giờ." };
+    }
+
+    const { data: session, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select("id, status, question_state, current_round_question_id, timer_deadline")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionErr) return { error: sessionErr.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+    if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
+      return { error: "Host chưa mở câu hỏi/cửa cướp để bấm giờ." };
+    }
+
+    // Nếu timer đang chạy, không bấm lại.
+    if (session.timer_deadline) {
+      const remaining = Date.parse(session.timer_deadline) - Date.now();
+      if (Number.isFinite(remaining) && remaining > 0) {
+        return { error: "Timer đang chạy." };
+      }
+    }
+
+    const deadline = new Date(Date.now() + parsed.data.durationMs).toISOString();
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({ timer_deadline: deadline })
+      .eq("id", session.id);
+    if (updateErr) return { error: updateErr.message };
+
+    return { success: "Đã bắt đầu đếm giờ." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể bắt đầu đếm giờ." };
+  }
+}
+
+// Wrapper cho <form action={...}> trong Server Component (Next.js chỉ truyền 1 tham số FormData).
+export async function startSessionTimerFormAction(formData: FormData): Promise<void> {
+  await startSessionTimerAction({}, formData);
 }
 
 export async function setWaitingScreenAction(

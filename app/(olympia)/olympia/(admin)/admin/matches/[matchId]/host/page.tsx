@@ -10,6 +10,7 @@ import { LiveScoreboard } from '@/components/olympia/admin/matches/LiveScoreboar
 import { InitializeRoundsButton } from '@/components/olympia/admin/matches/InitializeRoundsButton'
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
+import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/HostRealtimeEventsListener'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -26,7 +27,6 @@ import {
 import {
   autoScoreTangTocFormAction,
   confirmDecisionAndAdvanceFormAction,
-  confirmDecisionFormAction,
   confirmDecisionVoidFormAction,
   confirmObstacleGuessFormAction,
   confirmVcnvRowDecisionFormAction,
@@ -35,10 +35,11 @@ import {
   openStealWindowFormAction,
   selectVeDichPackageFormAction,
   setCurrentQuestionFormAction,
-  setBuzzerEnabledAction,
+  startSessionTimerFormAction,
   setLiveSessionRoundAction,
   setRoundQuestionTargetPlayerAction,
   setScoreboardOverlayAction,
+  setBuzzerEnabledAction,
   setVeDichQuestionValueFormAction,
   setWaitingScreenAction,
   setGuestMediaControlAction,
@@ -1167,27 +1168,48 @@ export default async function OlympiaHostConsolePage({
                       <div className="mt-4 rounded-md border bg-background p-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <p className="text-xs text-muted-foreground">{hint}</p>
-                          {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline ? (
+                          {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' ? (
                             <div className="flex items-center gap-2">
-                              <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
-                              <form action={confirmDecisionAndAdvanceFormAction}>
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={enabledScoringPlayerId ?? ''} />
-                                <input type="hidden" name="durationMs" value={durationMs} />
-                                <input type="hidden" name="decision" value="timeout" />
-                                <Button
-                                  type="submit"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 px-3 text-xs disabled:opacity-40"
-                                  disabled={disabled}
-                                  title="Hết giờ"
-                                  aria-label="Hết giờ"
-                                >
-                                  Hết giờ
-                                </Button>
-                              </form>
+                              {liveSession?.timer_deadline ? (
+                                <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
+                              ) : null}
+
+                              {liveSession?.timer_deadline ? (
+                                <form action={confirmDecisionAndAdvanceFormAction}>
+                                  <input type="hidden" name="matchId" value={match.id} />
+                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                                  <input type="hidden" name="playerId" value={enabledScoringPlayerId ?? ''} />
+                                  <input type="hidden" name="durationMs" value={durationMs} />
+                                  <input type="hidden" name="decision" value="timeout" />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 px-3 text-xs disabled:opacity-40"
+                                    disabled={disabled}
+                                    title="Hết giờ"
+                                    aria-label="Hết giờ"
+                                  >
+                                    Hết giờ
+                                  </Button>
+                                </form>
+                              ) : (
+                                <form action={startSessionTimerFormAction}>
+                                  <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
+                                  <input type="hidden" name="durationMs" value={durationMs} />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="default"
+                                    className="h-8 px-3 text-xs disabled:opacity-40"
+                                    disabled={disabled}
+                                    title="Bấm giờ"
+                                    aria-label="Bấm giờ"
+                                  >
+                                    Bấm giờ
+                                  </Button>
+                                </form>
+                              )}
                             </div>
                           ) : null}
                         </div>
@@ -1437,6 +1459,19 @@ export default async function OlympiaHostConsolePage({
                 currentRoundType={liveSession?.current_round_type ?? null}
                 currentRoundQuestionId={liveSession?.current_round_question_id ?? null}
                 questionState={liveSession?.question_state ?? null}
+              />
+
+              <HostRealtimeEventsListener
+                matchId={match.id}
+                sessionId={liveSession?.id ?? null}
+                currentRoundQuestionId={liveSession?.current_round_question_id ?? null}
+                playerLabelsById={Object.fromEntries(
+                  players.map((p) => {
+                    const seat = p.seat_index != null ? String(p.seat_index) : '—'
+                    const name = p.display_name ? ` · ${p.display_name}` : ''
+                    return [p.id, `Ghế ${seat}${name}`]
+                  })
+                )}
               />
 
               <HostRoundControls

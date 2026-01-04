@@ -20,8 +20,52 @@ export function HostPreviewQuestionSelect({ value, options, disabled, triggerRes
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const prevTriggerRef = useRef(triggerReset)
+    const prefetchedKeyRef = useRef<string | null>(null)
 
     const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
+
+    // Prefetch các route preview để chuyển câu gần như tức thì.
+    useEffect(() => {
+        if (!pathname) return
+        if (!options || options.length === 0) return
+
+        const key = `${pathname}|${baseParams.toString()}|${options.map((o) => o.id).join(',')}`
+        if (prefetchedKeyRef.current === key) return
+        prefetchedKeyRef.current = key
+
+        const urls = options
+            .map((opt) => {
+                const params = new URLSearchParams(baseParams)
+                params.set('preview', opt.id)
+                const qs = params.toString()
+                return qs ? `${pathname}?${qs}` : pathname
+            })
+            .slice(0, 30)
+
+        type IdleCallbackDeadline = { didTimeout: boolean; timeRemaining: () => number }
+        type RequestIdleCallback = (cb: (deadline: IdleCallbackDeadline) => void, opts?: { timeout: number }) => number
+        type CancelIdleCallback = (handle: number) => void
+
+        const w = window as unknown as {
+            requestIdleCallback?: RequestIdleCallback
+            cancelIdleCallback?: CancelIdleCallback
+        }
+
+        const run = () => {
+            urls.forEach((url) => router.prefetch(url))
+        }
+
+        if (typeof w.requestIdleCallback === 'function') {
+            const handle = w.requestIdleCallback(() => run(), { timeout: 800 })
+            return () => {
+                if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(handle)
+            }
+        }
+
+        const t = setTimeout(() => run(), 0)
+        return () => clearTimeout(t)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pathname, router, options, baseParams])
 
     // Reset preview chỉ khi triggerReset thực sự thay đổi từ false → true
     useEffect(() => {

@@ -127,8 +127,8 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const disableInteractions = isGuest || isMc
 
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
-  const guestVideoRef = useRef<HTMLVideoElement | null>(null)
-  const lastGuestMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
+  const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
+  const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
 
   const showBigScoreboard = session.show_scoreboard_overlay === true
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
@@ -244,17 +244,22 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   }, [mediaKind, mediaUrl])
 
   useEffect(() => {
-    if (!isGuest) return
+    const canReceiveVideoControl = isGuest || resolvedViewerMode === 'player'
+    const canReceiveAudioControl = isGuest
+    if (!canReceiveVideoControl && !canReceiveAudioControl) return
     const control = session.guest_media_control
     if (!control) return
 
     const applyCommand = async (mediaType: 'audio' | 'video') => {
+      if (mediaType === 'audio' && !canReceiveAudioControl) return
+      if (mediaType === 'video' && !canReceiveVideoControl) return
+
       const cmd = control[mediaType]
       if (!cmd) return
       const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
-      if (cmdId <= lastGuestMediaCmdRef.current[mediaType]) return
+      if (cmdId <= lastMediaCmdRef.current[mediaType]) return
       const action = cmd.action
-      const element = mediaType === 'audio' ? guestAudioRef.current : guestVideoRef.current
+      const element = mediaType === 'audio' ? guestAudioRef.current : syncedVideoRef.current
 
       // Nếu media element chưa mount xong, để effect chạy lại khi UI render xong.
       if (!element) {
@@ -280,7 +285,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         resolvedViewerMode,
       })
 
-      lastGuestMediaCmdRef.current = { ...lastGuestMediaCmdRef.current, [mediaType]: cmdId }
+      lastMediaCmdRef.current = { ...lastMediaCmdRef.current, [mediaType]: cmdId }
 
       const waitForCanPlay = async (el: HTMLMediaElement) => {
         if (el.readyState >= 2) return
@@ -559,11 +564,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                       />
                     ) : mediaKind === 'video' ? (
                       <video
-                        ref={isGuest ? guestVideoRef : undefined}
-                        controls
+                        ref={syncedVideoRef}
                         playsInline
                         src={mediaUrl}
-                        className="w-full max-h-[420px] rounded bg-black"
+                        className="w-full max-h-[420px] rounded bg-black pointer-events-none"
+                        tabIndex={-1}
                       />
                     ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
                       <div className="aspect-video w-full overflow-hidden rounded bg-black">
@@ -588,11 +593,9 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                   </div>
                 ) : null}
 
-                {audioUrl ? (
-                  <div className={cn('space-y-2', mediaUrl ? 'mt-4' : '')}>
-                    <p className="text-xs text-slate-300">Âm thanh</p>
-                    <audio ref={isGuest ? guestAudioRef : undefined} controls src={audioUrl} className="w-full" />
-                  </div>
+                {audioUrl && isGuest ? (
+                  // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
+                  <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
                 ) : null}
               </div>
             ) : null}
@@ -802,10 +805,14 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
               type="submit"
               disabled={disableBuzz}
               size="lg"
-              className="w-32 h-32 rounded-full flex items-center justify-center shadow-lg bg-slate-900 hover:bg-slate-800 text-white border-0"
+              className={cn(
+                'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
+                'bg-blue-600 hover:bg-blue-700 text-white',
+                'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100'
+              )}
               variant="default"
             >
-              <Bell className="w-20 h-20" />
+              <Bell className="w-24 h-24" />
             </Button>
           </form>
         </div>

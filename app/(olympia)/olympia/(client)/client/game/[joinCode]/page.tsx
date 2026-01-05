@@ -20,13 +20,24 @@ type PageProps = {
 
 async function getGameSessionData(supabase: SupabaseClient, sessionId: string): Promise<GameSessionPayload | null> {
     const olympia = supabase.schema('olympia')
-    const { data: session, error: sessionError } = await olympia
+    const selectWithGuestMediaControl =
+        'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control'
+    const selectWithoutGuestMediaControl =
+        'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay'
+
+    const firstAttempt = await olympia
         .from('live_sessions')
-        .select(
-            'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control'
-        )
+        .select(selectWithGuestMediaControl)
         .eq('join_code', sessionId)
         .maybeSingle()
+
+    const shouldRetryWithoutGuestMediaControl =
+        firstAttempt.error?.message != null &&
+        firstAttempt.error.message.toLowerCase().includes('guest_media_control')
+
+    const { data: session, error: sessionError } = shouldRetryWithoutGuestMediaControl
+        ? await olympia.from('live_sessions').select(selectWithoutGuestMediaControl).eq('join_code', sessionId).maybeSingle()
+        : firstAttempt
 
     if (sessionError) {
         console.error('[Olympia] load live session failed', sessionError.message)

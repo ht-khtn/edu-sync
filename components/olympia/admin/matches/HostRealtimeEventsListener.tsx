@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 
@@ -29,14 +28,9 @@ export function HostRealtimeEventsListener({
     currentRoundQuestionId,
     playerLabelsById,
 }: Props) {
-    const router = useRouter()
-
     const supabaseRef = useRef<SupabaseClient | null>(null)
 
     const channelRef = useRef<RealtimeChannel | null>(null)
-    const pendingRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const lastRefreshAtRef = useRef<number>(0)
-
     const queuedReasonsRef = useRef<Set<string>>(new Set())
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const reconnectAttemptsRef = useRef<number>(0)
@@ -59,33 +53,12 @@ export function HostRealtimeEventsListener({
     useEffect(() => {
         let mounted = true
 
-        const scheduleRefresh = (reason: string) => {
-            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-
+        const trackReason = (reason: string) => {
+            // Giữ lại để debug, nhưng KHÔNG refresh toàn trang (SSR rất chậm).
             queuedReasonsRef.current.add(reason)
-
-            const now = Date.now()
-            const elapsed = now - lastRefreshAtRef.current
-            const minGap = 900
-            const debounceMs = 250
-            const delay = elapsed < minGap ? Math.max(minGap - elapsed, debounceMs) : debounceMs
-
-            if (pendingRefreshRef.current) return
-            pendingRefreshRef.current = setTimeout(() => {
-                pendingRefreshRef.current = null
-                lastRefreshAtRef.current = Date.now()
-                const reasons = Array.from(queuedReasonsRef.current)
-                queuedReasonsRef.current.clear()
-                console.debug('[HostRealtimeEventsListener] router.refresh()', reasons.join(','))
-                router.refresh()
-            }, delay)
         }
 
         const cleanupChannel = async () => {
-            if (pendingRefreshRef.current) {
-                clearTimeout(pendingRefreshRef.current)
-                pendingRefreshRef.current = null
-            }
             if (reconnectTimerRef.current) {
                 clearTimeout(reconnectTimerRef.current)
                 reconnectTimerRef.current = null
@@ -145,23 +118,23 @@ export function HostRealtimeEventsListener({
                             table: 'live_sessions',
                             ...(sessionId ? { filter: `id=eq.${sessionId}` } : {}),
                         },
-                        () => scheduleRefresh('live_sessions')
+                        () => trackReason('live_sessions')
                     )
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'star_uses', filter: `match_id=eq.${matchId}` },
-                        () => scheduleRefresh('star_uses')
+                        () => trackReason('star_uses')
                     )
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
-                        () => scheduleRefresh('answers')
+                        () => trackReason('answers')
                     )
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'buzzer_events', filter: `match_id=eq.${matchId}` },
                         (payload) => {
-                            scheduleRefresh('buzzer_events')
+                            trackReason('buzzer_events')
 
                             const row = payload.new as BuzzerEventRow | null
                             if (!row) return
@@ -187,7 +160,6 @@ export function HostRealtimeEventsListener({
                 channel.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
                         reconnectAttemptsRef.current = 0
-                        scheduleRefresh(`subscribed:${why}`)
                         return
                     }
                     if (status === 'CHANNEL_ERROR') {
@@ -211,7 +183,7 @@ export function HostRealtimeEventsListener({
             mounted = false
             void cleanupChannel()
         }
-    }, [matchId, router, sessionId])
+    }, [matchId, sessionId])
 
     return null
 }

@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
+import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
 
 type PlayerSummary = {
@@ -251,8 +251,6 @@ export function HostQuestionPreviewCard(props: Props) {
         setGuestMediaControlAction,
     } = props
 
-    const router = useRouter()
-
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
     const questionsForPreload = preloadQuestions ?? questions
     const assets = useMemo(() => extractAssetUrls(questionsForPreload), [questionsForPreload])
@@ -283,6 +281,15 @@ export function HostQuestionPreviewCard(props: Props) {
         })
     }, [initialPreviewId])
 
+    // Đồng bộ theo realtime/optimistic event để tránh router.refresh() toàn trang.
+    useEffect(() => {
+        return subscribeHostSessionUpdate((payload) => {
+            queueMicrotask(() => {
+                setPreviewId(payload.currentRoundQuestionId ?? '')
+            })
+        })
+    }, [])
+
     const previewIndex = useMemo(() => {
         if (!previewId) return -1
         return questions.findIndex((q) => q.id === previewId)
@@ -302,9 +309,12 @@ export function HostQuestionPreviewCard(props: Props) {
     const previewNoteText = previewRoundQuestion?.note ?? null
 
     const handleSetCurrentQuestion = async (formData: FormData) => {
+        const raw = formData.get('roundQuestionId')
+        const nextId = typeof raw === 'string' && raw.trim() ? raw : null
+        if (nextId) {
+            dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
+        }
         await setCurrentQuestionFormAction(formData)
-        // Đảm bảo host thấy câu mới ngay lập tức (tương tự client/mc/guest).
-        router.refresh()
     }
 
     useEffect(() => {

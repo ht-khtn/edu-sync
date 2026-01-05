@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Check, X } from 'lucide-react'
+import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
 type Props = {
     hint: string
@@ -13,6 +13,7 @@ type Props = {
     showTimerStartButton: boolean
     disabled: boolean
     roundQuestionId: string | null
+    roundQuestionIdsInOrder: string[]
     matchId: string
     sessionId: string
     playerId: string
@@ -31,6 +32,7 @@ export function HostQuickScorePanel(props: Props) {
         showTimerStartButton,
         disabled,
         roundQuestionId,
+        roundQuestionIdsInOrder,
         matchId,
         sessionId,
         playerId,
@@ -39,31 +41,64 @@ export function HostQuickScorePanel(props: Props) {
         startSessionTimerFormAction,
         confirmVeDichMainDecisionFormAction,
     } = props
-
-    const router = useRouter()
-
     const [locked, setLocked] = useState(false)
 
+    const [activeRoundQuestionId, setActiveRoundQuestionId] = useState<string | null>(roundQuestionId)
+
     useEffect(() => {
-        // Khi chuyển câu hỏi, cần mở lại chấm nhanh.
-        setLocked(false)
+        setActiveRoundQuestionId(roundQuestionId)
     }, [roundQuestionId])
+
+    useEffect(() => {
+        return subscribeHostSessionUpdate((payload) => {
+            setActiveRoundQuestionId(payload.currentRoundQuestionId)
+        })
+    }, [])
+
+    useEffect(() => {
+        // Khi chuyển câu hỏi (theo realtime/optimistic), cần mở lại chấm nhanh.
+        setLocked(false)
+    }, [activeRoundQuestionId])
 
     const allDisabled = useMemo(() => disabled || locked, [disabled, locked])
 
+    const computeNextQuestionId = (currentId: string | null): string | null => {
+        if (!currentId) return null
+        const idx = roundQuestionIdsInOrder.findIndex((id) => id === currentId)
+        if (idx < 0) return null
+        return roundQuestionIdsInOrder[idx + 1] ?? currentId
+    }
+
     const handleConfirmDecisionAndAdvance = async (formData: FormData) => {
-        await confirmDecisionAndAdvanceFormAction(formData)
-        router.refresh()
+        const prevId = activeRoundQuestionId
+        const nextId = computeNextQuestionId(prevId)
+
+        if (nextId && nextId !== prevId) {
+            dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
+        }
+
+        try {
+            await confirmDecisionAndAdvanceFormAction(formData)
+        } catch {
+            // Best-effort rollback nếu action fail.
+            if (prevId) {
+                dispatchHostSessionUpdate({ currentRoundQuestionId: prevId, source: 'optimistic' })
+            }
+            setLocked(false)
+        }
     }
 
     const handleStartSessionTimer = async (formData: FormData) => {
         await startSessionTimerFormAction(formData)
-        router.refresh()
     }
 
     const handleConfirmVeDichMainDecision = async (formData: FormData) => {
-        await confirmVeDichMainDecisionFormAction(formData)
-        router.refresh()
+        try {
+            await confirmVeDichMainDecisionFormAction(formData)
+        } finally {
+            // Về đích: action này không nhất thiết đổi câu -> cần mở lock lại.
+            setLocked(false)
+        }
     }
 
     return (

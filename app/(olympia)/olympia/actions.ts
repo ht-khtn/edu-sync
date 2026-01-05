@@ -2,6 +2,7 @@
 
 import { createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   extractRequiredAssetBasenames,
   normalizeAssetBasename,
@@ -21,6 +22,26 @@ export type ActionState = {
   success?: string | null;
   data?: Record<string, unknown> | null;
 };
+
+async function requireOlympiaAdminContext(): Promise<{
+  supabase: SupabaseClient;
+  appUserId: string;
+}> {
+  const { supabase, appUserId } = await getServerAuthContext();
+  if (!appUserId) throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
+
+  const olympia = supabase.schema("olympia");
+  const { data, error } = await olympia
+    .from("participants")
+    .select("role")
+    .eq("user_id", appUserId)
+    .maybeSingle();
+  if (error || !data || data.role !== "AD") {
+    throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
+  }
+
+  return { supabase, appUserId };
+}
 
 function generateRoomPassword() {
   return randomBytes(3).toString("hex").toUpperCase();
@@ -1910,8 +1931,7 @@ export async function confirmDecisionAction(
     let afterSessionFetchAt: number | null = null;
     let afterScoreWriteAt: number | null = null;
 
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = decisionSchema.safeParse({
@@ -2161,8 +2181,7 @@ export async function confirmDecisionAction(
       console.warn("[Olympia] insertScoreChange(confirmDecision) failed:", auditErr);
     }
 
-    // Host/admin đang là Server Component nên cần revalidate để thấy cập nhật ngay.
-    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+    // Host sync qua realtime/event; tránh revalidate host để giảm latency.
 
     console.info("[Olympia][Perf] confirmDecisionAction", {
       matchId: session.match_id,
@@ -2353,8 +2372,7 @@ export async function setCurrentQuestionAction(
 ): Promise<ActionState> {
   try {
     const startedAt = Date.now();
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = setCurrentQuestionSchema.safeParse({
@@ -2401,17 +2419,13 @@ export async function setCurrentQuestionAction(
 
     const isKhoiDong = resolvedRoundType === "khoi_dong";
     const isVcnv = resolvedRoundType === "vcnv";
-    const rqTarget = (roundQuestion as unknown as { target_player_id?: string | null })
-      ?.target_player_id;
     const khoiDongInfo = isKhoiDong
       ? parseKhoiDongCodeInfoFromMeta((roundQuestion as unknown as { meta?: unknown })?.meta)
       : null;
 
     // Nếu code là DKA- thì chắc chắn là thi chung, kể cả khi target_player_id đang bị dính từ lần trước.
     const isKhoiDongCommon = khoiDongInfo?.kind === "common";
-    const isKhoiDongPersonal = Boolean(
-      !isKhoiDongCommon && (rqTarget || khoiDongInfo?.kind === "personal")
-    );
+    // isKhoiDongPersonal không cần dùng ở đây; luật bật chuông dựa vào isKhoiDongCommon.
 
     // Khởi động thi chung: reset khóa lượt mỗi câu để buzzer hoạt động đúng theo câu.
     if (isKhoiDong && isKhoiDongCommon) {
@@ -2462,8 +2476,7 @@ export async function setCurrentQuestionAction(
       }
     }
 
-    // Host/admin: revalidate để nội dung câu hỏi hiển thị ngay.
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    // Host sync qua realtime/event; tránh revalidate host để giảm latency.
 
     console.info("[Olympia][Perf] setCurrentQuestionAction", {
       matchId,
@@ -2487,8 +2500,7 @@ export async function advanceCurrentQuestionAction(
 ): Promise<ActionState> {
   try {
     const startedAt = Date.now();
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = advanceQuestionSchema.safeParse({
@@ -2507,7 +2519,7 @@ export async function advanceCurrentQuestionAction(
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
       .select(
-        "id, status, current_round_id, current_round_type, current_round_question_id, join_code"
+        "id, status, match_id, current_round_id, current_round_type, current_round_question_id, join_code"
       )
       .eq("match_id", matchId)
       .maybeSingle();
@@ -2624,7 +2636,8 @@ export async function advanceCurrentQuestionAction(
     }
 
     // Mặc định: chuyển câu -> nếu autoShow=1 thì show ngay, còn lại bật màn chờ (hidden).
-    // Lưu ý: autoShow=1 (từ "chấm & chuyển") phải được tôn trọng tuyệt đối.
+    // Lưu ý: riêng Khởi động thi riêng, khi hết lượt của 1 thí sinh và chuyển sang người khác/thi chung
+    // thì luôn bật màn chờ (không auto-show) để tránh nhảy câu người khác ngay.
     let shouldAutoShow = Boolean(autoShow);
     // Khởi động (thi riêng): khi sang câu của thí sinh khác hoặc sang thi chung,
     // không auto-show để tránh "nhảy" sang câu người khác ngay sau khi hết lượt.
@@ -2635,40 +2648,36 @@ export async function advanceCurrentQuestionAction(
       typeof currentOrderIndex === "number" &&
       Number.isFinite(currentOrderIndex)
     ) {
-      if (autoShow) {
-        // explicit autoShow: không áp rule chặn auto-show.
-      } else {
-        const currentRow = currentQuestion as unknown as {
-          target_player_id?: string | null;
-          meta?: unknown;
-        };
-        const nextRow = nextQuestion as unknown as {
-          target_player_id?: string | null;
-          meta?: unknown;
-        };
+      const currentRow = currentQuestion as unknown as {
+        target_player_id?: string | null;
+        meta?: unknown;
+      };
+      const nextRow = nextQuestion as unknown as {
+        target_player_id?: string | null;
+        meta?: unknown;
+      };
 
-        const currentInfo = !currentRow?.target_player_id
-          ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
-          : null;
-        const nextInfo = !nextRow?.target_player_id
-          ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
-          : null;
+      const currentInfo = !currentRow?.target_player_id
+        ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
+        : null;
+      const nextInfo = !nextRow?.target_player_id
+        ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
+        : null;
 
-        const currentIsPersonal = Boolean(
-          currentRow?.target_player_id || currentInfo?.kind === "personal"
-        );
-        const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
-        const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
-        const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
+      const currentIsPersonal = Boolean(
+        currentRow?.target_player_id || currentInfo?.kind === "personal"
+      );
+      const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
+      const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
+      const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
 
-        // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
-        const crossingToAnotherPlayer =
-          currentIsPersonal &&
-          (!nextIsPersonal ||
-            (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
-        if (crossingToAnotherPlayer) {
-          shouldAutoShow = false;
-        }
+      // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
+      // Áp dụng cả khi autoShow=1 (chấm & chuyển) theo đúng luật/UX yêu cầu.
+      const crossingToAnotherPlayer =
+        currentIsPersonal &&
+        (!nextIsPersonal || (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
+      if (crossingToAnotherPlayer) {
+        shouldAutoShow = false;
       }
     }
 
@@ -2684,11 +2693,7 @@ export async function advanceCurrentQuestionAction(
         : null;
     const nextIsKhoiDongCommon =
       session.current_round_type === "khoi_dong" && nextInfo?.kind === "common";
-    const nextIsKhoiDongPersonal =
-      session.current_round_type === "khoi_dong" &&
-      Boolean(
-        !nextIsKhoiDongCommon && (nextQuestion.target_player_id || nextInfo?.kind === "personal")
-      );
+    // nextIsKhoiDongPersonal không cần dùng; chỉ cần phân biệt thi chung để bật chuông.
 
     // Khởi động thi chung: reset khóa lượt để buzzer reset theo câu.
     if (session.current_round_type === "khoi_dong" && nextIsKhoiDongCommon) {
@@ -2739,8 +2744,7 @@ export async function advanceCurrentQuestionAction(
       }
     }
 
-    // Host/admin: revalidate để thấy câu mới ngay.
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    // Host sync qua realtime/event; tránh revalidate host để giảm latency.
 
     console.info("[Olympia][Perf] advanceCurrentQuestionAction", {
       matchId,

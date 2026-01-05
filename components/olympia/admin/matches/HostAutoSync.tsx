@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import getSupabase from '@/lib/supabase'
+import { dispatchHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
 type Props = {
     sessionId: string | null
@@ -24,7 +24,6 @@ export function HostAutoSync({
     currentRoundQuestionId,
     questionState,
 }: Props) {
-    const router = useRouter()
     const channelRef = useRef<RealtimeChannel | null>(null)
     const lastServerSnapshotRef = useRef<Props>({
         sessionId: null,
@@ -32,8 +31,8 @@ export function HostAutoSync({
         currentRoundQuestionId: null,
         questionState: null,
     })
-    const pendingRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const lastRefreshAtRef = useRef<number>(0)
+    const pendingEmitRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const lastEmitAtRef = useRef<number>(0)
     const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const retryCountRef = useRef<number>(0)
 
@@ -51,9 +50,9 @@ export function HostAutoSync({
         let mounted = true
 
         const clearTimers = () => {
-            if (pendingRefreshRef.current) {
-                clearTimeout(pendingRefreshRef.current)
-                pendingRefreshRef.current = null
+            if (pendingEmitRef.current) {
+                clearTimeout(pendingEmitRef.current)
+                pendingEmitRef.current = null
             }
             if (retryTimerRef.current) {
                 clearTimeout(retryTimerRef.current)
@@ -61,18 +60,22 @@ export function HostAutoSync({
             }
         }
 
-        const scheduleRefresh = (reason: string) => {
-            // Throttle refresh để tránh bắn liên tục.
+        const scheduleEmit = (reason: string, payload: { nextRqId: string | null; nextQs: string | null }) => {
+            // Throttle emit để tránh bắn liên tục.
             const now = Date.now()
-            const elapsed = now - lastRefreshAtRef.current
+            const elapsed = now - lastEmitAtRef.current
             const delay = elapsed < 300 ? 300 - elapsed : 80
 
-            if (pendingRefreshRef.current) return
-            pendingRefreshRef.current = setTimeout(() => {
-                pendingRefreshRef.current = null
-                lastRefreshAtRef.current = Date.now()
-                console.debug('[HostAutoSync] router.refresh()', reason)
-                router.refresh()
+            if (pendingEmitRef.current) return
+            pendingEmitRef.current = setTimeout(() => {
+                pendingEmitRef.current = null
+                lastEmitAtRef.current = Date.now()
+                console.debug('[HostAutoSync] emit host session update', reason)
+                dispatchHostSessionUpdate({
+                    currentRoundQuestionId: payload.nextRqId,
+                    questionState: payload.nextQs,
+                    source: 'realtime',
+                })
             }, delay)
         }
 
@@ -113,7 +116,7 @@ export function HostAutoSync({
                                 nextQs !== snap.questionState
 
                             if (changed) {
-                                scheduleRefresh('live_sessions changed')
+                                scheduleEmit('live_sessions changed', { nextRqId, nextQs })
                             }
                         }
                     )
@@ -162,7 +165,7 @@ export function HostAutoSync({
 
             void supabaseCleanup()
         }
-    }, [router, sessionId])
+    }, [sessionId])
 
     return null
 }

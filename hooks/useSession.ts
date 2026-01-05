@@ -139,7 +139,9 @@ export function useSession(): UseSessionResult {
       }
     } catch {}
 
-    fetchSession(true);
+    // Không force fetch ở mount để tránh spam /api/session khi route refresh.
+    // fetchSessionShared() sẽ trả cache nhanh nếu còn trong MIN_FETCH_INTERVAL.
+    fetchSession(false);
   }, [fetchSession]);
 
   return {

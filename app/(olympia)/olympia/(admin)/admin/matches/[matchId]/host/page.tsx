@@ -10,7 +10,7 @@ import { InitializeRoundsButton } from '@/components/olympia/admin/matches/Initi
 import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matches/HostAutoAdvancePersonalKhoiDong'
 import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/HostRealtimeEventsListener'
 import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/HostQuestionPreviewCard'
-import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuickScorePanel'
+import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQuickScoreSection'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -540,6 +540,17 @@ export default async function OlympiaHostConsolePage({
   const khoiDongPersonalPlayerId =
     typeof khoiDongPersonalSeat === 'number' ? resolvePlayerIdBySeat(khoiDongPersonalSeat) : null
 
+  const currentRoundQuestionsForQuickScoreSection = currentRoundQuestions.map((q) => {
+    const row = q as RoundQuestionRow
+    const meta = row.meta && typeof row.meta === 'object' ? row.meta : null
+    return {
+      id: row.id,
+      order_index: row.order_index,
+      target_player_id: row.target_player_id ?? null,
+      meta,
+    }
+  })
+
   const filteredCurrentRoundQuestions = (() => {
     if (!isKhoiDong) return currentRoundQuestions
 
@@ -923,97 +934,29 @@ export default async function OlympiaHostConsolePage({
           ) : null}
 
           {(isKhoiDong || isVeDich) ? (
-            (() => {
-              const hasLiveQuestion = Boolean(liveSession?.id && liveSession?.current_round_question_id)
-              const enabledScoringPlayerId = (() => {
-                if (!hasLiveQuestion) return null
-                if (isKhoiDong) {
-                  // Khởi động: ưu tiên phân loại theo code (KD{seat}- / DKA-), không dựa target_player_id
-                  // vì target_player_id có thể bị dính từ lần chơi trước.
-                  const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
-                  if (isKhoiDongCommon) {
-                    return winnerBuzz?.player_id ?? null
-                  }
-
-                  // Thi riêng theo mã câu KD{seat}-.
-                  if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
-
-                  // Fallback: nếu không resolve được seat nhưng DB đã lock target_player_id.
-                  if (khoiDongPersonalSeat != null && currentRoundQuestion?.target_player_id) {
-                    return currentRoundQuestion.target_player_id
-                  }
-
-                  return winnerBuzz?.player_id ?? null
-                }
-                if (isVeDich) {
-                  return currentRoundQuestion?.target_player_id ?? null
-                }
-                return null
-              })()
-
-              const durationMs = (() => {
-                if (isKhoiDong) return 5000
-                if (isVeDich) return veDichValue === 30 ? 20000 : 15000
-                return 5000
-              })()
-
-              const disabled = !enabledScoringPlayerId
-              const hint = (() => {
-                if (!hasLiveQuestion) {
-                  return 'Bạn đang xem câu (preview). Hãy bấm Show để bắt đầu chấm nhanh.'
-                }
-                if (isKhoiDong && khoiDongPersonalSeat != null && !khoiDongPersonalPlayerId) {
-                  return `Khởi động thi riêng (KD${khoiDongPersonalSeat}): không tìm thấy thí sinh ghế ${khoiDongPersonalSeat}.`
-                }
-                if (isKhoiDong && !enabledScoringPlayerId) return 'Khởi động thi chung: cần có thí sinh bấm chuông thắng.'
-                if (isVeDich && !enabledScoringPlayerId) return 'Về đích: cần chọn thí sinh chính trước.'
-                return 'Chấm nhanh (tự trừ điểm và chuyển sang câu tiếp theo).'
-              })()
-
-              const scoringPlayerLabel = enabledScoringPlayerId
-                ? (() => {
-                  const p = players.find((x) => x.id === enabledScoringPlayerId)
-                  if (!p) return '—'
-                  const seat = p.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh'
-                  return p.display_name ? `${seat} · ${p.display_name}` : seat
-                })()
-                : null
-
-              const showTimeoutButton = Boolean(
-                isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline
-              )
-              const showTimerStartButton = Boolean(
-                isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && !liveSession?.timer_deadline
-              )
-
-              return (
-                <div>
-                  {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline ? (
-                    <div className="mb-2">
-                      <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
-                    </div>
-                  ) : null}
-
-                  <HostQuickScorePanel
-                    hint={hint}
-                    scoringPlayerLabel={scoringPlayerLabel}
-                    isVeDich={isVeDich}
-                    showTimeoutButton={showTimeoutButton}
-                    showTimerStartButton={showTimerStartButton}
-                    disabled={disabled}
-                    roundQuestionId={liveSession?.current_round_question_id ?? null}
-                    roundQuestionIdsInOrder={currentRoundQuestions.map((q) => q.id)}
-                    matchId={match.id}
-                    sessionId={liveSession?.id ?? ''}
-                    playerId={enabledScoringPlayerId ?? ''}
-                    durationMs={durationMs}
-                    confirmDecisionAndAdvanceFormAction={confirmDecisionAndAdvanceFormAction}
-                    startSessionTimerFormAction={startSessionTimerFormAction}
-                    confirmVeDichMainDecisionFormAction={confirmVeDichMainDecisionFormAction}
-                  />
+            <div>
+              {isKhoiDong && khoiDongPersonalSeat != null && liveSession?.question_state === 'showing' && liveSession?.timer_deadline ? (
+                <div className="mb-2">
+                  <HostAutoAdvancePersonalKhoiDong deadlineIso={liveSession.timer_deadline} />
                 </div>
-              )
-            })()
+              ) : null}
+
+              <HostQuickScoreSection
+                matchId={match.id}
+                sessionId={liveSession?.id ?? ''}
+                initialRoundQuestionId={liveSession?.current_round_question_id ?? null}
+                initialQuestionState={liveSession?.question_state ?? null}
+                initialTimerDeadline={liveSession?.timer_deadline ?? null}
+                isKhoiDong={isKhoiDong}
+                isVeDich={isVeDich}
+                players={players}
+                currentRoundQuestions={currentRoundQuestionsForQuickScoreSection}
+                winnerBuzzPlayerId={winnerBuzz?.player_id ?? null}
+                confirmDecisionAndAdvanceFormAction={confirmDecisionAndAdvanceFormAction}
+                startSessionTimerFormAction={startSessionTimerFormAction}
+                confirmVeDichMainDecisionFormAction={confirmVeDichMainDecisionFormAction}
+              />
+            </div>
           ) : null}
 
           <Card>

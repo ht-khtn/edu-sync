@@ -227,7 +227,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion
 
   const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
-  const showQuestionMedia = Boolean(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
+  const showQuestionMedia = Boolean(mediaUrl) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null

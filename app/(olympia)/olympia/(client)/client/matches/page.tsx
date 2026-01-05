@@ -29,7 +29,6 @@ const matchStatusColor: Record<string, 'default' | 'outline' | 'secondary' | 'de
 type MatchesPayload = {
     upcomingMatches: Array<{
         id: string
-        code?: string | null
         name: string
         status: string
         scheduled_at: string | null
@@ -56,8 +55,7 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
     try {
         const { data: allMatches, error } = await olympia
             .from('matches')
-            // TODO: change matches.code to sessions.join_code in client view
-            .select('id, code, name, status, scheduled_at')
+            .select('id, name, status, scheduled_at')
             .order('scheduled_at', { ascending: false, nullsFirst: true })
 
         if (error) {

@@ -10,6 +10,7 @@ import { getServerAuthContext } from '@/lib/server-auth'
 import { cache } from 'react'
 import { Clock, Radio, Calendar } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { OlympiaAccountMenu } from '@/components/olympia/client/OlympiaAccountMenu'
 
 // ISR: Match schedule updates every 30s. Real-time listener handles live updates.
 export const revalidate = 30
@@ -77,11 +78,17 @@ export default async function OlympiaClientHomePage() {
   return (
     <section className="space-y-6">
       <div className="space-y-3">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tight">🎮 Olympia Quiz Live</h1>
-          <p className="text-lg text-muted-foreground mt-2">
-            Thi trắc nghiệm trực tuyến theo hình thức game show
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-4xl font-bold tracking-tight">🎮 Olympia Quiz Live</h1>
+            <p className="text-lg text-muted-foreground mt-2">
+              Thi trắc nghiệm trực tuyến theo hình thức game show
+            </p>
+          </div>
+
+          <div className="shrink-0">
+            <OlympiaAccountMenu loginRedirectTo="/olympia/client" />
+          </div>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-3">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Check, X } from 'lucide-react'
 
@@ -11,6 +11,7 @@ type Props = {
     showTimeoutButton: boolean
     showTimerStartButton: boolean
     disabled: boolean
+    roundQuestionId: string | null
     matchId: string
     sessionId: string
     playerId: string
@@ -28,6 +29,7 @@ export function HostQuickScorePanel(props: Props) {
         showTimeoutButton,
         showTimerStartButton,
         disabled,
+        roundQuestionId,
         matchId,
         sessionId,
         playerId,
@@ -38,6 +40,11 @@ export function HostQuickScorePanel(props: Props) {
     } = props
 
     const [locked, setLocked] = useState(false)
+
+    useEffect(() => {
+        // Khi chuyển câu hỏi, cần mở lại chấm nhanh.
+        setLocked(false)
+    }, [roundQuestionId])
 
     const allDisabled = useMemo(() => disabled || locked, [disabled, locked])
 

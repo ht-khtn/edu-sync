@@ -189,10 +189,12 @@ export default async function OlympiaMcJoinCodePage({ params }: PageProps) {
                                 initialData={{ ...data, viewerUserId: null }}
                                 sessionId={data.session.id}
                                 viewerMode="mc"
+                                mcScoreboardSlotId="olympia-mc-scoreboard-slot"
                             />
                         </div>
 
                         <aside className="lg:sticky lg:top-6 lg:h-fit">
+                            <div id="olympia-mc-scoreboard-slot" className="mb-4" />
                             <SessionInfoSidebar session={data.session} match={data.match} playerCount={data.players.length} />
                         </aside>
                     </div>

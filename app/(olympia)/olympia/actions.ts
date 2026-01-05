@@ -1077,8 +1077,8 @@ export async function setLiveSessionRoundAction(
         current_round_question_id: null,
         question_state: "hidden",
         timer_deadline: null,
-        // Khởi động thi chung: chuông bật sẵn. Các vòng khác: mặc định tắt.
-        buzzer_enabled: roundType === "khoi_dong",
+        // Khởi động thi chung + CNV: mặc định bật chuông.
+        buzzer_enabled: roundType === "khoi_dong" || roundType === "vcnv",
       })
       .eq("match_id", matchId)
       .eq("status", "running")
@@ -1122,13 +1122,88 @@ export async function setQuestionStateAction(
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
 
+    const { data: sessionFull, error: sessionFullError } = await olympia
+      .from("live_sessions")
+      .select("id, status, match_id, current_round_type, current_round_question_id")
+      .eq("id", session.id)
+      .maybeSingle();
+    if (sessionFullError) return { error: sessionFullError.message };
+
+    const isVcnv = sessionFull?.current_round_type === "vcnv";
+
+    // Khởi động thi chung: khi bấm Show cần bật chuông + reset để không dính winner cũ.
+    const shouldHandleKhoiDongShow =
+      questionState === "showing" && sessionFull?.current_round_type === "khoi_dong";
+
+    let isKhoiDongCommon = false;
+    if (shouldHandleKhoiDongShow && sessionFull?.current_round_question_id) {
+      const { data: rqRow, error: rqErr } = await olympia
+        .from("round_questions")
+        .select("id, target_player_id, meta")
+        .eq("id", sessionFull.current_round_question_id)
+        .maybeSingle();
+      if (rqErr) return { error: rqErr.message };
+      const info = parseKhoiDongCodeInfoFromMeta((rqRow as unknown as { meta?: unknown })?.meta);
+      isKhoiDongCommon = info?.kind === "common";
+
+      if (isKhoiDongCommon) {
+        const { error: resetTargetErr } = await olympia
+          .from("round_questions")
+          .update({ target_player_id: null })
+          .eq("id", sessionFull.current_round_question_id);
+        if (resetTargetErr) {
+          console.warn(
+            "[Olympia] reset target_player_id (khoi_dong common) failed:",
+            resetTargetErr.message
+          );
+        }
+
+        const { error: resetBuzzErr } = await olympia.from("buzzer_events").insert({
+          match_id: (sessionFull as unknown as { match_id?: string | null })?.match_id ?? null,
+          round_question_id: sessionFull.current_round_question_id,
+          player_id: null,
+          event_type: "reset",
+          result: null,
+        });
+        if (resetBuzzErr) {
+          console.warn("[Olympia] insert buzzer reset (khoi_dong) failed:", resetBuzzErr.message);
+        }
+      }
+    }
+
+    const buzzerEnabledPatch =
+      questionState === "showing" && (isVcnv || isKhoiDongCommon) ? true : null;
+
     const { error } = await olympia
       .from("live_sessions")
       // Countdown không tự chạy khi bấm Show; host sẽ bấm "Bấm giờ" để bắt đầu.
-      .update({ question_state: questionState, timer_deadline: null })
+      .update({
+        question_state: questionState,
+        timer_deadline: null,
+        ...(buzzerEnabledPatch != null ? { buzzer_enabled: buzzerEnabledPatch } : {}),
+      })
       .eq("id", session.id);
 
     if (error) return { error: error.message };
+
+    // VCNV: mỗi lần mở câu hỏi, reset trạng thái chuông để không dính winner cũ.
+    if (
+      questionState === "showing" &&
+      isVcnv &&
+      sessionFull?.match_id &&
+      sessionFull?.current_round_question_id
+    ) {
+      const { error: resetErr } = await olympia.from("buzzer_events").insert({
+        match_id: sessionFull.match_id,
+        round_question_id: sessionFull.current_round_question_id,
+        player_id: null,
+        event_type: "reset",
+        result: null,
+      });
+      if (resetErr) {
+        console.warn("[Olympia] insert buzzer reset (VCNV) failed:", resetErr.message);
+      }
+    }
 
     // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
@@ -2301,16 +2376,21 @@ export async function setCurrentQuestionAction(
     const resolvedRoundType = roundTypeJoin?.round_type ?? null;
 
     const isKhoiDong = resolvedRoundType === "khoi_dong";
+    const isVcnv = resolvedRoundType === "vcnv";
     const rqTarget = (roundQuestion as unknown as { target_player_id?: string | null })
       ?.target_player_id;
-    const khoiDongInfo =
-      isKhoiDong && !rqTarget
-        ? parseKhoiDongCodeInfoFromMeta((roundQuestion as unknown as { meta?: unknown })?.meta)
-        : null;
-    const isKhoiDongPersonal = Boolean(rqTarget || khoiDongInfo?.kind === "personal");
+    const khoiDongInfo = isKhoiDong
+      ? parseKhoiDongCodeInfoFromMeta((roundQuestion as unknown as { meta?: unknown })?.meta)
+      : null;
+
+    // Nếu code là DKA- thì chắc chắn là thi chung, kể cả khi target_player_id đang bị dính từ lần trước.
+    const isKhoiDongCommon = khoiDongInfo?.kind === "common";
+    const isKhoiDongPersonal = Boolean(
+      !isKhoiDongCommon && (rqTarget || khoiDongInfo?.kind === "personal")
+    );
 
     // Khởi động thi chung: reset khóa lượt mỗi câu để buzzer hoạt động đúng theo câu.
-    if (isKhoiDong && !isKhoiDongPersonal) {
+    if (isKhoiDong && isKhoiDongCommon) {
       const { error: resetErr } = await olympia
         .from("round_questions")
         .update({ target_player_id: null })
@@ -2334,12 +2414,29 @@ export async function setCurrentQuestionAction(
         // Đổi câu luôn tự tắt màn chờ để hiển thị câu mới.
         question_state: "showing",
         timer_deadline: deadline,
-        // Khởi động thi chung: chuông bật sẵn. Các trường hợp khác: mặc định tắt.
-        buzzer_enabled: isKhoiDong && !isKhoiDongPersonal,
+        // Khởi động thi chung + CNV: chuông bật sẵn. Các trường hợp khác: mặc định tắt.
+        buzzer_enabled: isVcnv || (isKhoiDong && isKhoiDongCommon),
       })
       .eq("id", session.id);
 
     if (updateError) return { error: updateError.message };
+
+    // VCNV + Khởi động thi chung: reset buzzer mỗi lần show câu để không dính winner cũ (cả trường hợp replay cùng match).
+    if (isVcnv || (isKhoiDong && isKhoiDongCommon)) {
+      const { error: resetErr } = await olympia.from("buzzer_events").insert({
+        match_id: matchId,
+        round_question_id: roundQuestion.id,
+        player_id: null,
+        event_type: "reset",
+        result: null,
+      });
+      if (resetErr) {
+        console.warn(
+          `[Olympia] insert buzzer reset (${isVcnv ? "VCNV" : "khoi_dong"}) failed:`,
+          resetErr.message
+        );
+      }
+    }
 
     // Host/admin: revalidate để nội dung câu hỏi hiển thị ngay.
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
@@ -2478,6 +2575,30 @@ export async function advanceCurrentQuestionAction(
 
     if (!nextQuestion) return { error: "Vòng này chưa có câu hỏi." };
 
+    // Khởi động: nếu đã ở câu cuối và bấm Next, tự bật màn chờ (kết thúc vòng KD).
+    if (
+      session.current_round_type === "khoi_dong" &&
+      direction === "next" &&
+      currentQuestion &&
+      typeof currentOrderIndex === "number" &&
+      Number.isFinite(currentOrderIndex) &&
+      (nextQuestion as unknown as { id?: string }).id ===
+        (currentQuestion as unknown as { id?: string }).id
+    ) {
+      const { error: endErr } = await olympia
+        .from("live_sessions")
+        .update({
+          question_state: "hidden",
+          timer_deadline: null,
+          buzzer_enabled: false,
+        })
+        .eq("id", session.id);
+      if (endErr) return { error: endErr.message };
+
+      revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+      return { success: "Đã hết toàn bộ câu Khởi động, tự bật màn chờ." };
+    }
+
     // Mặc định: chuyển câu -> nếu autoShow=1 thì show ngay, còn lại bật màn chờ (hidden).
     // Lưu ý: autoShow=1 (từ "chấm & chuyển") phải được tôn trọng tuyệt đối.
     let shouldAutoShow = Boolean(autoShow);
@@ -2534,15 +2655,19 @@ export async function advanceCurrentQuestionAction(
     const nextQuestionState = shouldAutoShow ? "showing" : "hidden";
 
     const nextInfo =
-      session.current_round_type === "khoi_dong" && !nextQuestion.target_player_id
+      session.current_round_type === "khoi_dong"
         ? parseKhoiDongCodeInfoFromMeta((nextQuestion as unknown as { meta?: unknown })?.meta)
         : null;
+    const nextIsKhoiDongCommon =
+      session.current_round_type === "khoi_dong" && nextInfo?.kind === "common";
     const nextIsKhoiDongPersonal =
       session.current_round_type === "khoi_dong" &&
-      Boolean(nextQuestion.target_player_id || nextInfo?.kind === "personal");
+      Boolean(
+        !nextIsKhoiDongCommon && (nextQuestion.target_player_id || nextInfo?.kind === "personal")
+      );
 
     // Khởi động thi chung: reset khóa lượt để buzzer reset theo câu.
-    if (session.current_round_type === "khoi_dong" && !nextIsKhoiDongPersonal) {
+    if (session.current_round_type === "khoi_dong" && nextIsKhoiDongCommon) {
       const { error: resetErr } = await olympia
         .from("round_questions")
         .update({ target_player_id: null })
@@ -2554,8 +2679,8 @@ export async function advanceCurrentQuestionAction(
 
     const nextBuzzerEnabled =
       nextQuestionState === "showing" &&
-      session.current_round_type === "khoi_dong" &&
-      !nextIsKhoiDongPersonal;
+      ((session.current_round_type === "khoi_dong" && nextIsKhoiDongCommon) ||
+        session.current_round_type === "vcnv");
 
     const { error: updateError } = await olympia
       .from("live_sessions")
@@ -2569,6 +2694,26 @@ export async function advanceCurrentQuestionAction(
       .eq("id", session.id);
 
     if (updateError) return { error: updateError.message };
+
+    if (
+      (session.current_round_type === "vcnv" ||
+        (session.current_round_type === "khoi_dong" && nextIsKhoiDongCommon)) &&
+      nextQuestionState === "showing"
+    ) {
+      const { error: resetErr } = await olympia.from("buzzer_events").insert({
+        match_id: session.match_id,
+        round_question_id: nextQuestion.id,
+        player_id: null,
+        event_type: "reset",
+        result: null,
+      });
+      if (resetErr) {
+        console.warn(
+          `[Olympia] insert buzzer reset (${session.current_round_type === "vcnv" ? "VCNV" : "khoi_dong"}) failed:`,
+          resetErr.message
+        );
+      }
+    }
 
     // Host/admin: revalidate để thấy câu mới ngay.
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);

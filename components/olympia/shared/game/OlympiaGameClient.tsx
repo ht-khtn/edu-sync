@@ -1,9 +1,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo, useEffect, useRef, useCallback } from 'react'
+import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { useActionState } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useFormStatus, createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -20,6 +20,16 @@ type OlympiaGameClientProps = {
   sessionId: string
   allowGuestFallback?: boolean
   viewerMode?: 'player' | 'guest' | 'mc'
+  mcScoreboardSlotId?: string
+}
+
+type BuzzerEventLite = {
+  id: string | null
+  round_question_id: string | null
+  player_id: string | null
+  event_type: string | null
+  result: string | null
+  occurred_at: string | null
 }
 
 const roundLabel: Record<string, string> = {
@@ -48,7 +58,7 @@ function FormSubmitButton({ children, disabled, variant }: { children: ReactNode
   )
 }
 
-export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, viewerMode }: OlympiaGameClientProps) {
+export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, viewerMode, mcScoreboardSlotId }: OlympiaGameClientProps) {
   const {
     match,
     session,
@@ -130,6 +140,17 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
 
+  const resolvedMcScoreboardSlotId = mcScoreboardSlotId ?? 'olympia-mc-scoreboard-slot'
+  const [mcScoreboardSlotEl, setMcScoreboardSlotEl] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!isMc) {
+      setMcScoreboardSlotEl(null)
+      return
+    }
+    if (typeof document === 'undefined') return
+    setMcScoreboardSlotEl(document.getElementById(resolvedMcScoreboardSlotId))
+  }, [isMc, resolvedMcScoreboardSlotId])
+
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
@@ -150,6 +171,29 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   }, [players])
 
   const currentQuestionId = session.current_round_question_id
+  const currentQuestionBuzzerEvents = useMemo((): BuzzerEventLite[] => {
+    if (!currentQuestionId) return []
+
+    const all = (buzzerEvents as unknown as BuzzerEventLite[]).filter(
+      (e) => (e.round_question_id ?? null) === currentQuestionId
+    )
+    if (all.length === 0) return []
+
+    const resetTs = all
+      .filter((e) => (e.event_type ?? null) === 'reset' && e.occurred_at)
+      .map((e) => Date.parse(e.occurred_at ?? ''))
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => b - a)[0]
+
+    const effective = Number.isFinite(resetTs)
+      ? all.filter((e) => {
+        const ts = e.occurred_at ? Date.parse(e.occurred_at) : NaN
+        return Number.isFinite(ts) && ts >= (resetTs as number)
+      })
+      : all
+
+    return effective.filter((e) => (e.event_type ?? null) !== 'reset')
+  }, [buzzerEvents, currentQuestionId])
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
   const questionRecord = currentRoundQuestion?.questions
     ? (Array.isArray(currentRoundQuestion.questions)
@@ -177,8 +221,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   const stealWinnerPlayerId =
     isStealWindow && currentQuestionId
-      ? (buzzerEvents
-        .filter((e) => e.round_question_id === currentQuestionId)
+      ? (currentQuestionBuzzerEvents
         .find((e) => (e.event_type ?? 'steal') === 'steal' && e.result === 'win')
         ?.player_id ?? null)
       : null
@@ -226,18 +269,21 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
     // Ưu tiên hiển thị trạng thái buzzer (nếu có người thắng) để đúng trường hợp cướp chuông.
     const winnerBuzzId =
-      buzzerEvents
-        ?.filter((e) => e.round_question_id === currentQuestionId)
+      currentQuestionBuzzerEvents
         .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
         ?.player_id ?? null
 
-    if (winnerBuzzId) return `Đang trả lời: ${formatPlayerLabel(winnerBuzzId)}`
+    if (winnerBuzzId) {
+      return roundType === 'vcnv'
+        ? `Đã bấm chuông: ${formatPlayerLabel(winnerBuzzId)}`
+        : `Đang trả lời: ${formatPlayerLabel(winnerBuzzId)}`
+    }
     if (session.buzzer_enabled !== false && (questionState === 'showing' || isStealWindow)) {
       return 'Chưa ai bấm chuông'
     }
-    if (targetPlayerId) return `Lượt: ${formatPlayerLabel(targetPlayerId)}`
+    if (targetPlayerId) return `Lượt hiện tại: ${formatPlayerLabel(targetPlayerId)}`
     return '—'
-  }, [buzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, questionState, resolvedViewerMode, session.buzzer_enabled, targetPlayerId])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, questionState, resolvedViewerMode, roundType, session.buzzer_enabled, targetPlayerId])
 
   void answers
   void starUses
@@ -249,8 +295,29 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   void showQuestionText
   const playerTurnSuffix =
     resolvedViewerMode === 'player' && !isWaitingScreen && targetPlayerId
-      ? ` · Lượt: ${formatPlayerLabel(targetPlayerId)}`
+      ? ` · Luợt: ${formatPlayerLabel(targetPlayerId)}`
       : ''
+
+  const mcTurnLabel = useMemo(() => {
+    if (!isMc) return null
+    if (!currentQuestionId) return 'Chưa có câu hỏi'
+    return targetPlayerId ? formatPlayerLabel(targetPlayerId) : '—'
+  }, [currentQuestionId, formatPlayerLabel, isMc, targetPlayerId])
+
+  const mcBuzzerLabel = useMemo(() => {
+    if (!isMc) return null
+    if (!currentQuestionId) return '—'
+
+    const winnerBuzzId =
+      currentQuestionBuzzerEvents
+        .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
+        ?.player_id ?? null
+
+    if (winnerBuzzId) return `Đã bấm chuông: ${formatPlayerLabel(winnerBuzzId)}`
+    if (session.buzzer_enabled === false) return 'Đang tắt'
+    if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
+    return '—'
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isMc, isStealWindow, questionState, session.buzzer_enabled])
 
   const mediaKind = useMemo(() => {
     if (!mediaUrl) return null
@@ -435,8 +502,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     if (session.buzzer_enabled === false) return
     if (!currentQuestionId) return
 
-    const relevantEvents = buzzerEvents
-      .filter((e) => e.round_question_id === currentQuestionId)
+    const relevantEvents = currentQuestionBuzzerEvents
       .filter((e) => Boolean(e.player_id))
 
     if (relevantEvents.length === 0) return
@@ -461,7 +527,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     const player = fastest.player_id ? players.find((p) => p.id === fastest.player_id) ?? null : null
     const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
     toast.success(`${name} bấm nhanh nhất`)
-  }, [buzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
 
   return (
     <>
@@ -495,7 +561,18 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
             </div>
 
             <div className="min-w-0 flex-1 flex justify-center">
-              {viewerSeatNameText || turnStatusText ? (
+              {isMc ? (
+                <div className="flex flex-wrap justify-center gap-2 max-w-[720px]">
+                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Lượt hiện tại</p>
+                    <p className="text-sm text-slate-100 truncate">{mcTurnLabel ?? '—'}</p>
+                  </div>
+                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
+                    <p className="text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
+                  </div>
+                </div>
+              ) : viewerSeatNameText || turnStatusText ? (
                 <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center max-w-[520px]">
                   <p className="text-xs uppercase tracking-widest text-slate-200 truncate">{viewerSeatNameText ?? '—'}</p>
                   <p className="text-sm text-slate-100 truncate">{turnStatusText ?? '—'}</p>
@@ -776,22 +853,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
             </div>
           )}
 
-          {/* Top scoreboard mini */}
-          {isMc && scoreboard.length > 0 ? (
-            <div className="absolute top-4 left-4 rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
-              <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
-              <div className="mt-1 space-y-1">
-                {scoreboard.slice(0, 4).map((p, idx) => (
-                  <div key={p.id} className="flex items-center justify-between gap-3">
-                    <span className="text-slate-100">
-                      {idx + 1}. Ghế {p.seat ?? '—'}
-                    </span>
-                    <span className="font-mono text-white">{p.total}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          {/* Top scoreboard mini (MC): đã chuyển ra ngoài khung game qua portal */}
 
 
         </main>
@@ -870,6 +932,25 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
 
       </div>
+
+      {isMc && mcScoreboardSlotEl && scoreboard.length > 0
+        ? createPortal(
+          <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+            <p className="text-[11px] uppercase tracking-widest text-slate-200">Bảng điểm</p>
+            <div className="mt-1 space-y-1">
+              {scoreboard.slice(0, 4).map((p, idx) => (
+                <div key={p.id} className="flex items-center justify-between gap-3">
+                  <span className="text-slate-100">
+                    {idx + 1}. Ghế {p.seat ?? '—'}
+                  </span>
+                  <span className="font-mono text-white">{p.total}</span>
+                </div>
+              ))}
+            </div>
+          </div>,
+          mcScoreboardSlotEl
+        )
+        : null}
     </>
   )
 }

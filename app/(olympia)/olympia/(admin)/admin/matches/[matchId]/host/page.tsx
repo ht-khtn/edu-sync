@@ -989,6 +989,7 @@ export default async function OlympiaHostConsolePage({
                     showTimeoutButton={showTimeoutButton}
                     showTimerStartButton={showTimerStartButton}
                     disabled={disabled}
+                    roundQuestionId={liveSession?.current_round_question_id ?? null}
                     matchId={match.id}
                     sessionId={liveSession?.id ?? ''}
                     playerId={enabledScoringPlayerId ?? ''}

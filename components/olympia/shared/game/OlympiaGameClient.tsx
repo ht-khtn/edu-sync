@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import type { ReactNode, CSSProperties } from 'react'
 import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus, createPortal } from 'react-dom'
@@ -210,11 +210,13 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const noteText = currentRoundQuestion?.note ?? questionRecord?.note ?? null
   const mediaUrl = (questionSetItemRecord?.image_url ?? questionRecord?.image_url ?? null)?.trim() || null
   const audioUrl = (questionSetItemRecord?.audio_url ?? questionRecord?.audio_url ?? null)?.trim() || null
-  const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden')
+  const showQuestionText = roundType !== 'vcnv' && Boolean(questionText) && (isMc || questionState !== 'hidden')
+  const showQuestionMedia = roundType !== 'vcnv' && Boolean(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden')
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
   const isViewerTarget = Boolean(viewerPlayer?.id && targetPlayerId && viewerPlayer.id === targetPlayerId)
+  const isViewerDisqualifiedObstacle = roundType === 'vcnv' && viewerPlayer?.is_disqualified_obstacle === true
 
   // ve_dich_value/star_uses vẫn được giữ trong state để dùng ở giai đoạn sau;
   // UI game hiện tại chưa hiển thị các badge này.
@@ -239,7 +241,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   // Quy tắc chung: ngoài VCNV, nếu đã có target_player_id thì chỉ target mới được gửi.
   // (target có thể là lượt cá nhân hoặc người bấm chuông thắng).
   const isLockedToTarget = roundType !== 'vcnv' && Boolean(targetPlayerId)
-  const canSubmitGeneric = !disableInteractions && (!isLockedToTarget || Boolean(isViewerTarget))
+  const canSubmitGeneric = !disableInteractions && (!isLockedToTarget || Boolean(isViewerTarget)) && !isViewerDisqualifiedObstacle
   const disableAnswerSubmit = isVeDich ? !canSubmitVeDich : !canSubmitGeneric
 
   const canBuzzVeDich =
@@ -249,7 +251,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
       isStealWindow &&
       !isViewerTarget
     )
-  const disableBuzz = (session.buzzer_enabled === false) || (isVeDich ? !canBuzzVeDich : disableInteractions)
+  const disableBuzz = (session.buzzer_enabled === false) || (isVeDich ? !canBuzzVeDich : disableInteractions) || isViewerDisqualifiedObstacle
 
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
@@ -673,11 +675,13 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
             <div className=""></div>
           ) : (
             <div className="w-full max-w-5xl text-center">
-              <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
-                {questionText?.trim() ? questionText : '—'}
-              </p>
+              {showQuestionText ? (
+                <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
+                  {questionText?.trim() ? questionText : '—'}
+                </p>
+              ) : null}
 
-              {(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') ? (
+              {showQuestionMedia ? (
                 <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
                   {mediaUrl ? (
                     <div className="space-y-2">
@@ -742,11 +746,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                   }
 
                   const buildBoxes = (answerText: string, reveal: boolean) => {
-                    const chars = Array.from(answerText)
+                    // Số ô chữ KHÔNG tính dấu cách.
+                    const chars = Array.from(answerText).filter((ch) => ch.trim() !== '')
                     return (
                       <div className="flex flex-wrap justify-center gap-1">
                         {chars.map((ch, idx) => {
-                          if (ch === ' ') return <span key={idx} className="w-2" />
                           return (
                             <span
                               key={idx}
@@ -761,12 +765,60 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                     )
                   }
 
-                  const tilesForImage: Array<{ pos: number; label: string; className: string }> = [
-                    { pos: 1, label: '1', className: 'left-2 top-2' },
-                    { pos: 2, label: '2', className: 'right-2 top-2' },
-                    { pos: 3, label: '3', className: 'left-2 bottom-2' },
-                    { pos: 4, label: '4', className: 'right-2 bottom-2' },
-                    { pos: 5, label: 'TT', className: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' },
+                  type CoverPos = 1 | 2 | 3 | 4 | 5
+                  const coverBaseClass = 'absolute border border-slate-700 bg-slate-950/80'
+                  const covers: Array<{ pos: CoverPos; style: CSSProperties }> = [
+                    // 4 góc: cover lớn và cắt góc trong
+                    {
+                      pos: 1,
+                      style: {
+                        left: '0%',
+                        top: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 55%, 55% 55%, 55% 100%, 0% 100%)',
+                      },
+                    },
+                    {
+                      pos: 2,
+                      style: {
+                        right: '0%',
+                        top: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 100%, 45% 100%, 45% 55%, 0% 55%)',
+                      },
+                    },
+                    {
+                      pos: 3,
+                      style: {
+                        left: '0%',
+                        bottom: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 55% 0%, 55% 45%, 100% 45%, 100% 100%, 0% 100%)',
+                      },
+                    },
+                    {
+                      pos: 4,
+                      style: {
+                        right: '0%',
+                        bottom: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(45% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 45%, 45% 45%)',
+                      },
+                    },
+                    // Trung tâm
+                    {
+                      pos: 5,
+                      style: {
+                        left: '27.5%',
+                        top: '27.5%',
+                        width: '45%',
+                        height: '45%',
+                      },
+                    },
                   ]
 
                   const renderRow = (pos: number, title: string) => {
@@ -799,18 +851,10 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                             </div>
                           )}
 
-                          {tilesForImage.map((t) => {
-                            const tile = byPos.get(t.pos) ?? null
+                          {covers.map((c) => {
+                            const tile = byPos.get(c.pos) ?? null
                             if (tile?.is_open) return null
-                            return (
-                              <div
-                                key={t.pos}
-                                className={`absolute ${t.className} flex h-16 w-16 items-center justify-center rounded-md border border-slate-700 bg-slate-950/70`}
-                                aria-label={`Ô ${t.label} (che)`}
-                              >
-                                <span className="text-sm font-semibold text-slate-100">{t.label}</span>
-                              </div>
-                            )
+                            return <div key={c.pos} className={coverBaseClass} style={c.style} aria-hidden="true" />
                           })}
                         </div>
 
@@ -828,6 +872,11 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                         {!disableInteractions ? (
                           <p className="mt-2 text-xs text-slate-300">
                             Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.
+                          </p>
+                        ) : null}
+                        {isViewerDisqualifiedObstacle ? (
+                          <p className="mt-2 text-xs text-amber-200">
+                            Bạn đã bị loại quyền trả lời ở vòng CNV này.
                           </p>
                         ) : null}
                       </div>

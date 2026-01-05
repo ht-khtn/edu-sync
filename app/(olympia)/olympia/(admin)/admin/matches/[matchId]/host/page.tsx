@@ -928,9 +928,21 @@ export default async function OlympiaHostConsolePage({
               const enabledScoringPlayerId = (() => {
                 if (!hasLiveQuestion) return null
                 if (isKhoiDong) {
-                  // Ưu tiên xác định thi riêng theo mã câu KD{seat}-.
+                  // Khởi động: ưu tiên phân loại theo code (KD{seat}- / DKA-), không dựa target_player_id
+                  // vì target_player_id có thể bị dính từ lần chơi trước.
+                  const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
+                  if (isKhoiDongCommon) {
+                    return winnerBuzz?.player_id ?? null
+                  }
+
+                  // Thi riêng theo mã câu KD{seat}-.
                   if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
-                  if (currentRoundQuestion?.target_player_id) return currentRoundQuestion.target_player_id
+
+                  // Fallback: nếu không resolve được seat nhưng DB đã lock target_player_id.
+                  if (khoiDongPersonalSeat != null && currentRoundQuestion?.target_player_id) {
+                    return currentRoundQuestion.target_player_id
+                  }
+
                   return winnerBuzz?.player_id ?? null
                 }
                 if (isVeDich) {
@@ -1025,8 +1037,14 @@ export default async function OlympiaHostConsolePage({
                 const enabledScoringPlayerId = (() => {
                   if (!hasLiveQuestion) return null
                   if (isKhoiDong) {
+                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
+                    if (isKhoiDongCommon) {
+                      return winnerBuzz?.player_id ?? null
+                    }
                     if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
-                    if (currentRoundQuestion?.target_player_id) return currentRoundQuestion.target_player_id
+                    if (khoiDongPersonalSeat != null && currentRoundQuestion?.target_player_id) {
+                      return currentRoundQuestion.target_player_id
+                    }
                     return winnerBuzz?.player_id ?? null
                   }
                   if (isVeDich) {
@@ -1061,7 +1079,10 @@ export default async function OlympiaHostConsolePage({
 
                 const getDecisionLabels = (playerId: string) => {
                   if (isKhoiDong) {
-                    const isPersonal = Boolean(khoiDongPersonalSeat != null || currentRoundQuestion?.target_player_id)
+                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
+                    const isPersonal = Boolean(
+                      khoiDongPersonalSeat != null || (!isKhoiDongCommon && currentRoundQuestion?.target_player_id)
+                    )
                     return {
                       correct: 'Đúng (+10)',
                       wrong: isPersonal ? 'Sai (0)' : 'Sai (-5)',

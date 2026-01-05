@@ -175,14 +175,20 @@ const startTimerSchema = z.object({
 
 const submitAnswerSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
-  answer: z
-    .string()
-    .transform((value) => value.trim())
-    .refine((value) => value.length > 0, "Vui lòng nhập đáp án."),
-  notes: z
-    .string()
-    .optional()
-    .transform((value) => (value && value.trim().length > 0 ? value.trim() : null)),
+  answer: z.preprocess(
+    (value) => (typeof value === "string" ? value : ""),
+    z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, "Vui lòng nhập đáp án.")
+  ),
+  notes: z.preprocess(
+    (value) => (typeof value === "string" ? value : undefined),
+    z
+      .string()
+      .optional()
+      .transform((value) => (value && value.trim().length > 0 ? value.trim() : null))
+  ),
 });
 
 const buzzerSchema = z.object({
@@ -1089,6 +1095,15 @@ export async function setLiveSessionRoundAction(
       return { error: "Phòng chưa ở trạng thái running." };
     }
 
+    // CNV: quyền đoán CNV chỉ áp dụng trong vòng CNV, nên reset cờ mỗi khi đổi vòng.
+    const { error: resetDqErr } = await olympia
+      .from("match_players")
+      .update({ is_disqualified_obstacle: false })
+      .eq("match_id", matchId);
+    if (resetDqErr) {
+      console.warn("[Olympia] reset is_disqualified_obstacle failed:", resetDqErr.message);
+    }
+
     // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 
     return { success: `Đã chuyển sang vòng ${roundType}.` };
@@ -1536,13 +1551,18 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
 
     const { data: playerRow, error: playerError } = await olympia
       .from("match_players")
-      .select("id")
+      .select("id, is_disqualified_obstacle")
       .eq("match_id", session.match_id)
       .eq("participant_id", appUserId)
       .maybeSingle();
 
     if (playerError) return { error: playerError.message };
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    // CNV: nếu đã bị loại quyền đoán CNV trong vòng này, không cho gửi đáp án từ khung nhập.
+    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
+      return { error: "Bạn đã bị loại quyền trả lời ở vòng CNV này." };
+    }
 
     const { data: roundQuestion, error: rqError } = await olympia
       .from("round_questions")
@@ -1700,6 +1720,10 @@ export async function triggerBuzzerAction(
 
     if (playerError) return { error: playerError.message };
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
+      return { error: "Bạn đã bị loại quyền đoán CNV ở vòng này." };
+    }
 
     // Khởi động lượt cá nhân: không cho bấm chuông.
     const { data: rq, error: rqError } = await olympia

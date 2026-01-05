@@ -739,12 +739,12 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                       )}
                     </div>
                   ) : null}
-
-                  {audioUrl && isGuest ? (
-                    // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
-                    <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
-                  ) : null}
                 </div>
+              ) : null}
+
+              {audioUrl && isGuest ? (
+                // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
+                <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
               ) : null}
 
               {shouldUseObstacleUi && obstacle ? (

@@ -267,7 +267,7 @@ async function fetchHostData(matchCode: string) {
       .order('order_index', { ascending: true }),
     olympia
       .from('match_players')
-      .select('id, seat_index, display_name, participant_id')
+      .select('id, seat_index, display_name, participant_id, is_disqualified_obstacle')
       .eq('match_id', realMatchId)
       .order('seat_index', { ascending: true }),
     olympia
@@ -1112,11 +1112,12 @@ export default async function OlympiaHostConsolePage({
                     <div className="grid gap-2">
                       {players.map((pl) => {
                         const latest = latestByPlayer.get(pl.id) ?? null
+                        const isObstacleDisqualified = isVcnv && pl.is_disqualified_obstacle === true
                         const canScore = Boolean(
                           hasLiveQuestion &&
                           !isTangToc &&
                           (allowAllPlayers || (enabledScoringPlayerId && enabledScoringPlayerId === pl.id))
-                        )
+                        ) && !isObstacleDisqualified
                         const seatText = pl.seat_index != null ? `Ghế ${pl.seat_index}` : 'Ghế —'
                         const nameText = pl.display_name ? ` · ${pl.display_name}` : ''
 
@@ -1145,6 +1146,12 @@ export default async function OlympiaHostConsolePage({
                             <p className="mt-2 whitespace-pre-wrap text-sm">
                               {latest?.answer_text?.trim() ? latest.answer_text : <span className="text-muted-foreground">(Chưa có/Trống)</span>}
                             </p>
+
+                            {isObstacleDisqualified ? (
+                              <p className="mt-2 text-xs text-amber-700">
+                                Đã bị loại quyền CNV ở vòng này (không thể gửi đáp án / không chấm điểm).
+                              </p>
+                            ) : null}
 
                             <div className="mt-3 grid grid-cols-3 gap-2">
                               <form action={decisionFormAction} className="col-span-1">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -250,6 +251,8 @@ export function HostQuestionPreviewCard(props: Props) {
         setGuestMediaControlAction,
     } = props
 
+    const router = useRouter()
+
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
     const questionsForPreload = preloadQuestions ?? questions
     const assets = useMemo(() => extractAssetUrls(questionsForPreload), [questionsForPreload])
@@ -297,6 +300,12 @@ export function HostQuestionPreviewCard(props: Props) {
     const previewQuestionText = previewRoundQuestion?.question_text ?? null
     const previewAnswerText = previewRoundQuestion?.answer_text ?? null
     const previewNoteText = previewRoundQuestion?.note ?? null
+
+    const handleSetCurrentQuestion = async (formData: FormData) => {
+        await setCurrentQuestionFormAction(formData)
+        // Đảm bảo host thấy câu mới ngay lập tức (tương tự client/mc/guest).
+        router.refresh()
+    }
 
     useEffect(() => {
         let cancelled = false
@@ -424,7 +433,7 @@ export function HostQuestionPreviewCard(props: Props) {
                             <ArrowRight />
                         </Button>
 
-                        <form action={setCurrentQuestionFormAction} className="flex">
+                        <form action={handleSetCurrentQuestion} className="flex">
                             <input type="hidden" name="matchId" value={matchId} />
                             <input type="hidden" name="roundQuestionId" value={previewId} />
                             <input type="hidden" name="durationMs" value={5000} />

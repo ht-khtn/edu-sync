@@ -210,8 +210,24 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const noteText = currentRoundQuestion?.note ?? questionRecord?.note ?? null
   const mediaUrl = (questionSetItemRecord?.image_url ?? questionRecord?.image_url ?? null)?.trim() || null
   const audioUrl = (questionSetItemRecord?.audio_url ?? questionRecord?.audio_url ?? null)?.trim() || null
-  const showQuestionText = roundType !== 'vcnv' && Boolean(questionText) && (isMc || questionState !== 'hidden')
-  const showQuestionMedia = roundType !== 'vcnv' && Boolean(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden')
+
+  const questionCode = useMemo(() => {
+    const raw = (questionSetItemRecord?.code ?? questionRecord?.code ?? null)
+    const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+    return trimmed || null
+  }, [questionRecord?.code, questionSetItemRecord?.code])
+
+  // Chỉ hiển thị UI chướng ngại vật khi câu hiện tại là CNV (không áp dụng cho VCNV-1..4/OTT).
+  const isCnvQuestion = useMemo(() => {
+    if (!questionCode) return false
+    if (questionCode === 'CNV') return true
+    return /^CNV\b/.test(questionCode) && !questionCode.startsWith('VCNV')
+  }, [questionCode])
+
+  const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion
+
+  const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
+  const showQuestionMedia = Boolean(mediaUrl || audioUrl) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
@@ -731,7 +747,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                 </div>
               ) : null}
 
-              {roundType === 'vcnv' && obstacle ? (
+              {shouldUseObstacleUi && obstacle ? (
                 (() => {
                   const byPos = new Map<number, (typeof obstacleTiles)[number]>()
                   for (const t of obstacleTiles ?? []) {
@@ -868,7 +884,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                         {renderRow(2, 'Hàng 2')}
                         {renderRow(3, 'Hàng 3')}
                         {renderRow(4, 'Hàng 4')}
-                        {renderRow(5, 'Trung tâm')}
+                        {renderRow(5, 'OTT (Ô trung tâm)')}
                         {!disableInteractions ? (
                           <p className="mt-2 text-xs text-slate-300">
                             Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.

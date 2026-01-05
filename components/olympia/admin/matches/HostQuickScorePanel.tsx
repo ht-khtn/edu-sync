@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Check, X } from 'lucide-react'
 
@@ -39,6 +40,8 @@ export function HostQuickScorePanel(props: Props) {
         confirmVeDichMainDecisionFormAction,
     } = props
 
+    const router = useRouter()
+
     const [locked, setLocked] = useState(false)
 
     useEffect(() => {
@@ -47,6 +50,21 @@ export function HostQuickScorePanel(props: Props) {
     }, [roundQuestionId])
 
     const allDisabled = useMemo(() => disabled || locked, [disabled, locked])
+
+    const handleConfirmDecisionAndAdvance = async (formData: FormData) => {
+        await confirmDecisionAndAdvanceFormAction(formData)
+        router.refresh()
+    }
+
+    const handleStartSessionTimer = async (formData: FormData) => {
+        await startSessionTimerFormAction(formData)
+        router.refresh()
+    }
+
+    const handleConfirmVeDichMainDecision = async (formData: FormData) => {
+        await confirmVeDichMainDecisionFormAction(formData)
+        router.refresh()
+    }
 
     return (
         <div className="mt-4 rounded-md border bg-background p-3">
@@ -62,7 +80,7 @@ export function HostQuickScorePanel(props: Props) {
 
                 {showTimeoutButton ? (
                     <form
-                        action={confirmDecisionAndAdvanceFormAction}
+                        action={handleConfirmDecisionAndAdvance}
                         onSubmit={() => {
                             setLocked(true)
                         }}
@@ -86,7 +104,7 @@ export function HostQuickScorePanel(props: Props) {
                     </form>
                 ) : showTimerStartButton ? (
                     <form
-                        action={startSessionTimerFormAction}
+                        action={handleStartSessionTimer}
                         onSubmit={() => {
                             // Bấm giờ không nên lock chấm nhanh.
                         }}
@@ -112,7 +130,7 @@ export function HostQuickScorePanel(props: Props) {
                 {isVeDich ? (
                     <>
                         <form
-                            action={confirmVeDichMainDecisionFormAction}
+                            action={handleConfirmVeDichMainDecision}
                             onSubmit={() => {
                                 setLocked(true)
                             }}
@@ -133,7 +151,7 @@ export function HostQuickScorePanel(props: Props) {
                         </form>
 
                         <form
-                            action={confirmVeDichMainDecisionFormAction}
+                            action={handleConfirmVeDichMainDecision}
                             onSubmit={() => {
                                 setLocked(true)
                             }}
@@ -157,7 +175,7 @@ export function HostQuickScorePanel(props: Props) {
                 ) : (
                     <>
                         <form
-                            action={confirmDecisionAndAdvanceFormAction}
+                            action={handleConfirmDecisionAndAdvance}
                             onSubmit={() => {
                                 setLocked(true)
                             }}
@@ -181,7 +199,7 @@ export function HostQuickScorePanel(props: Props) {
                         </form>
 
                         <form
-                            action={confirmDecisionAndAdvanceFormAction}
+                            action={handleConfirmDecisionAndAdvance}
                             onSubmit={() => {
                                 setLocked(true)
                             }}

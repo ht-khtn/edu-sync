@@ -136,6 +136,23 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               syncAccessTokenCookie(sess?.access_token ?? null)
               syncRealtimeAuth(supabase, sess?.access_token ?? null)
 
+              // QUAN TRỌNG: refresh token đang là httpOnly cookie (server/proxy dùng để refresh).
+              // Nếu chỉ để supabase-js tự refresh trong localStorage mà không sync lại cookie,
+              // cookie refresh sẽ bị stale -> đến lúc SSR/proxy cần refresh sẽ fail và bắt đăng nhập lại.
+              if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && sess?.access_token && sess?.refresh_token) {
+                fetch('/api/auth/set-session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    access_token: sess.access_token,
+                    refresh_token: sess.refresh_token,
+                    expires_in: sess.expires_in,
+                  }),
+                }).catch(() => {
+                  // ignore
+                })
+              }
+
               const newAuthUid = sess?.user?.id ?? null
               if (!newAuthUid) {
                 setState((s) => ({ ...s, userId: null, loading: false, roles: [], classTargets: [], homeroomOf: [], canComplaint: false }))

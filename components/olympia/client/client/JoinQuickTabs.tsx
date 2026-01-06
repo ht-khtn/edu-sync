@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
     lookupJoinCodeAction,
-    verifyMcPasswordAction,
     type ActionState,
 } from '@/app/(olympia)/olympia/actions'
 import { toast } from 'sonner'
@@ -33,7 +32,8 @@ export function JoinQuickTabs() {
     const [mcJoinCode, setMcJoinCode] = useState('')
     const [mcPassword, setMcPassword] = useState('')
     const [showMcPassword, setShowMcPassword] = useState(false)
-    const [mcState, mcFormAction] = useActionState(verifyMcPasswordAction, initialState)
+    const [mcLoading, setMcLoading] = useState(false)
+    const [mcError, setMcError] = useState<string | null>(null)
 
     // Guest
     const [guestMatchId, setGuestMatchId] = useState('')
@@ -50,18 +50,6 @@ export function JoinQuickTabs() {
             toast.error(contestantState.error)
         }
     }, [contestantState.success, contestantState.error, contestantState.data, router, contestantCode])
-
-    // Handle MC success
-    useEffect(() => {
-        if (mcState.success && mcState.data?.joinCode) {
-            toast.success('Đã xác nhận mật khẩu MC.')
-            setTimeout(() => {
-                router.push(`/olympia/client/admin/${mcState.data?.joinCode}`)
-            }, 500)
-        } else if (mcState.error) {
-            toast.error(mcState.error)
-        }
-    }, [mcState.success, mcState.error, mcState.data, router])
 
     return (
         <Tabs defaultValue="contestant" className="w-full">
@@ -141,7 +129,52 @@ export function JoinQuickTabs() {
 
             {/* MC Tab */}
             <TabsContent value="mc" className="space-y-3">
-                <form action={mcFormAction} className="space-y-3">
+                <form
+                    className="space-y-3"
+                    onSubmit={async (e) => {
+                        e.preventDefault()
+                        if (mcLoading) return
+                        setMcError(null)
+                        setMcLoading(true)
+
+                        try {
+                            const resp = await fetch('/api/olympia/verify-mc-password', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ joinCode: mcJoinCode, mcPassword }),
+                            })
+
+                            const data: unknown = await resp.json().catch(() => null)
+                            const parsed = data as
+                                | { ok: true; message: string; data: { joinCode: string } }
+                                | { ok: false; error: string }
+                                | null
+
+                            if (!parsed) {
+                                setMcError('Không thể xác thực mật khẩu MC.')
+                                return
+                            }
+
+                            if ('ok' in parsed && parsed.ok) {
+                                toast.success('Đã xác nhận mật khẩu MC.')
+                                setTimeout(() => {
+                                    router.push(`/olympia/client/mc/${parsed.data.joinCode}`)
+                                }, 500)
+                                return
+                            }
+
+                            const errText = 'error' in parsed ? parsed.error : 'Sai mật khẩu MC.'
+                            setMcError(errText)
+                            toast.error(errText)
+                        } catch (err) {
+                            const message = err instanceof Error ? err.message : 'Không thể xác thực mật khẩu MC.'
+                            setMcError(message)
+                            toast.error(message)
+                        } finally {
+                            setMcLoading(false)
+                        }
+                    }}
+                >
                     <div>
                         <label htmlFor="mcJoinCode" className="block text-sm font-medium mb-2">
                             Mã phòng
@@ -190,9 +223,9 @@ export function JoinQuickTabs() {
                         Mở chế độ xem MC
                     </Button>
 
-                    {mcState.error && (
+                    {mcError && (
                         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                            {mcState.error}
+                            {mcError}
                         </div>
                     )}
                     <p className="text-xs text-muted-foreground text-center">

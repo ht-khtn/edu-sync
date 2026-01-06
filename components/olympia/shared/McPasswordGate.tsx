@@ -2,12 +2,12 @@
 
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { useActionState } from 'react'
-import { verifyMcPasswordAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/utils/cn'
+
+type ActionState = { error: string | null; success: string | null }
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -19,16 +19,9 @@ type McPasswordGateProps = {
 
 export function McPasswordGate({ joinCode, children, mode = 'inline' }: McPasswordGateProps) {
   const [unlocked, setUnlocked] = useState(false)
-  const [state, formAction] = useActionState(
-    async (prev: ActionState, formData: FormData) => {
-      const result = await verifyMcPasswordAction(prev, formData)
-      if (result.success) {
-        setUnlocked(true)
-      }
-      return result
-    },
-    initialState
-  )
+  const [loading, setLoading] = useState(false)
+  const [mcPassword, setMcPassword] = useState('')
+  const [state, setState] = useState<ActionState>(initialState)
   const hasMessage = state.error || state.success
 
   if (unlocked) {
@@ -49,22 +42,60 @@ export function McPasswordGate({ joinCode, children, mode = 'inline' }: McPasswo
         <CardDescription>Nhập mật khẩu MC để mở màn hình điều khiển.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={formAction} className="space-y-3">
-          <input type="hidden" name="joinCode" value={joinCode} />
+        <form
+          className="space-y-3"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (loading) return
+            setLoading(true)
+            setState(initialState)
+            try {
+              const resp = await fetch('/api/olympia/verify-mc-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ joinCode, mcPassword }),
+              })
+
+              const data: unknown = await resp.json().catch(() => null)
+              const parsed = data as
+                | { ok: true; message: string }
+                | { ok: false; error: string }
+                | null
+
+              if (!parsed) {
+                setState({ error: 'Không thể xác thực mật khẩu MC.', success: null })
+                return
+              }
+
+              if ('ok' in parsed && parsed.ok) {
+                setState({ error: null, success: parsed.message })
+                setUnlocked(true)
+                return
+              }
+
+              setState({ error: 'error' in parsed ? parsed.error : 'Sai mật khẩu MC.', success: null })
+            } catch (err) {
+              setState({ error: err instanceof Error ? err.message : 'Không thể xác thực mật khẩu MC.', success: null })
+            } finally {
+              setLoading(false)
+            }
+          }}
+        >
           <div>
             <label htmlFor="mcPassword" className="block text-sm font-medium mb-2">
               Mật khẩu MC
             </label>
             <Input
               id="mcPassword"
-              name="mcPassword"
               type="password"
               placeholder="••••••••"
               required
               autoComplete="off"
+              value={mcPassword}
+              onChange={(e) => setMcPassword(e.target.value)}
             />
           </div>
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full" disabled={loading}>
             Xác thực
           </Button>
           {hasMessage ? (

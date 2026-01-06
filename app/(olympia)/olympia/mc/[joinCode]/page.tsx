@@ -11,5 +11,5 @@ type PageProps = {
 export default async function OlympiaMcJoinCodeRedirectPage({ params }: PageProps) {
     const resolvedParams = await params
     const joinCode = (resolvedParams.joinCode ?? '').trim().toUpperCase()
-    redirect(`/olympia/client/admin/${joinCode}`)
+    redirect(`/olympia/client/mc/${joinCode}`)
 }

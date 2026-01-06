@@ -74,6 +74,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  const pollInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
   const obstacleIdRef = useRef<string | null>(initialData.obstacle?.id ?? null);
 
@@ -138,6 +139,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     const supabase = supabaseRef.current;
     if (!supabase) return;
     if (typeof document !== "undefined" && document.hidden) return;
+    if (pollInFlightRef.current) return;
+    pollInFlightRef.current = true;
 
     try {
       const olympia = supabase.schema("olympia");
@@ -217,8 +220,18 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     } catch (err) {
       console.warn("[Olympia] poll snapshot failed", err);
       setStatusMessage("Không thể đồng bộ realtime · đang thử lại…");
+    } finally {
+      pollInFlightRef.current = false;
     }
   }, [fetchAnswersForQuestion, matchId, sessionId]);
+
+  // Khi host đổi vòng/đổi câu: gọi poll ngay để tránh trường hợp realtime chậm/mất event.
+  useEffect(() => {
+    if (!session.current_round_id && !session.current_round_question_id) return;
+    // Tránh spam: chỉ poll khi đã có supabase client.
+    if (!supabaseRef.current) return;
+    void pollSnapshot();
+  }, [pollSnapshot, session.current_round_id, session.current_round_question_id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

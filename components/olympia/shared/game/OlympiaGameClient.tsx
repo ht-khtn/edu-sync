@@ -93,6 +93,7 @@ export function OlympiaGameClient({
     roundQuestionId: string
     playerId: string
     eventType: 'buzz' | 'steal'
+    createdAtMs: number
   } | null>(null)
 
   // Blocking preload overlay (không có nút huỷ)
@@ -190,6 +191,20 @@ export function OlympiaGameClient({
   }, [players])
 
   const currentQuestionId = session.current_round_question_id
+  const currentQuestionResetTs = useMemo((): number | null => {
+    if (!currentQuestionId) return null
+    const all = (buzzerEvents as unknown as BuzzerEventLite[]).filter(
+      (e) => (e.round_question_id ?? null) === currentQuestionId
+    )
+    if (all.length === 0) return null
+    const resetTs = all
+      .filter((e) => (e.event_type ?? null) === 'reset' && e.occurred_at)
+      .map((e) => Date.parse(e.occurred_at ?? ''))
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => b - a)[0]
+    return Number.isFinite(resetTs) ? (resetTs as number) : null
+  }, [buzzerEvents, currentQuestionId])
+
   const currentQuestionBuzzerEvents = useMemo((): BuzzerEventLite[] => {
     if (!currentQuestionId) return []
 
@@ -300,6 +315,24 @@ export function OlympiaGameClient({
   const isWaitingScreen = !isMc && questionState === 'hidden'
   const isOnline = useOnlineStatus()
 
+  useEffect(() => {
+    setOptimisticBuzzerWinner(null)
+  }, [currentQuestionId])
+
+  useEffect(() => {
+    if (questionState === 'hidden') {
+      setOptimisticBuzzerWinner(null)
+      return
+    }
+    if (!currentQuestionId) return
+    if (!currentQuestionResetTs) return
+    if (!optimisticBuzzerWinner) return
+    if (optimisticBuzzerWinner.roundQuestionId !== currentQuestionId) return
+    if (optimisticBuzzerWinner.createdAtMs < currentQuestionResetTs) {
+      setOptimisticBuzzerWinner(null)
+    }
+  }, [currentQuestionId, currentQuestionResetTs, optimisticBuzzerWinner, questionState])
+
   const viewerSeatNameText = useMemo(() => {
     if (resolvedViewerMode !== 'player') return null
     if (!viewerPlayer) return null
@@ -356,6 +389,7 @@ export function OlympiaGameClient({
 
   const playerBuzzerLabel = useMemo(() => {
     if (resolvedViewerMode !== 'player') return null
+    if (isWaitingScreen) return '—'
     if (!currentQuestionId) return '—'
 
     const winnerBuzzId =
@@ -376,7 +410,7 @@ export function OlympiaGameClient({
     if (session.buzzer_enabled === false) return 'Đang tắt'
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
-  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, optimisticBuzzerWinner, questionState, resolvedViewerMode, session.buzzer_enabled])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, optimisticBuzzerWinner, questionState, resolvedViewerMode, session.buzzer_enabled])
 
   const mcTurnLabel = useMemo(() => {
     if (!isMc) return null
@@ -416,6 +450,7 @@ export function OlympiaGameClient({
       roundQuestionId: currentQuestionId,
       playerId: viewerPlayer.id,
       eventType: isStealWindow ? 'steal' : 'buzz',
+      createdAtMs: Date.now(),
     })
   }, [buzzerState.success, currentQuestionId, isStealWindow, resolvedViewerMode, viewerPlayer?.id])
 

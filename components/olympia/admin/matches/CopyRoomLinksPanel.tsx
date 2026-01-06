@@ -1,9 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Check, Copy } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 type LinkKind = 'player' | 'mc' | 'guest'
 
@@ -26,7 +26,7 @@ const rows: LinkRow[] = [
     {
         kind: 'mc',
         label: 'Link MC',
-        buildPath: (joinCode) => `/olympia/client/admin/${joinCode}`,
+        buildPath: (joinCode) => `/olympia/client/mc/${joinCode}`,
     },
     {
         kind: 'guest',

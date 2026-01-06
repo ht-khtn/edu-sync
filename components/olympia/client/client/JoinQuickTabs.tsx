@@ -56,7 +56,7 @@ export function JoinQuickTabs() {
         if (mcState.success && mcState.data?.joinCode) {
             toast.success('Đã xác nhận mật khẩu MC.')
             setTimeout(() => {
-                router.push(`/olympia/mc/${mcState.data?.joinCode}`)
+                router.push(`/olympia/client/admin/${mcState.data?.joinCode}`)
             }, 500)
         } else if (mcState.error) {
             toast.error(mcState.error)

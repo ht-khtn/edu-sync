@@ -37,7 +37,9 @@ export async function POST(req: Request) {
       httpOnly: true,
       path: "/",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      // Cố gắng giữ đăng nhập lâu nhất có thể ở phía cookie.
+      // (Access token vẫn ngắn hạn; sẽ refresh bằng refresh token.)
+      maxAge: 60 * 60 * 24 * 365, // 1 year
     });
 
     return resp;

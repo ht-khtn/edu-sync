@@ -16,7 +16,7 @@ export function McJoinForm() {
                 e.preventDefault()
                 const code = joinCode.trim().toUpperCase()
                 if (!code) return
-                router.push(`/olympia/mc/${code}`)
+                router.push(`/olympia/client/admin/${code}`)
             }}
         >
             <div>

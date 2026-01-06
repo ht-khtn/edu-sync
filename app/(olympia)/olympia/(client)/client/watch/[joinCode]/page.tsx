@@ -112,7 +112,7 @@ export default async function OlympiaWatchMatchPage({ params }: WatchPageProps) 
             {session ? (
               <McPasswordGate joinCode={session.join_code}>
                 <Button asChild className="w-full">
-                  <Link href={`/olympia/mc/${session.join_code}`}>Mở màn hình MC →</Link>
+                  <Link href={`/olympia/client/admin/${session.join_code}`}>Mở màn hình MC →</Link>
                 </Button>
               </McPasswordGate>
             ) : (

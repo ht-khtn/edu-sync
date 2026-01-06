@@ -1072,7 +1072,7 @@ export default async function OlympiaHostConsolePage({
                           : confirmDecisionVoidFormAction
 
                         return (
-                          <div key={pl.id} className="rounded-md border bg-background p-3">
+                          <div key={pl.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-sm font-medium">
                                 {seatText}

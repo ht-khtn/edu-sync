@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuickScorePanel'
-import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { subscribeHostBuzzerUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
 type PlayerRow = {
     id: string
@@ -89,6 +89,10 @@ export function HostQuickScoreSection(props: Props) {
 
     const [effectiveRoundQuestionId, setEffectiveRoundQuestionId] = useState<string | null>(initialRoundQuestionId)
     const [effectiveQuestionState, setEffectiveQuestionState] = useState<string | null>(initialQuestionState)
+    const [effectiveTimerDeadline, setEffectiveTimerDeadline] = useState<string | null>(initialTimerDeadline)
+    const [effectiveWinnerBuzzPlayerId, setEffectiveWinnerBuzzPlayerId] = useState<string | null>(
+        winnerBuzzPlayerId ?? null
+    )
 
     useEffect(() => {
         setEffectiveRoundQuestionId(initialRoundQuestionId)
@@ -99,15 +103,39 @@ export function HostQuickScoreSection(props: Props) {
     }, [initialQuestionState])
 
     useEffect(() => {
+        setEffectiveTimerDeadline(initialTimerDeadline)
+    }, [initialTimerDeadline])
+
+    useEffect(() => {
+        setEffectiveWinnerBuzzPlayerId(winnerBuzzPlayerId ?? null)
+    }, [winnerBuzzPlayerId])
+
+    useEffect(() => {
         return subscribeHostSessionUpdate((payload) => {
             if (payload.currentRoundQuestionId !== undefined) {
                 setEffectiveRoundQuestionId(payload.currentRoundQuestionId)
+                // Đổi câu: reset winner để tránh chấm nhầm thí sinh câu trước.
+                setEffectiveWinnerBuzzPlayerId(null)
+                // Đổi câu: timer cũng phải reset.
+                setEffectiveTimerDeadline(null)
             }
             if (payload.questionState !== undefined) {
                 setEffectiveQuestionState(payload.questionState)
             }
+            if (payload.timerDeadline !== undefined) {
+                setEffectiveTimerDeadline(payload.timerDeadline)
+            }
         })
     }, [])
+
+    useEffect(() => {
+        return subscribeHostBuzzerUpdate((payload) => {
+            const rqId = effectiveRoundQuestionId
+            if (!rqId) return
+            if (payload.roundQuestionId !== rqId) return
+            setEffectiveWinnerBuzzPlayerId(payload.winnerPlayerId ?? null)
+        })
+    }, [effectiveRoundQuestionId])
 
     const effectiveRoundQuestion = useMemo(() => {
         if (!effectiveRoundQuestionId) return null
@@ -132,7 +160,7 @@ export function HostQuickScoreSection(props: Props) {
 
         if (isKhoiDong) {
             const codeInfo = getKhoiDongCodeInfo(getMetaCode(effectiveRoundQuestion?.meta))
-            if (codeInfo?.kind === 'common') return winnerBuzzPlayerId ?? null
+            if (codeInfo?.kind === 'common') return effectiveWinnerBuzzPlayerId ?? null
 
             if (codeInfo?.kind === 'personal') {
                 const pid = resolvePlayerIdBySeat(codeInfo.seat)
@@ -141,10 +169,10 @@ export function HostQuickScoreSection(props: Props) {
                 // Fallback: nếu không resolve được seat nhưng DB đã lock target_player_id.
                 if (effectiveRoundQuestion?.target_player_id) return effectiveRoundQuestion.target_player_id
 
-                return winnerBuzzPlayerId ?? null
+                return effectiveWinnerBuzzPlayerId ?? null
             }
 
-            return winnerBuzzPlayerId ?? null
+            return effectiveWinnerBuzzPlayerId ?? null
         }
 
         if (isVeDich) {
@@ -152,7 +180,7 @@ export function HostQuickScoreSection(props: Props) {
         }
 
         return null
-    }, [effectiveRoundQuestion, hasLiveQuestion, isKhoiDong, isVeDich, resolvePlayerIdBySeat, winnerBuzzPlayerId])
+    }, [effectiveRoundQuestion, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, resolvePlayerIdBySeat])
 
     const scoringPlayerLabel = useMemo(() => {
         if (!enabledScoringPlayerId) return null
@@ -199,14 +227,14 @@ export function HostQuickScoreSection(props: Props) {
         isKhoiDong &&
         khoiDongPersonalSeat != null &&
         effectiveQuestionState === 'showing' &&
-        initialTimerDeadline
+        effectiveTimerDeadline
     )
 
     const showTimerStartButton = Boolean(
         isKhoiDong &&
         khoiDongPersonalSeat != null &&
         effectiveQuestionState === 'showing' &&
-        !initialTimerDeadline
+        !effectiveTimerDeadline
     )
 
     return (

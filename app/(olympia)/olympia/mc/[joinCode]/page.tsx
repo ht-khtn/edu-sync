@@ -195,6 +195,7 @@ export default async function OlympiaMcJoinCodePage({ params }: PageProps) {
 
                         <aside className="lg:sticky lg:top-6 lg:h-fit">
                             <div id="olympia-mc-scoreboard-slot" className="mb-4" />
+                            <div id="olympia-mc-buzzer-slot" className="mb-4" />
                             <SessionInfoSidebar session={data.session} match={data.match} playerCount={data.players.length} />
                         </aside>
                     </div>

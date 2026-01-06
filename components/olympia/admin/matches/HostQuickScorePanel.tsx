@@ -74,7 +74,12 @@ export function HostQuickScorePanel(props: Props) {
         const nextId = computeNextQuestionId(prevId)
 
         if (nextId && nextId !== prevId) {
-            dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
+            dispatchHostSessionUpdate({
+                currentRoundQuestionId: nextId,
+                questionState: 'showing',
+                timerDeadline: null,
+                source: 'optimistic',
+            })
         }
 
         try {
@@ -89,6 +94,21 @@ export function HostQuickScorePanel(props: Props) {
     }
 
     const handleStartSessionTimer = async (formData: FormData) => {
+        // Optimistic: host bấm giờ -> hiển thị ngay trạng thái đã chạy timer.
+        // Server là source of truth, realtime/live_sessions sẽ cập nhật lại deadline chính xác.
+        try {
+            const raw = formData.get('durationMs')
+            const duration = typeof raw === 'string' && raw.trim() ? Number(raw) : NaN
+            if (Number.isFinite(duration) && duration > 0) {
+                dispatchHostSessionUpdate({
+                    currentRoundQuestionId: activeRoundQuestionId,
+                    timerDeadline: new Date(Date.now() + duration).toISOString(),
+                    source: 'optimistic',
+                })
+            }
+        } catch {
+            // ignore
+        }
         await startSessionTimerFormAction(formData)
     }
 

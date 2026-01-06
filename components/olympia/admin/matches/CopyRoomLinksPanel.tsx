@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
+buildPath: (joinCode) => `/olympia/client/admin/${joinCode}`,
 import { Input } from '@/components/ui/input'
 import { Check, Copy } from 'lucide-react'
 

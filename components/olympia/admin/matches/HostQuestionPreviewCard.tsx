@@ -261,7 +261,8 @@ export function HostQuestionPreviewCard(props: Props) {
         return `olympia:preload:host:${matchId}:${h}`
     }, [assets.audios, assets.images, matchId])
 
-    const [isPreloading, setIsPreloading] = useState(() => !readPreloadDone(preloadKey))
+    // Tránh hydration mismatch: server không đọc được sessionStorage, nên không quyết định UI theo window trong initial render.
+    const [isPreloading, setIsPreloading] = useState(false)
     const [preloadDoneCount, setPreloadDoneCount] = useState(0)
     const prevTriggerRef = useRef(triggerReset)
 

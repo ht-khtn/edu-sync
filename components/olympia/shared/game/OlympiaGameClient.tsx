@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { OlympiaQuestionsPreloadOverlay } from '@/components/olympia/shared/game/OlympiaQuestionsPreloadOverlay'
 
 import { cn } from '@/utils/cn'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 
 type OlympiaGameClientProps = {
   initialData: GameSessionPayload
@@ -21,6 +22,7 @@ type OlympiaGameClientProps = {
   allowGuestFallback?: boolean
   viewerMode?: 'player' | 'guest' | 'mc'
   mcScoreboardSlotId?: string
+  mcBuzzerSlotId?: string
 }
 
 type BuzzerEventLite = {
@@ -58,7 +60,14 @@ function FormSubmitButton({ children, disabled, variant }: { children: ReactNode
   )
 }
 
-export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, viewerMode, mcScoreboardSlotId }: OlympiaGameClientProps) {
+export function OlympiaGameClient({
+  initialData,
+  sessionId,
+  allowGuestFallback,
+  viewerMode,
+  mcScoreboardSlotId,
+  mcBuzzerSlotId,
+}: OlympiaGameClientProps) {
   const {
     match,
     session,
@@ -79,6 +88,12 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   } = useOlympiaGameState({ sessionId, initialData })
   const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
+
+  const [optimisticBuzzerWinner, setOptimisticBuzzerWinner] = useState<{
+    roundQuestionId: string
+    playerId: string
+    eventType: 'buzz' | 'steal'
+  } | null>(null)
 
   // Blocking preload overlay (không có nút huỷ)
   // Ưu tiên preload từ initialData để chạy ngay khi mount.
@@ -142,14 +157,18 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   const resolvedMcScoreboardSlotId = mcScoreboardSlotId ?? 'olympia-mc-scoreboard-slot'
   const [mcScoreboardSlotEl, setMcScoreboardSlotEl] = useState<HTMLElement | null>(null)
+  const resolvedMcBuzzerSlotId = mcBuzzerSlotId ?? 'olympia-mc-buzzer-slot'
+  const [mcBuzzerSlotEl, setMcBuzzerSlotEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
     if (!isMc) {
       setMcScoreboardSlotEl(null)
+      setMcBuzzerSlotEl(null)
       return
     }
     if (typeof document === 'undefined') return
     setMcScoreboardSlotEl(document.getElementById(resolvedMcScoreboardSlotId))
-  }, [isMc, resolvedMcScoreboardSlotId])
+    setMcBuzzerSlotEl(document.getElementById(resolvedMcBuzzerSlotId))
+  }, [isMc, resolvedMcBuzzerSlotId, resolvedMcScoreboardSlotId])
 
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -211,17 +230,25 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
   const mediaUrl = (questionSetItemRecord?.image_url ?? questionRecord?.image_url ?? null)?.trim() || null
   const audioUrl = (questionSetItemRecord?.audio_url ?? questionRecord?.audio_url ?? null)?.trim() || null
 
-  const questionCode = useMemo(() => {
-    const raw = (questionSetItemRecord?.code ?? questionRecord?.code ?? null)
+  const metaQuestionCode = useMemo(() => {
+    const meta = currentRoundQuestion?.meta
+    if (!meta || typeof meta !== 'object') return null
+    const rec = meta as Record<string, unknown>
+    const raw = rec.code
     const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
     return trimmed || null
-  }, [questionRecord?.code, questionSetItemRecord?.code])
+  }, [currentRoundQuestion?.meta])
+
+  const questionCode = useMemo(() => {
+    const raw = (metaQuestionCode ?? questionSetItemRecord?.code ?? questionRecord?.code ?? null)
+    const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+    return trimmed || null
+  }, [metaQuestionCode, questionRecord?.code, questionSetItemRecord?.code])
 
   // Chỉ hiển thị UI chướng ngại vật khi câu hiện tại là CNV (không áp dụng cho VCNV-1..4/OTT).
   const isCnvQuestion = useMemo(() => {
     if (!questionCode) return false
-    if (questionCode === 'CNV') return true
-    return /^CNV\b/.test(questionCode) && !questionCode.startsWith('VCNV')
+    return questionCode.startsWith('CNV') && !questionCode.startsWith('VCNV')
   }, [questionCode])
 
   const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion
@@ -271,6 +298,7 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
 
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
+  const isOnline = useOnlineStatus()
 
   const viewerSeatNameText = useMemo(() => {
     if (resolvedViewerMode !== 'player') return null
@@ -291,17 +319,27 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
         .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
         ?.player_id ?? null
 
-    if (winnerBuzzId) {
+    const optimisticWinnerId =
+      optimisticBuzzerWinner &&
+        optimisticBuzzerWinner.roundQuestionId === currentQuestionId &&
+        optimisticBuzzerWinner.eventType === (isStealWindow ? 'steal' : 'buzz')
+        ? optimisticBuzzerWinner.playerId
+        : null
+
+    const effectiveWinnerId = winnerBuzzId ?? optimisticWinnerId
+
+    if (effectiveWinnerId) {
       return roundType === 'vcnv'
-        ? `Đã bấm chuông: ${formatPlayerLabel(winnerBuzzId)}`
-        : `Đang trả lời: ${formatPlayerLabel(winnerBuzzId)}`
+        ? `Đã bấm chuông: ${formatPlayerLabel(effectiveWinnerId)}`
+        : `Đang trả lời: ${formatPlayerLabel(effectiveWinnerId)}`
     }
     if (session.buzzer_enabled !== false && (questionState === 'showing' || isStealWindow)) {
       return 'Chưa ai bấm chuông'
     }
-    if (targetPlayerId) return `Lượt hiện tại: ${formatPlayerLabel(targetPlayerId)}`
+    // Tránh duplicate hiển thị lượt: lượt đã được gắn ở header (cạnh tên vòng).
+    if (targetPlayerId) return null
     return '—'
-  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, questionState, resolvedViewerMode, roundType, session.buzzer_enabled, targetPlayerId])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, optimisticBuzzerWinner, questionState, resolvedViewerMode, roundType, session.buzzer_enabled, targetPlayerId])
 
   void answers
   void starUses
@@ -315,6 +353,30 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     resolvedViewerMode === 'player' && !isWaitingScreen && targetPlayerId
       ? ` · Luợt: ${formatPlayerLabel(targetPlayerId)}`
       : ''
+
+  const playerBuzzerLabel = useMemo(() => {
+    if (resolvedViewerMode !== 'player') return null
+    if (!currentQuestionId) return '—'
+
+    const winnerBuzzId =
+      currentQuestionBuzzerEvents
+        .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
+        ?.player_id ?? null
+
+    const optimisticWinnerId =
+      optimisticBuzzerWinner &&
+        optimisticBuzzerWinner.roundQuestionId === currentQuestionId &&
+        optimisticBuzzerWinner.eventType === (isStealWindow ? 'steal' : 'buzz')
+        ? optimisticBuzzerWinner.playerId
+        : null
+
+    const effectiveWinnerId = winnerBuzzId ?? optimisticWinnerId
+
+    if (effectiveWinnerId) return `Đã bấm chuông: ${formatPlayerLabel(effectiveWinnerId)}`
+    if (session.buzzer_enabled === false) return 'Đang tắt'
+    if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
+    return '—'
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, optimisticBuzzerWinner, questionState, resolvedViewerMode, session.buzzer_enabled])
 
   const mcTurnLabel = useMemo(() => {
     if (!isMc) return null
@@ -336,6 +398,45 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
   }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isMc, isStealWindow, questionState, session.buzzer_enabled])
+
+  // Optimistic UI: thí sinh bấm chuông thắng -> status đổi ngay, không chờ realtime/poll.
+  useEffect(() => {
+    const msg = (buzzerState.success ?? '').trim()
+    if (!msg) return
+    if (resolvedViewerMode !== 'player') return
+    if (!viewerPlayer?.id) return
+    if (!currentQuestionId) return
+
+    const lower = msg.toLowerCase()
+    const isLose = lower.includes('không phải người nhanh nhất')
+    const isWin = lower.includes('giành quyền') || lower.includes('bấm nhanh nhất') || lower.includes('xin đoán cnv')
+    if (!isWin || isLose) return
+
+    setOptimisticBuzzerWinner({
+      roundQuestionId: currentQuestionId,
+      playerId: viewerPlayer.id,
+      eventType: isStealWindow ? 'steal' : 'buzz',
+    })
+  }, [buzzerState.success, currentQuestionId, isStealWindow, resolvedViewerMode, viewerPlayer?.id])
+
+  useEffect(() => {
+    // Đổi câu thì reset optimistic winner.
+    setOptimisticBuzzerWinner((prev) => {
+      if (!prev) return null
+      if (prev.roundQuestionId !== currentQuestionId) return null
+      return prev
+    })
+  }, [currentQuestionId])
+
+  useEffect(() => {
+    // Nếu server đã reset (buzzer events rỗng sau reset) thì bỏ optimistic.
+    if (!currentQuestionId) return
+    if (!optimisticBuzzerWinner) return
+    if (optimisticBuzzerWinner.roundQuestionId !== currentQuestionId) return
+    if (currentQuestionBuzzerEvents.length === 0) {
+      setOptimisticBuzzerWinner(null)
+    }
+  }, [currentQuestionBuzzerEvents.length, currentQuestionId, optimisticBuzzerWinner])
 
   const mediaKind = useMemo(() => {
     if (!mediaUrl) return null
@@ -565,6 +666,18 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
           backgroundColor: '#000',
         }}
       >
+        {/* Popup mất mạng: KHÔNG hiện trên guest */}
+        {!isGuest && !isOnline ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="w-[min(520px,calc(100%-2rem))] rounded-lg border bg-background p-6 text-foreground">
+              <p className="text-sm font-semibold">Không có kết nối Internet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Bạn đang offline. Hệ thống sẽ tự đồng bộ lại khi có mạng.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         {/* HUD (ẩn ở guest) */}
         {!isGuest ? (
           <header className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-950/70 backdrop-blur-sm">
@@ -590,9 +703,20 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
                     <p className="text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
                   </div>
                 </div>
-              ) : viewerSeatNameText || turnStatusText ? (
+              ) : resolvedViewerMode === 'player' ? (
+                <div className="flex flex-wrap justify-center gap-2 max-w-[720px]">
+                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Thí sinh</p>
+                    <p className="text-sm text-slate-100 truncate">{viewerSeatNameText ?? '—'}</p>
+                  </div>
+                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
+                    <p className="text-sm text-slate-100 truncate">{playerBuzzerLabel ?? '—'}</p>
+                  </div>
+                </div>
+              ) : turnStatusText ? (
                 <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center max-w-[520px]">
-                  <p className="text-xs uppercase tracking-widest text-slate-200 truncate">{viewerSeatNameText ?? '—'}</p>
+                  <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Realtime</p>
                   <p className="text-sm text-slate-100 truncate">{turnStatusText ?? '—'}</p>
                 </div>
               ) : null}
@@ -1014,6 +1138,16 @@ export function OlympiaGameClient({ initialData, sessionId, allowGuestFallback, 
             </div>
           </div>,
           mcScoreboardSlotEl
+        )
+        : null}
+
+      {isMc && mcBuzzerSlotEl
+        ? createPortal(
+          <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+            <p className="text-[11px] uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
+            <p className="mt-1 text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
+          </div>,
+          mcBuzzerSlotEl
         )
         : null}
     </>

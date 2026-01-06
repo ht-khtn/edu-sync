@@ -100,6 +100,7 @@ export async function proxy(request: NextRequest) {
   const isPublicOlympiaRoute =
     pathname === "/olympia/mc" ||
     pathname.startsWith("/olympia/mc/") ||
+    pathname.startsWith("/olympia/client/admin") ||
     pathname.startsWith("/olympia/client/guest") ||
     pathname.startsWith("/olympia/client/watch") ||
     pathname.startsWith("/olympia/client/join") ||

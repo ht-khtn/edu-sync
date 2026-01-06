@@ -3196,7 +3196,7 @@ export async function submitObstacleGuessByHostFormAction(formData: FormData): P
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);
       revalidatePath(`/olympia/client/guest/${session.join_code}`);
-      revalidatePath(`/olympia/mc/${session.join_code}`);
+      revalidatePath(`/olympia/client/admin/${session.join_code}`);
     }
   } catch (err) {
     console.warn("[Olympia] submitObstacleGuessByHostFormAction failed", err);

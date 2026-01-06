@@ -209,7 +209,24 @@ export function HostQuickScoreSection(props: Props) {
         return typeof khoiDongPersonalSeat === 'number' ? resolvePlayerIdBySeat(khoiDongPersonalSeat) : null
     }, [khoiDongPersonalSeat, resolvePlayerIdBySeat])
 
-    const disabled = !enabledScoringPlayerId
+    const scoringUnlocked = useMemo(() => {
+        if (!hasLiveQuestion) return false
+        // Khi vừa Show câu:
+        // - Khởi động thi chung (DKA-): khóa cho đến khi có winner buzzer.
+        // - Khởi động thi riêng (KD{seat}-): cho phép chấm ngay.
+        if (effectiveQuestionState === 'showing') {
+            if (isKhoiDong) {
+                const codeInfo = getKhoiDongCodeInfo(getMetaCode(effectiveRoundQuestion?.meta))
+                if (codeInfo?.kind === 'personal') return true
+                return Boolean(effectiveWinnerBuzzPlayerId)
+            }
+
+            return Boolean(effectiveWinnerBuzzPlayerId)
+        }
+        return true
+    }, [effectiveQuestionState, effectiveRoundQuestion?.meta, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong])
+
+    const disabled = !enabledScoringPlayerId || !scoringUnlocked
 
     const hint = useMemo(() => {
         if (!hasLiveQuestion) {
@@ -245,6 +262,7 @@ export function HostQuickScoreSection(props: Props) {
             showTimeoutButton={showTimeoutButton}
             showTimerStartButton={showTimerStartButton}
             disabled={disabled}
+            timerDisabled={!hasLiveQuestion}
             roundQuestionId={effectiveRoundQuestionId}
             roundQuestionIdsInOrder={currentRoundQuestions.map((q) => q.id)}
             matchId={matchId}

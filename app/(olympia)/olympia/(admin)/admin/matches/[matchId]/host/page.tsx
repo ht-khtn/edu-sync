@@ -318,6 +318,18 @@ async function fetchHostData(matchCode: string) {
 
   const currentRoundQuestion = currentQuestionId ? roundQuestions?.find((q) => q.id === currentQuestionId) ?? null : null
 
+  const { data: lastReset } = currentQuestionId
+    ? await olympia
+      .from('buzzer_events')
+      .select('occurred_at')
+      .eq('round_question_id', currentQuestionId)
+      .eq('event_type', 'reset')
+      .order('occurred_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    : { data: null }
+  const resetOccurredAt = (lastReset as { occurred_at?: string | null } | null)?.occurred_at ?? null
+
   const { data: currentStar } =
     currentQuestionId && currentRoundQuestion?.target_player_id
       ? await olympia
@@ -331,22 +343,26 @@ async function fetchHostData(matchCode: string) {
 
   const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all([
     currentQuestionId
-      ? olympia
-        .from('buzzer_events')
-        .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
-        .eq('round_question_id', currentQuestionId)
-        .eq('result', 'win')
-        .order('occurred_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
+      ? (() => {
+        let query = olympia
+          .from('buzzer_events')
+          .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
+          .eq('round_question_id', currentQuestionId)
+          .in('event_type', ['buzz', 'steal'])
+          .eq('result', 'win')
+        if (resetOccurredAt) query = query.gte('occurred_at', resetOccurredAt)
+        return query.order('occurred_at', { ascending: true }).limit(1).maybeSingle()
+      })()
       : Promise.resolve({ data: null }),
     currentQuestionId
-      ? olympia
-        .from('buzzer_events')
-        .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
-        .eq('round_question_id', currentQuestionId)
-        .order('occurred_at', { ascending: false })
-        .limit(10)
+      ? (() => {
+        let query = olympia
+          .from('buzzer_events')
+          .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
+          .eq('round_question_id', currentQuestionId)
+        if (resetOccurredAt) query = query.gte('occurred_at', resetOccurredAt)
+        return query.order('occurred_at', { ascending: false }).limit(10)
+      })()
       : Promise.resolve({ data: [] }),
     currentQuestionId
       ? olympia
@@ -1000,6 +1016,22 @@ export default async function OlympiaHostConsolePage({
 
                 const allowAllPlayers = hasLiveQuestion && !isTangToc && !isKhoiDong && !isVeDich
 
+                const scoringUnlocked = (() => {
+                  if (!hasLiveQuestion) return false
+                  if (liveSession?.question_state !== 'showing') return true
+                  // Khi vừa Show câu:
+                  // - Khởi động thi chung (DKA-): khóa cho đến khi có winner buzzer.
+                  // - Khởi động thi riêng (KD{seat}-): cho phép chấm ngay.
+                  if (isKhoiDong) {
+                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
+                    if (isKhoiDongCommon) return Boolean(winnerBuzz?.player_id)
+                    return true
+                  }
+
+                  // Các trường hợp khác (ví dụ: Về đích): vẫn khóa khi showing theo rule hiện tại.
+                  return Boolean(winnerBuzz?.player_id)
+                })()
+
                 const scoringHint = (() => {
                   if (!hasLiveQuestion) return 'Chưa show câu hỏi.'
                   if (isTangToc) return 'Tăng tốc: chấm tự động theo thứ tự thời gian (40/30/20/10).'
@@ -1059,6 +1091,7 @@ export default async function OlympiaHostConsolePage({
                         const isObstacleDisqualified = isVcnv && pl.is_disqualified_obstacle === true
                         const canScore = Boolean(
                           hasLiveQuestion &&
+                          scoringUnlocked &&
                           !isTangToc &&
                           (allowAllPlayers || (enabledScoringPlayerId && enabledScoringPlayerId === pl.id))
                         ) && !isObstacleDisqualified

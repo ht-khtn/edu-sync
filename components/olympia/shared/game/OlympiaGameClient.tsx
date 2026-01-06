@@ -185,9 +185,8 @@ export function OlympiaGameClient({
     if (!playerId) return '—'
     const p = players.find((row) => row.id === playerId)
     if (!p) return playerId
-    const seat = typeof p.seat_index === 'number' ? p.seat_index : '—'
     const name = p.display_name ?? 'Thí sinh'
-    return `Ghế ${seat} · ${name}`
+    return `${name}`
   }, [players])
 
   const currentQuestionId = session.current_round_question_id
@@ -266,7 +265,7 @@ export function OlympiaGameClient({
     return questionCode.startsWith('CNV') && !questionCode.startsWith('VCNV')
   }, [questionCode])
 
-  const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion
+  const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion && Boolean(obstacle)
 
   const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
   const showQuestionMedia = Boolean(mediaUrl) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
@@ -363,8 +362,8 @@ export function OlympiaGameClient({
 
     if (effectiveWinnerId) {
       return roundType === 'vcnv'
-        ? `Đã bấm chuông: ${formatPlayerLabel(effectiveWinnerId)}`
-        : `Đang trả lời: ${formatPlayerLabel(effectiveWinnerId)}`
+        ? `${formatPlayerLabel(effectiveWinnerId)}`
+        : `${formatPlayerLabel(effectiveWinnerId)}`
     }
     if (session.buzzer_enabled !== false && (questionState === 'showing' || isStealWindow)) {
       return 'Chưa ai bấm chuông'
@@ -406,7 +405,7 @@ export function OlympiaGameClient({
 
     const effectiveWinnerId = winnerBuzzId ?? optimisticWinnerId
 
-    if (effectiveWinnerId) return `Đã bấm chuông: ${formatPlayerLabel(effectiveWinnerId)}`
+    if (effectiveWinnerId) return `${formatPlayerLabel(effectiveWinnerId)}`
     if (session.buzzer_enabled === false) return 'Đang tắt'
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
@@ -427,7 +426,7 @@ export function OlympiaGameClient({
         .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
         ?.player_id ?? null
 
-    if (winnerBuzzId) return `Đã bấm chuông: ${formatPlayerLabel(winnerBuzzId)}`
+    if (winnerBuzzId) return `${formatPlayerLabel(winnerBuzzId)}`
     if (session.buzzer_enabled === false) return 'Đang tắt'
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
@@ -1013,18 +1012,24 @@ export function OlympiaGameClient({
                     <div className="mt-8 grid gap-6 md:grid-cols-2 md:items-start text-left">
                       <div className="space-y-2">
                         <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
-                          {obstacle.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={obstacle.image_url}
-                              alt={obstacle.title ?? 'Chướng ngại vật'}
-                              className="h-64 w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
-                              (Chưa có ảnh CNV)
-                            </div>
-                          )}
+                          {(() => {
+                            const fallbackImageUrl = mediaKind === 'image' ? mediaUrl : null
+                            const imageUrl = obstacle.image_url ?? fallbackImageUrl
+                            if (imageUrl) {
+                              return (
+                                <img
+                                  src={imageUrl}
+                                  alt={obstacle.title ?? 'Chướng ngại vật'}
+                                  className="h-64 w-full object-cover"
+                                />
+                              )
+                            }
+                            return (
+                              <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
+                                (Chưa có ảnh CNV)
+                              </div>
+                            )
+                          })()}
 
                           {covers.map((c) => {
                             const tile = byPos.get(c.pos) ?? null

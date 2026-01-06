@@ -12,6 +12,7 @@ type Props = {
     showTimeoutButton: boolean
     showTimerStartButton: boolean
     disabled: boolean
+    timerDisabled?: boolean
     roundQuestionId: string | null
     roundQuestionIdsInOrder: string[]
     matchId: string
@@ -31,6 +32,7 @@ export function HostQuickScorePanel(props: Props) {
         showTimeoutButton,
         showTimerStartButton,
         disabled,
+        timerDisabled,
         roundQuestionId,
         roundQuestionIdsInOrder,
         matchId,
@@ -171,7 +173,7 @@ export function HostQuickScorePanel(props: Props) {
                             size="sm"
                             variant="default"
                             className="h-8 px-3 text-xs disabled:opacity-40"
-                            disabled={disabled}
+                            disabled={timerDisabled ?? disabled}
                             title="Bấm giờ"
                             aria-label="Bấm giờ"
                         >

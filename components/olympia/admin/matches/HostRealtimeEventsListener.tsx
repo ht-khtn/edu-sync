@@ -58,6 +58,33 @@ export function HostRealtimeEventsListener({
         buzzerEventId: null,
     })
 
+    const toastWinnerOnce = (row: BuzzerEventRow) => {
+        const activeQ = currentRoundQuestionIdRef.current
+        if (!activeQ || row.round_question_id !== activeQ) return
+        if (row.result !== 'win') return
+        if (row.event_type !== 'buzz' && row.event_type !== 'steal') return
+        if (!row.id) return
+
+        const alreadyToasted =
+            lastWinnerToastRef.current.roundQuestionId === activeQ &&
+            lastWinnerToastRef.current.buzzerEventId === row.id
+        if (alreadyToasted) return
+
+        try {
+            if (typeof window !== 'undefined' && window.sessionStorage) {
+                const key = `olympia-host-winner-toast:${matchId}:${activeQ}:${row.id}`
+                if (window.sessionStorage.getItem(key)) return
+                window.sessionStorage.setItem(key, '1')
+            }
+        } catch {
+            // ignore
+        }
+
+        lastWinnerToastRef.current = { roundQuestionId: activeQ, buzzerEventId: row.id }
+        const label = (row.player_id && playerLabelsRef.current[row.player_id]) || 'Một thí sinh'
+        toast.success(`${label} bấm chuông nhanh nhất`)
+    }
+
     const playerLabelsRef = useRef<Record<string, string>>({})
     useEffect(() => {
         playerLabelsRef.current = playerLabelsById
@@ -65,6 +92,51 @@ export function HostRealtimeEventsListener({
 
     useEffect(() => {
         let mounted = true
+
+        const hydrateExistingWinnerToast = async () => {
+            try {
+                const activeQ = currentRoundQuestionIdRef.current
+                if (!matchId || !activeQ) return
+
+                const supabase = supabaseRef.current ?? (await getSupabase())
+                supabaseRef.current = supabase
+                if (!mounted) return
+
+                const olympia = supabase.schema('olympia')
+
+                const { data: lastReset, error: resetErr } = await olympia
+                    .from('buzzer_events')
+                    .select('occurred_at')
+                    .eq('match_id', matchId)
+                    .eq('round_question_id', activeQ)
+                    .eq('event_type', 'reset')
+                    .order('occurred_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+                if (resetErr) return
+                const resetOccurredAt = (lastReset as { occurred_at?: string | null } | null)?.occurred_at ?? null
+
+                let winnerQuery = olympia
+                    .from('buzzer_events')
+                    .select('id, match_id, round_question_id, player_id, result, event_type, occurred_at')
+                    .eq('match_id', matchId)
+                    .eq('round_question_id', activeQ)
+                    .in('event_type', ['buzz', 'steal'])
+                    .eq('result', 'win')
+                if (resetOccurredAt) winnerQuery = winnerQuery.gte('occurred_at', resetOccurredAt)
+
+                const { data: winner, error: winnerErr } = await winnerQuery
+                    .order('occurred_at', { ascending: true })
+                    .limit(1)
+                    .maybeSingle()
+                if (winnerErr) return
+                if (!winner) return
+
+                toastWinnerOnce(winner as unknown as BuzzerEventRow)
+            } catch {
+                // ignore
+            }
+        }
 
         const scheduleRefresh = (reason: string) => {
             if (!mounted) return
@@ -217,21 +289,14 @@ export function HostRealtimeEventsListener({
                             if (row.result !== 'win') return
                             if (!activeQ || row.round_question_id !== activeQ) return
 
-                            const alreadyToasted =
-                                lastWinnerToastRef.current.roundQuestionId === activeQ &&
-                                lastWinnerToastRef.current.buzzerEventId === row.id
-                            if (alreadyToasted) return
-
-                            lastWinnerToastRef.current = { roundQuestionId: activeQ, buzzerEventId: row.id }
-
-                            const label = (row.player_id && playerLabelsRef.current[row.player_id]) || 'Một thí sinh'
-                            toast.success(`${label} bấm chuông nhanh nhất`)
+                            toastWinnerOnce(row)
                         }
                     )
 
                 channel.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
                         reconnectAttemptsRef.current = 0
+                        void hydrateExistingWinnerToast()
                         return
                     }
                     if (status === 'CHANNEL_ERROR') {

@@ -1052,7 +1052,7 @@ export function OlympiaGameClient({
                   return (
                     <div className="mt-6 grid gap-6 md:grid-cols-2 md:items-start text-left relative">
                       {resolvedViewerMode === 'player' && isViewerDisqualifiedObstacle ? (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center">
+                        <div className="absolute inset-0 z-50 flex items-center justify-center">
                           <div className="mx-4 w-full max-w-3xl rounded-md border border-rose-400/60 bg-rose-950/80 px-6 py-4 text-center">
                             <p className="text-base sm:text-lg font-semibold text-rose-50">
                               BẠN ĐÃ MẤT QUYỀN THI VÒNG VƯỢT CHƯỚNG NGẠI VẬT

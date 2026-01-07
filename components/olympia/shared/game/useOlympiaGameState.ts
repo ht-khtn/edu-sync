@@ -499,20 +499,17 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               const isCurrentQuestion = Boolean(
                 currentRqId && row.round_question_id === currentRqId
               );
-              if (!isTrackedVcnv && !isCurrentQuestion) return;
+              const isVcnvRound = sessionRef.current.current_round_type === "vcnv";
 
-              if (isTrackedVcnv) {
-                const isDelete =
-                  (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
-                const isRevealValue = row.is_correct !== null && row.is_correct !== undefined;
+              if (!isTrackedVcnv && !isCurrentQuestion && !isVcnvRound) return;
 
-                if (isDelete || !isRevealValue) {
-                  void fetchVcnvRevealSnapshot(trackedVcnvIds);
-                } else {
-                  setVcnvRevealByRoundQuestionId((prev) => ({
-                    ...prev,
-                    [row.round_question_id]: true,
-                  }));
+              if (isTrackedVcnv || isVcnvRound) {
+                // Fetch snapshot cho tất cả hàng VCNV nếu là round VCNV
+                const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : [];
+                if (rqIdsToCheck.length > 0 || isVcnvRound) {
+                  void fetchVcnvRevealSnapshot(
+                    rqIdsToCheck.length > 0 ? rqIdsToCheck : trackedVcnvIds
+                  );
                 }
               }
 

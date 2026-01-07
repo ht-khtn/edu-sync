@@ -26,6 +26,14 @@ type BuzzerEventRow = {
     occurred_at: string | null
 }
 
+type AnswerRow = {
+    id: string
+    match_id?: string | null
+    round_question_id: string
+    player_id: string
+    is_correct?: boolean | null
+}
+
 type LiveSessionRow = {
     id: string
     current_round_question_id: string | null
@@ -262,10 +270,13 @@ export function HostRealtimeEventsListener({
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
-                        () => {
+                        (payload) => {
                             trackReason('answers')
-                            // Đáp án thí sinh: host cần thấy ngay, không F5.
-                            scheduleRefresh('answers')
+                            // Chỉ refresh khi host chấm điểm (UPDATE), không refresh khi thí sinh submit (INSERT)
+                            // UPDATE → is_correct được set → host cần thấy kết quả lật hết
+                            if (payload.eventType === 'UPDATE') {
+                                scheduleRefresh('answers:update')
+                            }
                         }
                     )
                     .on(

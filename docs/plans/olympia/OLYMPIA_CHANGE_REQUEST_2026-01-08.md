@@ -93,8 +93,8 @@ Nguồn luật và bối cảnh tham chiếu:
 
 - Luồng chọn:
   - Giống vòng 1: Host chọn thí sinh thi trước, sau đó mới chọn câu.
-  - Chọn gói gồm 3 câu (20/30). UI thay nút hiện tại bằng dropdown 3 mục tương ứng 3 câu trong gói.
-  - Khi Host chọn từng mục trong dropdown (1 → 2 → 3): trên Guest lần lượt xuất hiện chỉ báo số tượng trưng cho các câu đã được “xếp vào hàng” (1 cái, rồi 2 cái, rồi đủ 3 cái).
+  - Chọn gói gồm 3 câu (20/30). UI thay nút hiện tại bằng 3 dropdown gồm 2 lựa chọn (20/30) tương ứng 3 câu trong gói.
+  - Khi Host chọn từng dropdown (1 → 2 → 3): trên Guest lần lượt xuất hiện số tượng trưng cho gói câu hỏi đã được “xếp vào hàng” (1 cái, rồi 2 cái, rồi đủ 3 cái).
 
 - Hỏi/Đáp và chấm nhanh + cướp (steal):
   - Sau khi chọn thí sinh và show câu → bật “Action chấm nhanh” cho thí sinh đó.
@@ -141,7 +141,7 @@ Nguồn luật và bối cảnh tham chiếu:
 
 ## 6) Ảnh hưởng tới DB, API, Realtime
 
-- DB: Không yêu cầu thêm bảng/cột mới cho 5 thay đổi này (dựa trên schema hiện có: `live_sessions`, `answers`, `buzzer_events`, `match_scores`, `obstacles/obstacle_tiles`).
+- DB: Không yêu cầu thêm bảng/cột mới cho 5 thay đổi này (dựa trên schema hiện có: `live_sessions`, `answers`, `buzzer_events`, `match_scores`, `round_questions`).
 - API/server actions:
   - Có thể cần bổ sung endpoint/handler tiện dụng để phát hàng loạt `ROW_OPENED`/`PIECE_OPENED` sau confirm CNV đúng (đảm bảo atomicity hoặc transactional publish).
   - Đảm bảo `answers.response_time_ms` luôn được set server-side khi nhận submit để giao diện “Đáp án” không lệ thuộc client clock.

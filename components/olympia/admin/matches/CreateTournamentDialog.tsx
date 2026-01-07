@@ -5,17 +5,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createTournamentAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import type { ActionState, FormAction } from '@/types/olympia/action-state'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
 const initialState: ActionState = { error: null, success: null }
 
-export function CreateTournamentDialog() {
+export function CreateTournamentDialogClient({ action }: { action: FormAction<ActionState> }) {
   const [open, setOpen] = useState(false)
   const [nonce, setNonce] = useState(0)
   const router = useRouter()
-  const [state, formAction, pending] = useActionState(createTournamentAction, initialState)
+  const [state, formAction, pending] = useActionState(action, initialState)
   const lastToastRef = useRef<string | null>(null)
 
   useEffect(() => {

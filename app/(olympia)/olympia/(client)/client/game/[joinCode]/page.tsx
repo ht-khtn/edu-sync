@@ -81,7 +81,7 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         console.warn('[Olympia] load players failed', playersError.message)
     }
 
-    const [{ data: scores }, { data: roundQuestions }, { data: buzzerEvents }, { data: starUses }, obstacleBundle] = await Promise.all([
+    const [{ data: scores }, { data: roundQuestions }, { data: buzzerEvents }, { data: starUses }] = await Promise.all([
         olympia
             .from('match_scores')
             .select('id, match_id, player_id, round_type, points')
@@ -105,33 +105,6 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
             .from('star_uses')
             .select('id, match_id, round_question_id, player_id, outcome, declared_at')
             .eq('match_id', session.match_id),
-        session.current_round_id
-            ? (async () => {
-                const { data: obstacle } = await olympia
-                    .from('obstacles')
-                    .select('id, match_round_id, title, final_keyword, image_url, meta')
-                    .eq('match_round_id', session.current_round_id)
-                    .maybeSingle()
-
-                if (!obstacle) return { obstacle: null, tiles: [], guesses: [] }
-
-                const [{ data: tiles }, { data: guesses }] = await Promise.all([
-                    olympia
-                        .from('obstacle_tiles')
-                        .select('id, obstacle_id, round_question_id, position_index, is_open')
-                        .eq('obstacle_id', obstacle.id)
-                        .order('position_index', { ascending: true }),
-                    olympia
-                        .from('obstacle_guesses')
-                        .select('id, obstacle_id, player_id, guess_text, is_correct, attempt_order, attempted_at')
-                        .eq('obstacle_id', obstacle.id)
-                        .order('attempted_at', { ascending: false })
-                        .limit(20),
-                ])
-
-                return { obstacle, tiles: tiles ?? [], guesses: guesses ?? [] }
-            })()
-            : Promise.resolve({ obstacle: null, tiles: [], guesses: [] }),
     ])
 
     const participantIds = (players ?? [])
@@ -153,9 +126,9 @@ async function getGameSessionData(supabase: SupabaseClient, sessionId: string): 
         roundQuestions: roundQuestions ?? [],
         buzzerEvents: buzzerEvents ?? [],
         starUses: starUses ?? [],
-        obstacle: obstacleBundle.obstacle,
-        obstacleTiles: obstacleBundle.tiles,
-        obstacleGuesses: obstacleBundle.guesses,
+        obstacle: null,
+        obstacleTiles: [],
+        obstacleGuesses: [],
         serverTimestamp: new Date().toISOString(),
         viewerUserId: null,
     }

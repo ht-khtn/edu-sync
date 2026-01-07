@@ -77,8 +77,8 @@ export function OlympiaGameClient({
     buzzerEvents,
     answers,
     starUses,
-    obstacle,
-    obstacleTiles,
+    vcnvRevealByRoundQuestionId,
+    vcnvLockedWrongByRoundQuestionId,
     timerLabel,
     questionState,
     roundType,
@@ -265,10 +265,10 @@ export function OlympiaGameClient({
     return questionCode.startsWith('CNV') && !questionCode.startsWith('VCNV')
   }, [questionCode])
 
-  const shouldUseObstacleUi = roundType === 'vcnv' && isCnvQuestion && Boolean(obstacle)
+  const shouldUseVcnvUi = roundType === 'vcnv' && isCnvQuestion && (isMc || questionState !== 'hidden')
 
-  const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
-  const showQuestionMedia = Boolean(mediaUrl) && (isMc || questionState !== 'hidden') && !shouldUseObstacleUi
+  const showQuestionText = Boolean(questionText) && (isMc || questionState !== 'hidden') && !shouldUseVcnvUi
+  const showQuestionMedia = Boolean(mediaUrl) && (isMc || questionState !== 'hidden') && !shouldUseVcnvUi
   const targetPlayerId = currentRoundQuestion?.target_player_id ?? null
   const targetPlayer = targetPlayerId ? players.find((p) => p.id === targetPlayerId) ?? null : null
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
@@ -378,6 +378,7 @@ export function OlympiaGameClient({
   void isKhoiDong
   void targetPlayer
   void stealWinnerLabel
+  void vcnvRevealByRoundQuestionId
 
   const viewerTotalScore = viewerPlayer?.id ? (scoreboard.find((s) => s.id === viewerPlayer.id)?.total ?? 0) : null
   void showQuestionText
@@ -640,7 +641,7 @@ export function OlympiaGameClient({
 
     void applyCommand('audio')
     void applyCommand('video')
-  }, [isGuest, isWaitingScreen, resolvedViewerMode, session.guest_media_control])
+  }, [audioUrl, isGuest, isWaitingScreen, mediaUrl, resolvedViewerMode, session.guest_media_control])
 
   // Toast notification for session state
   useEffect(() => {
@@ -848,7 +849,297 @@ export function OlympiaGameClient({
           {isWaitingScreen ? (
             <div className=""></div>
           ) : (
-            <div className="w-full max-w-5xl text-center">
+            <div className={cn('w-full text-center', isMc ? 'max-w-6xl' : 'max-w-5xl')}>
+              {shouldUseVcnvUi ? (
+                (() => {
+                  const resolveRoundQuestionCode = (rq: (typeof roundQuestions)[number] | null) => {
+                    if (!rq) return null
+                    const meta = rq.meta
+                    if (meta && typeof meta === 'object') {
+                      const rec = meta as Record<string, unknown>
+                      const raw = rec.code
+                      const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+                      if (trimmed) return trimmed
+                    }
+
+                    const qs = rq.question_set_items
+                    const q = rq.questions
+                    const qsiCode = Array.isArray(qs) ? (qs[0]?.code ?? null) : (qs?.code ?? null)
+                    const qCode = Array.isArray(q) ? (q[0]?.code ?? null) : (q?.code ?? null)
+                    const raw = qsiCode ?? qCode ?? null
+                    const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+                    return trimmed || null
+                  }
+
+                  const resolveRoundQuestionAnswerText = (rq: (typeof roundQuestions)[number] | null) => {
+                    if (!rq) return null
+                    const qs = rq.question_set_items
+                    const q = rq.questions
+                    const qsiAns = Array.isArray(qs) ? (qs[0]?.answer_text ?? null) : (qs?.answer_text ?? null)
+                    const qAns = Array.isArray(q) ? (q[0]?.answer_text ?? null) : (q?.answer_text ?? null)
+                    const raw = rq.answer_text ?? qsiAns ?? qAns ?? null
+                    const trimmed = typeof raw === 'string' ? raw.trim() : ''
+                    return trimmed || null
+                  }
+
+                  const currentRoundId = session.current_round_id
+                  const vcnvRows = (currentRoundId
+                    ? roundQuestions.filter((rq) => rq.match_round_id === currentRoundId)
+                    : [])
+                    .map((rq) => ({ rq, code: resolveRoundQuestionCode(rq) }))
+
+                  const byCode = new Map<string, (typeof roundQuestions)[number]>()
+                  for (const item of vcnvRows) {
+                    if (!item.code) continue
+                    if (!byCode.has(item.code)) byCode.set(item.code, item.rq)
+                  }
+
+                  const rowDefs = [
+                    { code: 'VCNV-1', label: '1' },
+                    { code: 'VCNV-2', label: '2' },
+                    { code: 'VCNV-3', label: '3' },
+                    { code: 'VCNV-4', label: '4' },
+                  ] as const
+
+                  const missingCodes = rowDefs
+                    .filter((d) => !byCode.get(d.code))
+                    .map((d) => d.code)
+
+                  const cnvLettersCount = (() => {
+                    const raw = typeof answerText === 'string' ? answerText : ''
+                    const letters = Array.from(raw).filter((ch) => ch.trim() !== '')
+                    return letters.length
+                  })()
+
+                  const renderRow = (rq: (typeof roundQuestions)[number] | null, idxLabel: string) => {
+                    const answer = resolveRoundQuestionAnswerText(rq)
+                    const letters = answer ? Array.from(answer).filter((ch) => ch.trim() !== '') : []
+                    const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                    const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                    const shouldWrap = letters.length > 15
+
+                    return (
+                      <div className="flex items-center justify-between gap-4">
+                        <div
+                          className={cn(
+                            'flex w-full justify-center',
+                            shouldWrap ? 'flex-wrap' : 'flex-nowrap',
+                            'gap-1 sm:gap-2'
+                          )}
+                        >
+                          {letters.length > 0 ? (
+                            letters.map((ch, i) => (
+                              <div
+                                key={`${idxLabel}-${i}`}
+                                className={cn(
+                                  // Fit tối thiểu 15 chữ: dùng clamp để tự co theo viewport, không scroll.
+                                  'h-[clamp(1.5rem,3.2vw,2.5rem)] w-[clamp(1.5rem,3.2vw,2.5rem)] rounded-full border flex items-center justify-center font-semibold',
+                                  'text-[clamp(0.75rem,1.6vw,1rem)]',
+                                  opened
+                                    ? 'bg-sky-500/25 border-sky-300/60 text-sky-50 shadow-[0_0_18px_rgba(56,189,248,0.25)]'
+                                    : lockedWrong
+                                      ? 'bg-rose-500/25 border-rose-400/60 text-rose-50'
+                                      : 'bg-slate-950/60 border-slate-700 text-transparent'
+                                )}
+                              >
+                                {opened ? ch.toUpperCase() : '•'}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-xs text-slate-300">(Thiếu đáp án hàng)</div>
+                          )}
+                        </div>
+                        <div
+                          className={cn(
+                            'h-8 w-8 sm:h-10 sm:w-10 rounded-full border flex items-center justify-center text-base sm:text-lg font-semibold',
+                            lockedWrong ? 'border-rose-400/60 bg-rose-950/30 text-rose-50' : 'border-slate-700 bg-slate-950/50 text-slate-100'
+                          )}
+                        >
+                          {idxLabel}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (missingCodes.length > 0) {
+                    console.warn('[Olympia][VCNV UI] Missing VCNV rows', {
+                      matchId: match.id,
+                      sessionId: session.id,
+                      currentRoundId,
+                      currentQuestionId,
+                      missingCodes,
+                      availableCodes: Array.from(byCode.keys()),
+                    })
+                  }
+
+                  type CoverPos = 1 | 2 | 3 | 4 | 5
+                  const coverBaseClass =
+                    'absolute z-10 border border-slate-700/70 bg-slate-950 flex items-center justify-center text-4xl font-semibold text-slate-200 pointer-events-none'
+                  const covers: Array<{ pos: CoverPos; label: string | null; style: CSSProperties }> = [
+                    {
+                      pos: 1,
+                      label: '1',
+                      style: {
+                        left: '0%',
+                        top: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 55%, 55% 55%, 55% 100%, 0% 100%)',
+                      },
+                    },
+                    {
+                      pos: 2,
+                      label: '2',
+                      style: {
+                        right: '0%',
+                        top: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 100%, 45% 100%, 45% 55%, 0% 55%)',
+                      },
+                    },
+                    {
+                      pos: 4,
+                      label: '4',
+                      style: {
+                        left: '0%',
+                        bottom: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(0% 0%, 55% 0%, 55% 45%, 100% 45%, 100% 100%, 0% 100%)',
+                      },
+                    },
+                    {
+                      pos: 3,
+                      label: '3',
+                      style: {
+                        right: '0%',
+                        bottom: '0%',
+                        width: '50%',
+                        height: '50%',
+                        clipPath: 'polygon(45% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 45%, 45% 45%)',
+                      },
+                    },
+                    {
+                      pos: 5,
+                      label: null,
+                      style: {
+                        left: '27.5%',
+                        top: '27.5%',
+                        width: '45%',
+                        height: '45%',
+                        borderRadius: '12px',
+                      },
+                    },
+                  ]
+
+                  return (
+                    <div className="mt-6 grid gap-6 md:grid-cols-3 md:items-start text-left relative">
+                      {resolvedViewerMode === 'player' && isViewerDisqualifiedObstacle ? (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center">
+                          <div className="mx-4 w-full max-w-3xl rounded-md border border-rose-400/60 bg-rose-950/80 px-6 py-4 text-center">
+                            <p className="text-base sm:text-lg font-semibold text-rose-50">
+                              BẠN ĐÃ MẤT QUYỀN THI VÒNG VƯỢT CHƯỚNG NGẠI VẬT
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="md:col-span-2">
+                        <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
+                          {mediaUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={mediaUrl}
+                              alt="CNV"
+                              className="h-[360px] w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-[360px] w-full items-center justify-center text-sm text-slate-300">
+                              (Chưa có ảnh CNV)
+                            </div>
+                          )}
+
+                          {covers.map((c) => {
+                            if (c.pos === 1) {
+                              const rq = byCode.get('VCNV-1') ?? null
+                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                              if (opened || unlockedByWrong) return null
+                            }
+                            if (c.pos === 2) {
+                              const rq = byCode.get('VCNV-2') ?? null
+                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                              if (opened || unlockedByWrong) return null
+                            }
+                            if (c.pos === 3) {
+                              const rq = byCode.get('VCNV-3') ?? null
+                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                              if (opened || unlockedByWrong) return null
+                            }
+                            if (c.pos === 4) {
+                              const rq = byCode.get('VCNV-4') ?? null
+                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                              if (opened || unlockedByWrong) return null
+                            }
+
+                            if (c.pos === 5) {
+                              const rq = byCode.get('OTT') ?? byCode.get('VCNV-OTT') ?? null
+                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                              if (opened || unlockedByWrong) return null
+                            }
+
+                            return (
+                              <div key={c.pos} className={coverBaseClass} style={c.style} aria-hidden="true">
+                                {c.label}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-1 space-y-4">
+                        <div className="rounded-md border border-slate-700 bg-slate-950/60 px-4 py-3">
+                          <p className="text-xs uppercase tracking-widest text-slate-200">
+                            CHƯỚNG NGẠI VẬT CÓ {cnvLettersCount} CHỮ
+                          </p>
+                        </div>
+
+                        {missingCodes.length > 0 ? (
+                          <div className="rounded-md border border-amber-500/40 bg-amber-950/30 px-4 py-3">
+                            <p className="text-sm text-amber-100 font-medium">Thiếu dữ liệu VCNV</p>
+                            <p className="mt-1 text-xs text-amber-200">
+                              Không tìm thấy: {missingCodes.join(', ')}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <div className="space-y-3">
+                          {rowDefs.map((d) => {
+                            const rq = byCode.get(d.code) ?? null
+                            const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                            return (
+                              <div
+                                key={d.code}
+                                className={cn(
+                                  'rounded-md border bg-slate-950/40 px-4 py-3',
+                                  lockedWrong ? 'border-rose-400/60' : 'border-slate-700'
+                                )}
+                              >
+                                {renderRow(rq, d.label)}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : null}
+
               {showQuestionText ? (
                 <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
                   {questionText?.trim() ? questionText : '—'}
@@ -903,166 +1194,6 @@ export function OlympiaGameClient({
               {audioUrl && isGuest ? (
                 // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
                 <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
-              ) : null}
-
-              {shouldUseObstacleUi && obstacle ? (
-                (() => {
-                  const byPos = new Map<number, (typeof obstacleTiles)[number]>()
-                  for (const t of obstacleTiles ?? []) {
-                    if (typeof t.position_index === 'number') byPos.set(t.position_index, t)
-                  }
-
-                  const getRqAnswer = (rqId: string | null | undefined) => {
-                    if (!rqId) return ''
-                    const rq = roundQuestions.find((q) => q.id === rqId) ?? null
-                    const raw = (rq?.answer_text ?? '').trim()
-                    return raw
-                  }
-
-                  const buildBoxes = (answerText: string, reveal: boolean) => {
-                    // Số ô chữ KHÔNG tính dấu cách.
-                    const chars = Array.from(answerText).filter((ch) => ch.trim() !== '')
-                    return (
-                      <div className="flex flex-wrap justify-center gap-1">
-                        {chars.map((ch, idx) => {
-                          return (
-                            <span
-                              key={idx}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/60 text-sm font-semibold"
-                              aria-label={reveal ? ch.toUpperCase() : 'Ô chữ'}
-                            >
-                              {reveal ? ch.toUpperCase() : ''}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    )
-                  }
-
-                  type CoverPos = 1 | 2 | 3 | 4 | 5
-                  const coverBaseClass = 'absolute border border-slate-700 bg-slate-950/80'
-                  const covers: Array<{ pos: CoverPos; style: CSSProperties }> = [
-                    // 4 góc: cover lớn và cắt góc trong
-                    {
-                      pos: 1,
-                      style: {
-                        left: '0%',
-                        top: '0%',
-                        width: '50%',
-                        height: '50%',
-                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 55%, 55% 55%, 55% 100%, 0% 100%)',
-                      },
-                    },
-                    {
-                      pos: 2,
-                      style: {
-                        right: '0%',
-                        top: '0%',
-                        width: '50%',
-                        height: '50%',
-                        clipPath: 'polygon(0% 0%, 100% 0%, 100% 100%, 45% 100%, 45% 55%, 0% 55%)',
-                      },
-                    },
-                    {
-                      pos: 3,
-                      style: {
-                        left: '0%',
-                        bottom: '0%',
-                        width: '50%',
-                        height: '50%',
-                        clipPath: 'polygon(0% 0%, 55% 0%, 55% 45%, 100% 45%, 100% 100%, 0% 100%)',
-                      },
-                    },
-                    {
-                      pos: 4,
-                      style: {
-                        right: '0%',
-                        bottom: '0%',
-                        width: '50%',
-                        height: '50%',
-                        clipPath: 'polygon(45% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 45%, 45% 45%)',
-                      },
-                    },
-                    // Trung tâm
-                    {
-                      pos: 5,
-                      style: {
-                        left: '27.5%',
-                        top: '27.5%',
-                        width: '45%',
-                        height: '45%',
-                      },
-                    },
-                  ]
-
-                  const renderRow = (pos: number, title: string) => {
-                    const tile = byPos.get(pos) ?? null
-                    const answer = getRqAnswer(tile?.round_question_id)
-                    const reveal = Boolean(tile?.is_open)
-
-                    return (
-                      <div className="space-y-1">
-                        <p className="text-xs text-slate-300">{title}</p>
-                        {answer ? buildBoxes(answer, reveal) : <p className="text-xs text-slate-400">(Chưa có đáp án)</p>}
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div className="mt-8 grid gap-6 md:grid-cols-2 md:items-start text-left">
-                      <div className="space-y-2">
-                        <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
-                          {(() => {
-                            const fallbackImageUrl = mediaKind === 'image' ? mediaUrl : null
-                            const imageUrl = obstacle.image_url ?? fallbackImageUrl
-                            if (imageUrl) {
-                              return (
-                                <img
-                                  src={imageUrl}
-                                  alt={obstacle.title ?? 'Chướng ngại vật'}
-                                  className="h-64 w-full object-cover"
-                                />
-                              )
-                            }
-                            return (
-                              <div className="flex h-64 w-full items-center justify-center text-sm text-slate-300">
-                                (Chưa có ảnh CNV)
-                              </div>
-                            )
-                          })()}
-
-                          {covers.map((c) => {
-                            const tile = byPos.get(c.pos) ?? null
-                            if (tile?.is_open) return null
-                            return <div key={c.pos} className={coverBaseClass} style={c.style} aria-hidden="true" />
-                          })}
-                        </div>
-
-                        <p className="text-xs text-slate-300">
-                          CNV: 4 hàng ngang + 1 ô trung tâm. Ô chữ sẽ hiện khi hàng được mở.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3 text-center">
-                        {renderRow(1, 'Hàng 1')}
-                        {renderRow(2, 'Hàng 2')}
-                        {renderRow(3, 'Hàng 3')}
-                        {renderRow(4, 'Hàng 4')}
-                        {renderRow(5, 'OTT (Ô trung tâm)')}
-                        {!disableInteractions ? (
-                          <p className="mt-2 text-xs text-slate-300">
-                            Đoán CNV: bấm chuông (trả lời miệng). Nếu sai sẽ mất quyền đoán CNV trong vòng này.
-                          </p>
-                        ) : null}
-                        {isViewerDisqualifiedObstacle ? (
-                          <p className="mt-2 text-xs text-amber-200">
-                            Bạn đã bị loại quyền trả lời ở vòng CNV này.
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                })()
               ) : null}
 
               {isMc && (answerText || noteText) ? (
@@ -1148,13 +1279,18 @@ export function OlympiaGameClient({
                 size="lg"
                 className={cn(
                   'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
-                  'bg-blue-600 hover:bg-blue-700 text-white',
-                  'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100'
+                  'bg-white hover:bg-slate-100',
+                  'text-blue-600 hover:text-blue-800',
+                  'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100',
+                  'transition-colors duration-200 ease-in-out',
+                  "[&_svg]:size-auto"
+
                 )}
                 variant="default"
               >
-                <Bell className="w-24 h-24" />
+                <Bell className="w-36 h-36 scale-[5] origin-center stroke-current" />
               </Button>
+
             </form>
           </div>
         )}

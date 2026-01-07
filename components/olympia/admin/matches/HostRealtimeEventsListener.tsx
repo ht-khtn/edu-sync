@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 
 import getSupabase from '@/lib/supabase'
 import { dispatchHostBuzzerUpdate, dispatchHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
 type Props = {
     matchId: string
@@ -52,6 +53,15 @@ export function HostRealtimeEventsListener({
     useEffect(() => {
         currentRoundQuestionIdRef.current = currentRoundQuestionId
     }, [currentRoundQuestionId])
+
+    // Đồng bộ activeQ ngay cả khi host đang optimistic (đổi câu) và SSR chưa refresh kịp.
+    useEffect(() => {
+        return subscribeHostSessionUpdate((payload) => {
+            if (payload.currentRoundQuestionId !== undefined) {
+                currentRoundQuestionIdRef.current = payload.currentRoundQuestionId
+            }
+        })
+    }, [])
 
     const lastWinnerToastRef = useRef<{ roundQuestionId: string | null; buzzerEventId: string | null }>({
         roundQuestionId: null,
@@ -132,6 +142,11 @@ export function HostRealtimeEventsListener({
                 if (winnerErr) return
                 if (!winner) return
 
+                dispatchHostBuzzerUpdate({
+                    roundQuestionId: activeQ,
+                    winnerPlayerId: (winner as unknown as BuzzerEventRow).player_id ?? null,
+                    source: 'realtime',
+                })
                 toastWinnerOnce(winner as unknown as BuzzerEventRow)
             } catch {
                 // ignore
@@ -264,8 +279,8 @@ export function HostRealtimeEventsListener({
 
                             const activeQ = currentRoundQuestionIdRef.current
                             const sameQuestion = Boolean(activeQ && row.round_question_id === activeQ)
-                            if (sameQuestion && payload.eventType === 'INSERT') {
-                                if (row.event_type === 'reset') {
+                            if (sameQuestion && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
+                                if (payload.eventType === 'INSERT' && row.event_type === 'reset') {
                                     dispatchHostBuzzerUpdate({
                                         roundQuestionId: activeQ,
                                         winnerPlayerId: null,
@@ -284,11 +299,9 @@ export function HostRealtimeEventsListener({
                                 }
                             }
 
-                            // Toast chỉ cho người nhanh nhất.
-                            if (payload.eventType !== 'INSERT') return
+                            // Toast chỉ cho người nhanh nhất (cho cả INSERT/UPDATE -> win).
                             if (row.result !== 'win') return
                             if (!activeQ || row.round_question_id !== activeQ) return
-
                             toastWinnerOnce(row)
                         }
                     )

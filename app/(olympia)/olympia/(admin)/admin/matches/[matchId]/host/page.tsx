@@ -11,6 +11,7 @@ import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matc
 import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/HostRealtimeEventsListener'
 import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/HostQuestionPreviewCard'
 import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQuickScoreSection'
+import { HostLiveAnswersCard } from '@/components/olympia/admin/matches/HostLiveAnswersCard'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -42,6 +43,7 @@ import {
   setWaitingScreenAction,
   setGuestMediaControlAction,
   resetMatchScoresAction,
+  editMatchScoreManualAction,
   submitObstacleGuessByHostFormAction,
   toggleStarUseFormAction,
   undoLastScoreChangeFormAction,
@@ -189,6 +191,7 @@ function getVeDichCodeInfo(code: string | null): { seat: number; index: number }
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
 export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
 
 const statusVariants: Record<string, string> = {
   draft: 'bg-slate-200 text-slate-700',
@@ -542,19 +545,8 @@ export default async function OlympiaHostConsolePage({
     ? getKhoiDongCodeInfo(getMetaCode((currentRoundQuestion as unknown as RoundQuestionRow | null)?.meta ?? null))
     : null
 
-  const resolvePlayerIdBySeat = (seat: number) => {
-    // Thường seat_index là 1..4. Fallback seat-1 để tránh trường hợp DB lưu 0..3.
-    return (
-      players.find((p) => p.seat_index === seat)?.id ??
-      players.find((p) => p.seat_index === seat - 1)?.id ??
-      null
-    )
-  }
-
   const khoiDongPersonalSeat =
     khoiDongCodeInfoLive && khoiDongCodeInfoLive.kind === 'personal' ? khoiDongCodeInfoLive.seat : null
-  const khoiDongPersonalPlayerId =
-    typeof khoiDongPersonalSeat === 'number' ? resolvePlayerIdBySeat(khoiDongPersonalSeat) : null
 
   const currentRoundQuestionsForQuickScoreSection = currentRoundQuestions.map((q) => {
     const row = q as RoundQuestionRow
@@ -975,214 +967,54 @@ export default async function OlympiaHostConsolePage({
             </div>
           ) : null}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Câu trả lời</CardTitle>
-              <CardDescription>
-                Câu trả lời của thí sinh cho câu đang live. Chấm điểm được đặt ở đây (4 thí sinh), và sẽ tự disable theo luật.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {(() => {
-                const latestByPlayer = new Map<string, RecentAnswerRow>()
-                for (const a of recentAnswers) {
-                  if (!a.player_id) continue
-                  if (!latestByPlayer.has(a.player_id)) {
-                    latestByPlayer.set(a.player_id, a)
+          <div className="space-y-2">
+            <HostLiveAnswersCard
+              matchId={match.id}
+              sessionId={liveSession?.id ?? null}
+              initialRoundQuestionId={liveSession?.current_round_question_id ?? null}
+              initialQuestionState={liveSession?.question_state ?? null}
+              initialWinnerBuzzPlayerId={winnerBuzz?.player_id ?? null}
+              initialAnswers={recentAnswers.map((a) => ({
+                id: a.id,
+                player_id: a.player_id,
+                answer_text: a.answer_text,
+                is_correct: a.is_correct,
+                points_awarded: a.points_awarded,
+                submitted_at: a.submitted_at,
+              }))}
+              initialRoundQuestion={
+                currentRoundQuestion
+                  ? {
+                    id: currentRoundQuestion.id,
+                    target_player_id: currentRoundQuestion.target_player_id ?? null,
+                    meta: currentRoundQuestion.meta ?? null,
                   }
-                }
+                  : null
+              }
+              players={players.map((p) => ({
+                id: p.id,
+                seat_index: p.seat_index ?? null,
+                display_name: p.display_name ?? null,
+                is_disqualified_obstacle: p.is_disqualified_obstacle ?? null,
+              }))}
+              isKhoiDong={isKhoiDong}
+              isVcnv={isVcnv}
+              isTangToc={isTangToc}
+              isVeDich={isVeDich}
+              confirmDecisionVoidFormAction={confirmDecisionVoidFormAction}
+              confirmVcnvRowDecisionFormAction={confirmVcnvRowDecisionFormAction}
+            />
 
-                const hasLiveQuestion = Boolean(liveSession?.id && liveSession?.current_round_question_id)
-
-                const enabledScoringPlayerId = (() => {
-                  if (!hasLiveQuestion) return null
-                  if (isKhoiDong) {
-                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
-                    if (isKhoiDongCommon) {
-                      return winnerBuzz?.player_id ?? null
-                    }
-                    if (khoiDongPersonalPlayerId) return khoiDongPersonalPlayerId
-                    if (khoiDongPersonalSeat != null && currentRoundQuestion?.target_player_id) {
-                      return currentRoundQuestion.target_player_id
-                    }
-                    return winnerBuzz?.player_id ?? null
-                  }
-                  if (isVeDich) {
-                    return currentRoundQuestion?.target_player_id ?? null
-                  }
-                  // Các vòng khác: mặc định cho phép chấm cho mọi thí sinh.
-                  return null
-                })()
-
-                const allowAllPlayers = hasLiveQuestion && !isTangToc && !isKhoiDong && !isVeDich
-
-                const scoringUnlocked = (() => {
-                  if (!hasLiveQuestion) return false
-                  if (liveSession?.question_state !== 'showing') return true
-                  // Khi vừa Show câu:
-                  // - Khởi động thi chung (DKA-): khóa cho đến khi có winner buzzer.
-                  // - Khởi động thi riêng (KD{seat}-): cho phép chấm ngay.
-                  if (isKhoiDong) {
-                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
-                    if (isKhoiDongCommon) return Boolean(winnerBuzz?.player_id)
-                    return true
-                  }
-
-                  // Các trường hợp khác (ví dụ: Về đích): vẫn khóa khi showing theo rule hiện tại.
-                  return Boolean(winnerBuzz?.player_id)
-                })()
-
-                const scoringHint = (() => {
-                  if (!hasLiveQuestion) return 'Chưa show câu hỏi.'
-                  if (isTangToc) return 'Tăng tốc: chấm tự động theo thứ tự thời gian (40/30/20/10).'
-                  if (isKhoiDong) {
-                    if (khoiDongPersonalSeat != null) {
-                      return `Khởi động · Thi riêng: chỉ chấm cho Ghế ${khoiDongPersonalSeat}. (Sai/Hết giờ: 0 điểm)`
-                    }
-                    return winnerBuzz?.player_id
-                      ? 'Khởi động · Thi chung: chỉ chấm cho thí sinh bấm chuông thắng. (Sai/Hết giờ: -5, không âm)'
-                      : 'Khởi động · Thi chung: chờ thí sinh bấm chuông thắng để chấm.'
-                  }
-                  if (isVeDich) {
-                    const p = currentRoundQuestion?.target_player_id
-                      ? players.find((x) => x.id === currentRoundQuestion.target_player_id)
-                      : null
-                    return `Về đích: chỉ chấm cho thí sinh chính (Ghế ${p?.seat_index ?? '—'}). Sao: đúng x2, sai bị trừ điểm câu.`
-                  }
-                  if (isVcnv) return 'VCNV: đúng +10, sai/hết giờ 0.'
-                  return 'Chấm điểm theo luật vòng hiện tại.'
-                })()
-
-                const getDecisionLabels = (playerId: string) => {
-                  if (isKhoiDong) {
-                    const isKhoiDongCommon = khoiDongCodeInfoLive?.kind === 'common'
-                    const isPersonal = Boolean(
-                      khoiDongPersonalSeat != null || (!isKhoiDongCommon && currentRoundQuestion?.target_player_id)
-                    )
-                    return {
-                      correct: 'Đúng (+10)',
-                      wrong: isPersonal ? 'Sai (0)' : 'Sai (-5)',
-                      timeout: isPersonal ? 'Hết giờ (0)' : 'Hết giờ (-5)',
-                    }
-                  }
-
-                  if (isVcnv) {
-                    return { correct: 'Đúng (+10)', wrong: 'Sai (0)', timeout: 'Hết giờ (0)' }
-                  }
-
-                  if (isVeDich) {
-                    const base = veDichValue === 20 || veDichValue === 30 ? veDichValue : null
-                    const isThisStarEnabled = Boolean(isStarEnabled && selectedTargetPlayerId === playerId)
-                    const correctText = base ? `Đúng (+${base * (isThisStarEnabled ? 2 : 1)})` : 'Đúng'
-                    const wrongText = base ? (isThisStarEnabled ? `Sai (-${base})` : 'Sai (0)') : 'Sai'
-                    const timeoutText = base ? (isThisStarEnabled ? `Hết giờ (-${base})` : 'Hết giờ (0)') : 'Hết giờ'
-                    return { correct: correctText, wrong: wrongText, timeout: timeoutText }
-                  }
-
-                  return { correct: 'Đúng', wrong: 'Sai', timeout: 'Hết giờ' }
-                }
-
-                return (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">{scoringHint}</p>
-                    <div className="grid gap-2">
-                      {players.map((pl) => {
-                        const latest = latestByPlayer.get(pl.id) ?? null
-                        const isObstacleDisqualified = isVcnv && pl.is_disqualified_obstacle === true
-                        const canScore = Boolean(
-                          hasLiveQuestion &&
-                          scoringUnlocked &&
-                          !isTangToc &&
-                          (allowAllPlayers || (enabledScoringPlayerId && enabledScoringPlayerId === pl.id))
-                        ) && !isObstacleDisqualified
-                        const seatText = pl.seat_index != null ? `Ghế ${pl.seat_index}` : 'Ghế —'
-                        const nameText = pl.display_name ? ` · ${pl.display_name}` : ''
-
-                        const labels = getDecisionLabels(pl.id)
-
-                        const decisionFormAction = isVcnv
-                          ? confirmVcnvRowDecisionFormAction
-                          : confirmDecisionVoidFormAction
-
-                        return (
-                          <div key={pl.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-medium">
-                                {seatText}
-                                {nameText}
-                              </p>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant={latest?.is_correct ? 'default' : 'outline'}>
-                                  {latest?.is_correct == null ? '—' : latest.is_correct ? 'Đúng' : 'Sai'}
-                                </Badge>
-                                <Badge variant="secondary">+{latest?.points_awarded ?? 0}</Badge>
-                              </div>
-                            </div>
-
-                            <p className="mt-2 whitespace-pre-wrap text-sm">
-                              {latest?.answer_text?.trim() ? latest.answer_text : <span className="text-muted-foreground">(Chưa có/Trống)</span>}
-                            </p>
-
-                            {isObstacleDisqualified ? (
-                              <p className="mt-2 text-xs text-amber-700">
-                                Đã bị loại quyền CNV ở vòng này (không thể gửi đáp án / không chấm điểm).
-                              </p>
-                            ) : null}
-
-                            <div className="mt-3 grid grid-cols-3 gap-2">
-                              <form action={decisionFormAction} className="col-span-1">
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={pl.id} />
-                                <input type="hidden" name="decision" value="correct" />
-                                <Button type="submit" size="lg" className="w-full font-bold text-base disabled:opacity-40" disabled={!canScore} title={labels.correct} aria-label={labels.correct}>
-                                  <Check className="w-5 h-5 mr-1" />
-                                  Đúng
-                                </Button>
-                              </form>
-                              <form action={decisionFormAction} className="col-span-1">
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={pl.id} />
-                                <input type="hidden" name="decision" value="wrong" />
-                                <Button type="submit" size="lg" variant="outline" className="w-full font-bold text-base disabled:opacity-40" disabled={!canScore} title={labels.wrong} aria-label={labels.wrong}>
-                                  <X className="w-5 h-5 mr-1" />
-                                  Sai
-                                </Button>
-                              </form>
-                              <form action={decisionFormAction} className="col-span-1">
-                                <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                                <input type="hidden" name="playerId" value={pl.id} />
-                                <input type="hidden" name="decision" value="timeout" />
-                                <Button type="submit" size="lg" variant="outline" className="w-full font-bold text-base disabled:opacity-40" disabled={!canScore} title={labels.timeout} aria-label={labels.timeout}>
-                                  Hết giờ
-                                </Button>
-                              </form>
-                            </div>
-
-                            {latest?.submitted_at ? (
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                {new Date(latest.submitted_at).toLocaleTimeString('vi-VN')}
-                              </p>
-                            ) : null}
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2">
-                      <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
-                        <input type="hidden" name="matchId" value={match.id} />
-                        <input type="hidden" name="reason" value="" />
-                        <Button type="submit" size="icon-sm" variant="outline" title="Undo" aria-label="Undo">
-                          <Undo2 />
-                        </Button>
-                      </form>
-                    </div>
-                  </div>
-                )
-              })()}
-            </CardContent>
-          </Card>
+            <div className="flex items-center justify-end gap-2">
+              <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
+                <input type="hidden" name="matchId" value={match.id} />
+                <input type="hidden" name="reason" value="" />
+                <Button type="submit" size="icon-sm" variant="outline" title="Undo" aria-label="Undo">
+                  <Undo2 />
+                </Button>
+              </form>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -1388,6 +1220,7 @@ export default async function OlympiaHostConsolePage({
               title="Xếp hạng"
               description=""
               resetScoresAction={resetMatchScoresAction}
+              editScoreAction={editMatchScoreManualAction}
             />
           ) : null}
         </div>

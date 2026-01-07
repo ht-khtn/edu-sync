@@ -82,33 +82,7 @@ async function getMcSessionData(supabase: SupabaseClient, joinCode: string): Pro
                     .order('submitted_at', { ascending: false })
                     .limit(20)
                 : Promise.resolve({ data: [] }),
-            session.current_round_id
-                ? (async () => {
-                    const { data: obstacle } = await olympia
-                        .from('obstacles')
-                        .select('id, match_round_id, title, final_keyword, image_url, meta')
-                        .eq('match_round_id', session.current_round_id)
-                        .maybeSingle()
-
-                    if (!obstacle) return { obstacle: null, tiles: [], guesses: [] }
-
-                    const [{ data: tiles }, { data: guesses }] = await Promise.all([
-                        olympia
-                            .from('obstacle_tiles')
-                            .select('id, obstacle_id, round_question_id, position_index, is_open')
-                            .eq('obstacle_id', obstacle.id)
-                            .order('position_index', { ascending: true }),
-                        olympia
-                            .from('obstacle_guesses')
-                            .select('id, obstacle_id, player_id, guess_text, is_correct, attempt_order, attempted_at')
-                            .eq('obstacle_id', obstacle.id)
-                            .order('attempted_at', { ascending: false })
-                            .limit(20),
-                    ])
-
-                    return { obstacle, tiles: tiles ?? [], guesses: guesses ?? [] }
-                })()
-                : Promise.resolve({ obstacle: null, tiles: [], guesses: [] }),
+            Promise.resolve({ obstacle: null, tiles: [], guesses: [] }),
         ])
 
     const participantIds = (players ?? [])

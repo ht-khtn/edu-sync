@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useActionState, useEffect, useRef } from 'react'
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,10 +13,10 @@ type ActionState = {
   data?: Record<string, unknown> | null
 }
 
-type ResetScoresAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
+type ScoreboardAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
 
 const initialState: ActionState = { error: null, success: null }
-const noopAction: ResetScoresAction = async (prevState) => prevState
+const noopAction: ScoreboardAction = async (prevState) => prevState
 
 type PlayerScore = {
   playerId: string
@@ -34,7 +34,8 @@ type Props = {
   scores: PlayerScore[]
   showRoundBreakdown?: boolean
   maxScore?: number
-  resetScoresAction?: ResetScoresAction
+  resetScoresAction?: ScoreboardAction
+  editScoreAction?: ScoreboardAction
 }
 
 export function LiveScoreboard({
@@ -44,21 +45,27 @@ export function LiveScoreboard({
   scores,
   maxScore,
   resetScoresAction,
+  editScoreAction,
 }: Props) {
-  const [state, formAction, pending] = useActionState(resetScoresAction ?? noopAction, initialState)
+  const [resetState, resetFormAction, pendingReset] = useActionState(resetScoresAction ?? noopAction, initialState)
+  const [editState, editFormAction, pendingEdit] = useActionState(editScoreAction ?? noopAction, initialState)
   const lastToastRef = useRef<string | null>(null)
+  const [editing, setEditing] = useState<boolean>(false)
 
   useEffect(() => {
-    const message = state.error ?? state.success
+    const message = resetState.error ?? resetState.success ?? editState.error ?? editState.success
     if (!message) return
     if (lastToastRef.current === message) return
     lastToastRef.current = message
 
-    if (state.error) toast.error(message)
-    if (state.success) toast.success(message)
-  }, [state.error, state.success])
+    if (resetState.error || editState.error) toast.error(message)
+    if (resetState.success || editState.success) toast.success(message)
+  }, [editState.error, editState.success, resetState.error, resetState.success])
 
-  const sortedScores = [...scores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0))
+  const sortedScores = useMemo(
+    () => [...scores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
+    [scores]
+  )
 
   return (
     <Card>
@@ -69,14 +76,28 @@ export function LiveScoreboard({
             <CardDescription>{description}</CardDescription>
           </div>
 
-          {resetScoresAction ? (
-            <form action={formAction} className="flex">
-              <input type="hidden" name="matchId" value={matchId} />
-              <Button type="submit" variant="outline" size="sm" disabled={pending}>
-                Reset điểm
+          <div className="flex flex-wrap items-center gap-2">
+            {editScoreAction ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing((v) => !v)}
+                disabled={pendingEdit || pendingReset}
+              >
+                {editing ? 'Đóng chỉnh điểm' : 'Chỉnh sửa điểm'}
               </Button>
-            </form>
-          ) : null}
+            ) : null}
+
+            {resetScoresAction ? (
+              <form action={resetFormAction} className="flex">
+                <input type="hidden" name="matchId" value={matchId} />
+                <Button type="submit" variant="outline" size="sm" disabled={pendingReset || pendingEdit}>
+                  Reset điểm
+                </Button>
+              </form>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -104,6 +125,23 @@ export function LiveScoreboard({
                     {maxScore ? `/${maxScore}` : ''} điểm
                   </Badge>
                 </div>
+
+                {editing && editScoreAction ? (
+                  <form action={editFormAction} className="flex items-center gap-2">
+                    <input type="hidden" name="matchId" value={matchId} />
+                    <input type="hidden" name="playerId" value={player.playerId} />
+                    <input
+                      name="newTotal"
+                      type="number"
+                      defaultValue={player.totalScore ?? 0}
+                      className="h-8 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm"
+                      aria-label={`Điểm mới cho ${player.displayName}`}
+                    />
+                    <Button type="submit" size="sm" disabled={pendingEdit || pendingReset}>
+                      Lưu
+                    </Button>
+                  </form>
+                ) : null}
               </div>
             ))}
           </div>

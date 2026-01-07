@@ -1,8 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuickScorePanel'
 import { subscribeHostBuzzerUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+
+type HostSnapshotResponse = {
+    currentRoundQuestionId: string | null
+    questionState: string | null
+    winnerPlayerId: string | null
+}
 
 type PlayerRow = {
     id: string
@@ -94,6 +100,13 @@ export function HostQuickScoreSection(props: Props) {
         winnerBuzzPlayerId ?? null
     )
 
+    const effectiveRoundQuestionIdRef = useRef<string | null>(initialRoundQuestionId)
+    const pollInFlightRef = useRef(false)
+
+    useEffect(() => {
+        effectiveRoundQuestionIdRef.current = effectiveRoundQuestionId
+    }, [effectiveRoundQuestionId])
+
     useEffect(() => {
         setEffectiveRoundQuestionId(initialRoundQuestionId)
     }, [initialRoundQuestionId])
@@ -113,11 +126,17 @@ export function HostQuickScoreSection(props: Props) {
     useEffect(() => {
         return subscribeHostSessionUpdate((payload) => {
             if (payload.currentRoundQuestionId !== undefined) {
-                setEffectiveRoundQuestionId(payload.currentRoundQuestionId)
-                // Đổi câu: reset winner để tránh chấm nhầm thí sinh câu trước.
-                setEffectiveWinnerBuzzPlayerId(null)
-                // Đổi câu: timer cũng phải reset.
-                setEffectiveTimerDeadline(null)
+                const prev = effectiveRoundQuestionIdRef.current
+                const next = payload.currentRoundQuestionId
+                setEffectiveRoundQuestionId(next)
+
+                // Chỉ reset khi thực sự đổi câu.
+                if (prev !== next) {
+                    // Đổi câu: reset winner để tránh chấm nhầm thí sinh câu trước.
+                    setEffectiveWinnerBuzzPlayerId(null)
+                    // Đổi câu: timer cũng phải reset.
+                    setEffectiveTimerDeadline(null)
+                }
             }
             if (payload.questionState !== undefined) {
                 setEffectiveQuestionState(payload.questionState)
@@ -126,7 +145,7 @@ export function HostQuickScoreSection(props: Props) {
                 setEffectiveTimerDeadline(payload.timerDeadline)
             }
         })
-    }, [])
+    }, [effectiveRoundQuestionIdRef])
 
     useEffect(() => {
         return subscribeHostBuzzerUpdate((payload) => {
@@ -136,6 +155,46 @@ export function HostQuickScoreSection(props: Props) {
             setEffectiveWinnerBuzzPlayerId(payload.winnerPlayerId ?? null)
         })
     }, [effectiveRoundQuestionId])
+
+    const refreshSnapshot = useCallback(async () => {
+        if (!matchId) return
+        if (!sessionId) return
+        if (typeof document !== 'undefined' && document.hidden) return
+        if (pollInFlightRef.current) return
+        pollInFlightRef.current = true
+
+        try {
+            const url = new URL('/api/olympia/host/snapshot', window.location.origin)
+            url.searchParams.set('matchId', matchId)
+            url.searchParams.set('sessionId', sessionId)
+
+            const res = await fetch(url.toString(), {
+                method: 'GET',
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            })
+            if (!res.ok) return
+
+            const data = (await res.json()) as HostSnapshotResponse
+
+            setEffectiveRoundQuestionId(data.currentRoundQuestionId ?? null)
+            setEffectiveQuestionState(data.questionState ?? null)
+            setEffectiveWinnerBuzzPlayerId(data.winnerPlayerId ?? null)
+        } catch {
+            // ignore: polling fallback
+        } finally {
+            pollInFlightRef.current = false
+        }
+    }, [matchId, sessionId])
+
+    useEffect(() => {
+        // Poll fallback để không phụ thuộc hoàn toàn vào Supabase Realtime.
+        void refreshSnapshot()
+        const t = setInterval(() => {
+            void refreshSnapshot()
+        }, 900)
+        return () => clearInterval(t)
+    }, [refreshSnapshot])
 
     const effectiveRoundQuestion = useMemo(() => {
         if (!effectiveRoundQuestionId) return null

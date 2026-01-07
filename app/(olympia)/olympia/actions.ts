@@ -115,6 +115,16 @@ const buzzerEnabledSchema = z.object({
     .transform((val) => val === "1"),
 });
 
+const manualEditScoreSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
+  playerId: z.string().uuid("ID thí sinh không hợp lệ."),
+  newTotal: z
+    .union([z.string(), z.number()])
+    .transform((v) => (typeof v === "number" ? v : Number.parseInt(String(v), 10)))
+    .refine((n) => Number.isFinite(n), "Điểm không hợp lệ.")
+    .transform((n) => Math.trunc(n)),
+});
+
 const scoreboardOverlaySchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   enabled: z
@@ -1469,6 +1479,103 @@ export async function resetMatchScoresAction(
   }
 }
 
+export async function editMatchScoreManualAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase, appUserId } = await getServerAuthContext();
+    if (!appUserId) return { error: "Bạn chưa đăng nhập." };
+
+    const olympia = supabase.schema("olympia");
+
+    const parsed = manualEditScoreSchema.safeParse({
+      matchId: formData.get("matchId"),
+      playerId: formData.get("playerId"),
+      newTotal: formData.get("newTotal"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chỉnh điểm." };
+    }
+
+    const { matchId, playerId, newTotal } = parsed.data;
+
+    const now = new Date().toISOString();
+
+    const { data: rows, error: rowsErr } = await olympia
+      .from("match_scores")
+      .select("id, round_type, points")
+      .eq("match_id", matchId)
+      .eq("player_id", playerId);
+
+    if (rowsErr) return { error: rowsErr.message };
+
+    const pointsBefore = (rows ?? []).reduce((acc, r) => acc + (r.points ?? 0), 0);
+    const delta = newTotal - pointsBefore;
+
+    if (delta === 0) {
+      return { success: "Điểm không đổi." };
+    }
+
+    const manualRow = (rows ?? []).find((r) => String(r.round_type ?? "") === "manual") ?? null;
+
+    if (manualRow?.id) {
+      const nextPoints = (manualRow.points ?? 0) + delta;
+      const { data: updated, error: updErr } = await olympia
+        .from("match_scores")
+        .update({ points: nextPoints, updated_at: now })
+        .eq("id", manualRow.id)
+        .select("id");
+      if (updErr) return { error: updErr.message };
+      if (!updated || updated.length === 0) return { error: "Không thể cập nhật điểm thủ công." };
+    } else {
+      const { data: inserted, error: insErr } = await olympia
+        .from("match_scores")
+        .insert({
+          match_id: matchId,
+          player_id: playerId,
+          round_type: "manual",
+          points: delta,
+          updated_at: now,
+        })
+        .select("id");
+      if (insErr) return { error: insErr.message };
+      if (!inserted || inserted.length === 0) return { error: "Không thể ghi điểm thủ công." };
+    }
+
+    const pointsAfter = pointsBefore + delta;
+
+    const { error: logErr } = await olympia.from("score_changes").insert({
+      match_id: matchId,
+      player_id: playerId,
+      round_type: "manual",
+      requested_delta: delta,
+      applied_delta: delta,
+      points_before: pointsBefore,
+      points_after: pointsAfter,
+      source: "manual",
+      reason: null,
+      round_question_id: null,
+      answer_id: null,
+      revert_of: null,
+      reverted_at: null,
+      reverted_by: null,
+      created_by: appUserId,
+    });
+
+    if (logErr) return { error: logErr.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+
+    return { success: `Đã chỉnh điểm: ${pointsBefore} → ${pointsAfter}.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chỉnh điểm." };
+  }
+}
+
 export async function resetLiveSessionAndScoresAction(
   _: ActionState,
   formData: FormData
@@ -2682,26 +2789,31 @@ export async function advanceCurrentQuestionAction(
         meta?: unknown;
       };
 
-      const currentInfo = !currentRow?.target_player_id
-        ? parseKhoiDongCodeInfoFromMeta((currentRow as unknown as { meta?: unknown })?.meta)
-        : null;
-      const nextInfo = !nextRow?.target_player_id
-        ? parseKhoiDongCodeInfoFromMeta((nextRow as unknown as { meta?: unknown })?.meta)
-        : null;
+      const currentInfo = parseKhoiDongCodeInfoFromMeta((currentRow as { meta?: unknown })?.meta);
+      const nextInfo = parseKhoiDongCodeInfoFromMeta((nextRow as { meta?: unknown })?.meta);
 
       const currentIsPersonal = Boolean(
         currentRow?.target_player_id || currentInfo?.kind === "personal"
       );
-      const currentSeat = currentInfo?.kind === "personal" ? currentInfo.seat : null;
       const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
-      const nextSeat = nextInfo?.kind === "personal" ? nextInfo.seat : null;
+
+      const currentSeat = currentInfo && currentInfo.kind === "personal" ? currentInfo.seat : null;
+      const nextSeat = nextInfo && nextInfo.kind === "personal" ? nextInfo.seat : null;
+
+      const switchingPersonalToNonPersonal = currentIsPersonal && !nextIsPersonal;
+      const switchingBetweenPersonalPlayers =
+        currentIsPersonal &&
+        nextIsPersonal &&
+        (Boolean(
+          currentRow?.target_player_id &&
+          nextRow?.target_player_id &&
+          currentRow.target_player_id !== nextRow.target_player_id
+        ) ||
+          Boolean(currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
 
       // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
       // Áp dụng cả khi autoShow=1 (chấm & chuyển) theo đúng luật/UX yêu cầu.
-      const crossingToAnotherPlayer =
-        currentIsPersonal &&
-        (!nextIsPersonal || (currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
-      if (crossingToAnotherPlayer) {
+      if (switchingPersonalToNonPersonal || switchingBetweenPersonalPlayers) {
         // Theo UX: hết câu của thí sinh hiện tại thì không tự nhảy sang thí sinh khác.
         // Chỉ bật màn chờ để host chủ động chọn thí sinh/câu tiếp theo.
         const { error: waitErr } = await olympia
@@ -3285,6 +3397,49 @@ export async function confirmVcnvRowDecisionAction(
     if (session.current_round_type !== "vcnv") return { error: "Hiện không ở vòng CNV." };
     if (!session.current_round_question_id) return { error: "Chưa có câu hỏi CNV đang hiển thị." };
 
+    // Nếu thí sinh bấm chuông xin trả lời (winner) mà bị chấm SAI => mất quyền thi vòng VCNV.
+    // Chỉ áp dụng cho người thắng buzzer của câu CNV hiện tại (không áp dụng cho các đáp án nhập máy thông thường).
+    if (decision === "wrong") {
+      const rqId = session.current_round_question_id;
+
+      const { data: lastReset, error: resetErr } = await olympia
+        .from("buzzer_events")
+        .select("occurred_at")
+        .eq("match_id", session.match_id)
+        .eq("round_question_id", rqId)
+        .eq("event_type", "reset")
+        .order("occurred_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (resetErr) return { error: resetErr.message };
+      const resetOccurredAt =
+        ((lastReset as { occurred_at?: string | null } | null) ?? null)?.occurred_at ?? null;
+
+      let winnerQuery = olympia
+        .from("buzzer_events")
+        .select("id")
+        .eq("match_id", session.match_id)
+        .eq("round_question_id", rqId)
+        .eq("event_type", "buzz")
+        .eq("result", "win")
+        .eq("player_id", playerId);
+      if (resetOccurredAt) winnerQuery = winnerQuery.gte("occurred_at", resetOccurredAt);
+
+      const { data: winner, error: winnerErr } = await winnerQuery
+        .order("occurred_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (winnerErr) return { error: winnerErr.message };
+
+      if (winner?.id) {
+        const { error: dqErr } = await olympia
+          .from("match_players")
+          .update({ is_disqualified_obstacle: true })
+          .eq("id", playerId);
+        if (dqErr) return { error: dqErr.message };
+      }
+    }
+
     const delta = decision === "correct" ? 10 : 0;
     const {
       nextPoints,
@@ -3378,23 +3533,6 @@ export async function confirmVcnvRowDecisionAction(
     });
     if (auditErr) {
       console.warn("[Olympia] insertScoreChange(vcnv row) failed:", auditErr);
-    }
-
-    if (decision === "correct" && session.current_round_id) {
-      const { data: obstacle, error: obstacleError } = await olympia
-        .from("obstacles")
-        .select("id")
-        .eq("match_round_id", session.current_round_id)
-        .maybeSingle();
-      if (obstacleError) return { error: obstacleError.message };
-      if (obstacle?.id) {
-        const { error: tileError } = await olympia
-          .from("obstacle_tiles")
-          .update({ is_open: true })
-          .eq("obstacle_id", obstacle.id)
-          .eq("round_question_id", session.current_round_question_id);
-        if (tileError) return { error: tileError.message };
-      }
     }
 
     revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
@@ -3836,16 +3974,20 @@ export async function setRoundQuestionTargetPlayerAction(
     // Nếu có roundQuestionId cụ thể thì cập nhật target cho câu đó.
     // (Cho phép chọn ghế trước khi chọn câu → roundQuestionId có thể null.)
     if (parsed.data.roundQuestionId) {
-      const { error } = await olympia
+      const { data: updatedRqs, error } = await olympia
         .from("round_questions")
         .update({ target_player_id: parsed.data.playerId })
-        .eq("id", parsed.data.roundQuestionId);
+        .eq("id", parsed.data.roundQuestionId)
+        .select("id");
       if (error) return { error: error.message };
+      if (!updatedRqs || updatedRqs.length === 0) {
+        return { error: "Không tìm thấy câu hỏi để cập nhật thí sinh." };
+      }
     }
 
     // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
     // Đây là hành vi yêu cầu để tránh UI giữ câu cũ khi đổi ghế/thí sinh.
-    const { error: resetErr } = await olympia
+    const { data: resetRows, error: resetErr } = await olympia
       .from("live_sessions")
       .update({
         current_round_question_id: null,
@@ -3854,8 +3996,12 @@ export async function setRoundQuestionTargetPlayerAction(
         buzzer_enabled: false,
       })
       .eq("match_id", parsed.data.matchId)
-      .eq("status", "running");
+      .eq("status", "running")
+      .select("id");
     if (resetErr) return { error: resetErr.message };
+    if (!resetRows || resetRows.length === 0) {
+      return { error: "Không tìm thấy phòng đang running để cập nhật." };
+    }
 
     // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 

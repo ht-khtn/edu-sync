@@ -12,9 +12,6 @@ import type {
   AnswerRow,
   BuzzerEventRow,
   GameSessionPayload,
-  ObstacleGuessRow,
-  ObstacleRow,
-  ObstacleTileRow,
   RoundQuestionRow,
   ScoreRow,
   StarUseRow,
@@ -34,6 +31,9 @@ type TimerSnapshot = {
 type BuzzerEvent = BuzzerEventRow & {
   payload?: Record<string, unknown> | null;
 };
+
+type VcnvRevealMap = Record<string, boolean>;
+type VcnvLockMap = Record<string, boolean>;
 
 const computeRemaining = (deadline: string | null): TimerSnapshot => {
   if (!deadline) return { deadline: null, remainingMs: null, isExpired: false };
@@ -56,18 +56,14 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [starUses, setStarUses] = useState<StarUseRow[]>(initialData.starUses ?? []);
   const [players] = useState(initialData.players);
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
-  const [obstacle, setObstacle] = useState<ObstacleRow | null>(initialData.obstacle ?? null);
-  const [obstacleTiles, setObstacleTiles] = useState<ObstacleTileRow[]>(
-    initialData.obstacleTiles ?? []
-  );
-  const [obstacleGuesses, setObstacleGuesses] = useState<ObstacleGuessRow[]>(
-    initialData.obstacleGuesses ?? []
-  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isRealtimeReady, setRealtimeReady] = useState(false);
   const [timer, setTimer] = useState<TimerSnapshot>(() =>
     computeRemaining(initialData.session.timer_deadline)
   );
+  const [vcnvRevealByRoundQuestionId, setVcnvRevealByRoundQuestionId] = useState<VcnvRevealMap>({});
+  const [vcnvLockedWrongByRoundQuestionId, setVcnvLockedWrongByRoundQuestionId] =
+    useState<VcnvLockMap>({});
   const channelRef = useRef<RealtimeChannel | null>(null);
   const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabase>> | null>(null);
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,19 +72,126 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const retryCountRef = useRef(0);
   const pollInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
-  const obstacleIdRef = useRef<string | null>(initialData.obstacle?.id ?? null);
+  const vcnvTrackedRqIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
 
-  useEffect(() => {
-    obstacleIdRef.current = obstacle?.id ?? null;
-  }, [obstacle?.id]);
-
   const questionState = session.question_state ?? "hidden";
   const roundType = session.current_round_type ?? "unknown";
   const matchId = initialData.match.id;
+
+  const resolveRoundQuestionCode = useCallback((rq: RoundQuestionRow | null) => {
+    if (!rq) return null;
+    const meta = rq.meta;
+    if (meta && typeof meta === "object") {
+      const rec = meta as Record<string, unknown>;
+      const raw = rec.code;
+      const trimmed = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+      if (trimmed) return trimmed;
+    }
+    const qs = rq.question_set_items;
+    const q = rq.questions;
+
+    const qsiCode = Array.isArray(qs) ? (qs[0]?.code ?? null) : (qs?.code ?? null);
+    const qCode = Array.isArray(q) ? (q[0]?.code ?? null) : (q?.code ?? null);
+    const raw = qsiCode ?? qCode ?? null;
+    const trimmed = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+    return trimmed || null;
+  }, []);
+
+  const computeVcnvRowQuestionIds = useCallback((): string[] => {
+    if (roundType !== "vcnv") return [];
+    const currentRoundId = sessionRef.current.current_round_id;
+    if (!currentRoundId) return [];
+
+    // VCNV: 4 hàng + ô trung tâm (OTT). Mã có thể là OTT hoặc VCNV-OTT tuỳ dữ liệu.
+    const wanted = new Set(["VCNV-1", "VCNV-2", "VCNV-3", "VCNV-4", "OTT", "VCNV-OTT"]);
+    const rows = (roundQuestions ?? [])
+      .filter((rq) => rq.match_round_id === currentRoundId)
+      .map((rq) => ({ id: rq.id, code: resolveRoundQuestionCode(rq) }))
+      .filter((item): item is { id: string; code: string } => Boolean(item.id && item.code));
+
+    const byCode = new Map<string, string>();
+    for (const row of rows) {
+      if (wanted.has(row.code) && !byCode.has(row.code)) byCode.set(row.code, row.id);
+    }
+
+    return ["VCNV-1", "VCNV-2", "VCNV-3", "VCNV-4", "OTT", "VCNV-OTT"]
+      .map((code) => byCode.get(code) ?? null)
+      .filter((id): id is string => Boolean(id));
+  }, [resolveRoundQuestionCode, roundQuestions, roundType]);
+
+  const fetchVcnvRevealSnapshot = useCallback(
+    async (rqIds: string[]) => {
+      if (rqIds.length === 0) {
+        setVcnvRevealByRoundQuestionId({});
+        setVcnvLockedWrongByRoundQuestionId({});
+        return;
+      }
+      const supabase = supabaseRef.current;
+      if (!supabase) return;
+      try {
+        const olympia = supabase.schema("olympia");
+        const { data, error } = await olympia
+          .from("answers")
+          .select("round_question_id, player_id, is_correct")
+          .eq("match_id", matchId)
+          .in("round_question_id", rqIds);
+        if (error) {
+          console.warn("[Olympia] fetch VCNV reveal snapshot failed", error.message);
+          return;
+        }
+
+        const next: VcnvRevealMap = {};
+        const nextLocked: VcnvLockMap = {};
+        for (const id of rqIds) {
+          next[id] = false;
+          nextLocked[id] = false;
+        }
+
+        const decidedByRqId = new Map<string, Map<string, boolean>>();
+        for (const row of (data as Array<{
+          round_question_id: string;
+          player_id: string;
+          is_correct?: boolean | null;
+        }> | null) ?? []) {
+          const rqId = row.round_question_id;
+          const playerId = row.player_id;
+          if (!rqId || !playerId) continue;
+          if (row.is_correct === null || row.is_correct === undefined) continue;
+
+          const map = decidedByRqId.get(rqId) ?? new Map<string, boolean>();
+          map.set(playerId, row.is_correct === true);
+          decidedByRqId.set(rqId, map);
+        }
+
+        const playersCount = players.length;
+        for (const rqId of rqIds) {
+          const decided = decidedByRqId.get(rqId);
+          if (!decided) continue;
+
+          const anyCorrect = Array.from(decided.values()).some((v) => v === true);
+          if (anyCorrect) {
+            next[rqId] = true;
+            continue;
+          }
+
+          const allDecided = playersCount > 0 && decided.size >= playersCount;
+          if (allDecided) {
+            nextLocked[rqId] = true;
+          }
+        }
+
+        setVcnvRevealByRoundQuestionId(next);
+        setVcnvLockedWrongByRoundQuestionId(nextLocked);
+      } catch (err) {
+        console.warn("[Olympia] fetch VCNV reveal snapshot failed", err);
+      }
+    },
+    [matchId, players.length]
+  );
 
   // Khi router.refresh() hoặc server re-render truyền xuống initialData mới,
   // hook phải đồng bộ lại state. Nếu không, UI sẽ chỉ cập nhật khi F5 (reload).
@@ -100,12 +203,15 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       setAnswers((initialData.answers ?? []) as AnswerRow[]);
       setStarUses((initialData.starUses ?? []) as StarUseRow[]);
       setBuzzerEvents((initialData.buzzerEvents ?? []) as BuzzerEvent[]);
-      setObstacle((initialData.obstacle ?? null) as ObstacleRow | null);
-      setObstacleTiles((initialData.obstacleTiles ?? []) as ObstacleTileRow[]);
-      setObstacleGuesses((initialData.obstacleGuesses ?? []) as ObstacleGuessRow[]);
       setTimer(computeRemaining(initialData.session.timer_deadline));
     });
   }, [initialData]);
+
+  useEffect(() => {
+    const nextIds = computeVcnvRowQuestionIds();
+    vcnvTrackedRqIdsRef.current = nextIds;
+    void fetchVcnvRevealSnapshot(nextIds);
+  }, [computeVcnvRowQuestionIds, fetchVcnvRevealSnapshot]);
 
   const fetchAnswersForQuestion = useCallback(async (roundQuestionId: string) => {
     const supabase = supabaseRef.current;
@@ -384,74 +490,51 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               // Nếu row có match_id thì filter chặt; nếu không có (tuỳ schema), fallback không filter.
               if (row.match_id && row.match_id !== matchId) return;
 
+              const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
+              const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
               const currentRqId = sessionRef.current.current_round_question_id;
-              if (!currentRqId) return;
-              if (row.round_question_id !== currentRqId) return;
+              const isCurrentQuestion = Boolean(
+                currentRqId && row.round_question_id === currentRqId
+              );
+              if (!isTrackedVcnv && !isCurrentQuestion) return;
 
-              const isDelete =
-                (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
-              setAnswers((prev) => {
-                if (isDelete) {
-                  return prev.filter((a) => a.id !== row.id);
+              if (isTrackedVcnv) {
+                const isDelete =
+                  (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
+                const isRevealValue = row.is_correct !== null && row.is_correct !== undefined;
+
+                if (isDelete || !isRevealValue) {
+                  void fetchVcnvRevealSnapshot(trackedVcnvIds);
+                } else {
+                  setVcnvRevealByRoundQuestionId((prev) => ({
+                    ...prev,
+                    [row.round_question_id]: true,
+                  }));
                 }
+              }
 
-                const next = [row, ...prev.filter((a) => a.id !== row.id)];
-                const parsed = next
-                  .slice()
-                  .sort((a, b) => {
-                    const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
-                    const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
-                    return bt - at;
-                  })
-                  .slice(0, 20);
-                return parsed;
-              });
-            }
-          )
-          // CNV: nghe obstacle + tile + guess để render board tối thiểu.
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "obstacles" },
-            (payload) => {
-              const row = payload.new as ObstacleRow | null;
-              if (!row) return;
-              const currentRoundId = sessionRef.current.current_round_id;
-              if (!currentRoundId) return;
-              if (row.match_round_id !== currentRoundId) return;
-              setObstacle(row);
-            }
-          )
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "obstacle_tiles" },
-            (payload) => {
-              const row = payload.new as ObstacleTileRow | null;
-              if (!row) return;
-              const obstacleId = obstacleIdRef.current;
-              if (!obstacleId) return;
-              if (row.obstacle_id !== obstacleId) return;
-              setObstacleTiles((prev) => {
-                const next = [...prev];
-                const idx = next.findIndex((t) => t.id === row.id);
-                if (idx === -1) next.push(row);
-                else next[idx] = { ...next[idx], ...row };
-                return next.sort((a, b) => a.position_index - b.position_index);
-              });
-            }
-          )
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "obstacle_guesses" },
-            (payload) => {
-              const row = payload.new as ObstacleGuessRow | null;
-              if (!row) return;
-              const obstacleId = obstacleIdRef.current;
-              if (!obstacleId) return;
-              if (row.obstacle_id !== obstacleId) return;
-              setObstacleGuesses((prev) => [row, ...prev].slice(0, 20));
+              if (isCurrentQuestion) {
+                const isDelete =
+                  (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
+                setAnswers((prev) => {
+                  if (isDelete) {
+                    return prev.filter((a) => a.id !== row.id);
+                  }
+
+                  const next = [row, ...prev.filter((a) => a.id !== row.id)];
+                  const parsed = next
+                    .slice()
+                    .sort((a, b) => {
+                      const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                      const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                      return bt - at;
+                    })
+                    .slice(0, 20);
+                  return parsed;
+                });
+              }
             }
           );
-
         channel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
@@ -564,9 +647,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     buzzerEvents,
     answers,
     starUses,
-    obstacle,
-    obstacleTiles,
-    obstacleGuesses,
+    vcnvRevealByRoundQuestionId,
+    vcnvLockedWrongByRoundQuestionId,
     timer,
     timerLabel,
     questionState,

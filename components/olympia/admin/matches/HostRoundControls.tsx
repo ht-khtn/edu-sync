@@ -261,6 +261,9 @@ export function HostRoundControls({
     lastAppliedUrlRef.current = nextUrl
     router.replace(nextUrl)
 
+    // Đổi vòng: đảm bảo host SSR cập nhật ngay (tránh phải F5 lần 2).
+    router.refresh()
+
     // Optimistic UI: sau khi đổi vòng, đưa về màn chờ và tắt overlay.
     setWaitingChecked(true)
     setScoreboardChecked(false)
@@ -272,7 +275,7 @@ export function HostRoundControls({
       lastServerRoundIdRef.current = submittedRoundId
       setRoundId(submittedRoundId)
     }
-  }, [roundState.success, roundState.error, baseParams, pathname, router])
+  }, [roundState, baseParams, pathname, router])
 
   useEffect(() => {
     if (!targetState.success || targetState.error) return
@@ -296,12 +299,15 @@ export function HostRoundControls({
     lastAppliedUrlRef.current = nextUrl
     router.replace(nextUrl)
 
+    // Đổi thí sinh/thi chung-thi riêng: action có reset live_session + target, cần refresh SSR để mọi panel sync ngay.
+    router.refresh()
+
     const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
     if (submittedTargetId != null) {
       lastServerTargetPlayerIdRef.current = submittedTargetId
       setTargetPlayerId(submittedTargetId)
     }
-  }, [targetState.success, targetState.error, baseParams, pathname, router, isKhoiDong, players])
+  }, [targetState, baseParams, pathname, router, isKhoiDong, players])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))

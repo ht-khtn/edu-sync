@@ -94,33 +94,7 @@ async function getGuestSessionData(
             .eq('match_id', match.id),
     ])
 
-    const obstacleBundle = resolvedSession.current_round_id
-        ? await (async () => {
-            const { data: obstacle } = await olympia
-                .from('obstacles')
-                .select('id, match_round_id, title, final_keyword, image_url, meta')
-                .eq('match_round_id', resolvedSession.current_round_id)
-                .maybeSingle()
-
-            if (!obstacle) return { obstacle: null, tiles: [], guesses: [] }
-
-            const [{ data: tiles }, { data: guesses }] = await Promise.all([
-                olympia
-                    .from('obstacle_tiles')
-                    .select('id, obstacle_id, round_question_id, position_index, is_open')
-                    .eq('obstacle_id', obstacle.id)
-                    .order('position_index', { ascending: true }),
-                olympia
-                    .from('obstacle_guesses')
-                    .select('id, obstacle_id, player_id, guess_text, is_correct, attempt_order, attempted_at')
-                    .eq('obstacle_id', obstacle.id)
-                    .order('attempted_at', { ascending: false })
-                    .limit(20),
-            ])
-
-            return { obstacle, tiles: tiles ?? [], guesses: guesses ?? [] }
-        })()
-        : { obstacle: null, tiles: [], guesses: [] }
+    const obstacleBundle = { obstacle: null, tiles: [], guesses: [] }
 
     const participantIds = (players ?? [])
         .map((p) => (p as { participant_id?: string | null }).participant_id ?? null)

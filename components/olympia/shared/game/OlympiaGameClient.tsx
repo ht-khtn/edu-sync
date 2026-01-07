@@ -918,13 +918,20 @@ export function OlympiaGameClient({
                     const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
                     const shouldWrap = letters.length > 15
 
+                    const cellSizeClass =
+                      letters.length <= 10
+                        ? 'h-10 w-10 text-base'
+                        : letters.length <= 15
+                          ? 'h-8 w-8 text-sm'
+                          : 'h-8 w-8 text-sm'
+
                     return (
                       <div className="flex items-center justify-between gap-4">
                         <div
                           className={cn(
-                            'flex w-full justify-center',
+                            'flex flex-1 justify-center',
                             shouldWrap ? 'flex-wrap' : 'flex-nowrap',
-                            'gap-1 sm:gap-2'
+                            'gap-1.5 sm:gap-2'
                           )}
                         >
                           {letters.length > 0 ? (
@@ -932,14 +939,13 @@ export function OlympiaGameClient({
                               <div
                                 key={`${idxLabel}-${i}`}
                                 className={cn(
-                                  // Fit tối thiểu 15 chữ: dùng clamp để tự co theo viewport, không scroll.
-                                  'h-[clamp(1.5rem,3.2vw,2.5rem)] w-[clamp(1.5rem,3.2vw,2.5rem)] rounded-full border flex items-center justify-center font-semibold',
-                                  'text-[clamp(0.75rem,1.6vw,1rem)]',
+                                  'flex-none shrink-0 rounded-full border flex items-center justify-center font-semibold',
+                                  cellSizeClass,
                                   opened
                                     ? 'bg-sky-500/25 border-sky-300/60 text-sky-50 shadow-[0_0_18px_rgba(56,189,248,0.25)]'
                                     : lockedWrong
                                       ? 'bg-rose-500/25 border-rose-400/60 text-rose-50'
-                                      : 'bg-slate-950/60 border-slate-700 text-transparent'
+                                      : 'bg-slate-950 border-slate-700 text-transparent'
                                 )}
                               >
                                 {opened ? ch.toUpperCase() : '•'}

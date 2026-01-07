@@ -167,7 +167,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           decidedByRqId.set(rqId, map);
         }
 
-        const playersCount = players.length;
+        // Tính số thí sinh chưa bị khóa (không bị disqualified_obstacle)
+        const activePlayersCount = players.filter((p) => !p.is_disqualified_obstacle).length;
+
         for (const rqId of rqIds) {
           const decided = decidedByRqId.get(rqId);
           if (!decided) continue;
@@ -178,8 +180,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             continue;
           }
 
-          const allDecided = playersCount > 0 && decided.size >= playersCount;
-          if (allDecided) {
+          // Kiểm tra xem tất cả thí sinh chưa bị khóa đã trả lời sai chưa
+          const allActiveDecided = activePlayersCount > 0 && decided.size >= activePlayersCount;
+          if (allActiveDecided) {
             nextLocked[rqId] = true;
           }
         }
@@ -190,7 +193,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         console.warn("[Olympia] fetch VCNV reveal snapshot failed", err);
       }
     },
-    [matchId, players.length]
+    [matchId, players]
   );
 
   // Khi router.refresh() hoặc server re-render truyền xuống initialData mới,
@@ -594,7 +597,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId, pollSnapshot]);
+  }, [sessionId, matchId, pollSnapshot, fetchVcnvRevealSnapshot]);
 
   // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
   useEffect(() => {

@@ -1633,10 +1633,81 @@ export async function resetLiveSessionAndScoresAction(
       .eq("match_id", matchId);
     if (resetScoresErr) return { error: resetScoresErr.message };
 
+    // Reset dữ liệu gameplay để UI (đặc biệt VCNV) không dính trạng thái cũ:
+    // - VCNV opened/lockedWrong được suy ra từ answers.is_correct != null
+    // - Các màn hình khác có thể dính buzzer/star/score change log, v.v.
+    const { error: resetDisqualifiedErr } = await olympia
+      .from("match_players")
+      .update({ is_disqualified_obstacle: false })
+      .eq("match_id", matchId);
+    if (resetDisqualifiedErr) return { error: resetDisqualifiedErr.message };
+
+    // Xoá log thay đổi điểm trước để không vướng FK answer_id → answers.id.
+    const { error: delScoreChangesErr } = await olympia
+      .from("score_changes")
+      .delete()
+      .eq("match_id", matchId);
+    if (delScoreChangesErr) return { error: delScoreChangesErr.message };
+
+    const { error: delStarUsesErr } = await olympia
+      .from("star_uses")
+      .delete()
+      .eq("match_id", matchId);
+    if (delStarUsesErr) return { error: delStarUsesErr.message };
+
+    const { error: delBuzzerErr } = await olympia
+      .from("buzzer_events")
+      .delete()
+      .eq("match_id", matchId);
+    if (delBuzzerErr) return { error: delBuzzerErr.message };
+
+    const { error: delAnswersErr } = await olympia.from("answers").delete().eq("match_id", matchId);
+    if (delAnswersErr) return { error: delAnswersErr.message };
+
+    // Reset dữ liệu VCNV trong module obstacle (host view) nếu có.
+    const { data: vcnvRounds, error: vcnvRoundsErr } = await olympia
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("round_type", "vcnv");
+    if (vcnvRoundsErr) return { error: vcnvRoundsErr.message };
+
+    const vcnvRoundIds = (vcnvRounds ?? [])
+      .map((r) => (r as { id?: string | null }).id ?? null)
+      .filter((id): id is string => Boolean(id));
+
+    if (vcnvRoundIds.length > 0) {
+      const { data: obstacles, error: obstaclesErr } = await olympia
+        .from("obstacles")
+        .select("id")
+        .in("match_round_id", vcnvRoundIds);
+      if (obstaclesErr) return { error: obstaclesErr.message };
+
+      const obstacleIds = (obstacles ?? [])
+        .map((o) => (o as { id?: string | null }).id ?? null)
+        .filter((id): id is string => Boolean(id));
+
+      if (obstacleIds.length > 0) {
+        const { error: resetTilesErr } = await olympia
+          .from("obstacle_tiles")
+          .update({ is_open: false })
+          .in("obstacle_id", obstacleIds);
+        if (resetTilesErr) return { error: resetTilesErr.message };
+
+        const { error: delObstacleGuessesErr } = await olympia
+          .from("obstacle_guesses")
+          .delete()
+          .in("obstacle_id", obstacleIds);
+        if (delObstacleGuessesErr) return { error: delObstacleGuessesErr.message };
+      }
+    }
+
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
     revalidatePath(`/olympia/admin/matches/${matchId}`);
 
-    return { success: "Đã reset phiên live + điểm về trạng thái ban đầu." };
+    return {
+      success: "Đã reset phiên live + điểm + trạng thái trả lời (bao gồm VCNV) về mặc định.",
+    };
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : "Không thể reset phiên live + điểm.",

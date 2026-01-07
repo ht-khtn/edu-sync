@@ -3588,6 +3588,37 @@ export async function confirmVcnvRowDecisionAction(
       if (updateAnswerError) return { error: updateAnswerError.message };
     }
 
+    // Nếu trả lời hàng ngang đúng: lật tất cả ô chữ và khung che
+    if (decision === "correct") {
+      // Lấy obstacle từ match_round để lật tất cả ô chữ
+      const { data: roundRow, error: roundError } = await olympia
+        .from("round_questions")
+        .select("match_round_id")
+        .eq("id", session.current_round_question_id)
+        .maybeSingle();
+      if (roundError) {
+        console.warn("[Olympia] Không lấy được match_round_id:", roundError);
+      } else if (roundRow?.match_round_id) {
+        const { data: obstacleRow, error: obstacleError } = await olympia
+          .from("obstacles")
+          .select("id")
+          .eq("match_round_id", roundRow.match_round_id)
+          .maybeSingle();
+        if (obstacleError) {
+          console.warn("[Olympia] Không lấy được obstacle:", obstacleError);
+        } else if (obstacleRow?.id) {
+          // Lật tất cả ô chữ của obstacle này
+          const { error: updateTilesError } = await olympia
+            .from("obstacle_tiles")
+            .update({ is_open: true })
+            .eq("obstacle_id", obstacleRow.id);
+          if (updateTilesError) {
+            console.warn("[Olympia] Lỗi lật ô chữ:", updateTilesError);
+          }
+        }
+      }
+    }
+
     const { error: auditErr } = await insertScoreChange({
       olympia,
       matchId: session.match_id,

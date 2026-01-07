@@ -1044,8 +1044,7 @@ export function OlympiaGameClient({
                         left: '27.5%',
                         top: '27.5%',
                         width: '45%',
-                        height: '45%',
-                        borderRadius: '12px',
+                        height: '45%'
                       },
                     },
                   ]

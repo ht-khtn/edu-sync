@@ -916,52 +916,63 @@ export function OlympiaGameClient({
                     const letters = answer ? Array.from(answer).filter((ch) => ch.trim() !== '') : []
                     const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
                     const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                    const shouldWrap = letters.length > 15
+                    const slotCount = letters.length
 
-                    const cellSizeClass =
-                      letters.length <= 10
-                        ? 'h-10 w-10 text-base'
-                        : letters.length <= 15
-                          ? 'h-8 w-8 text-sm'
-                          : 'h-8 w-8 text-sm'
+                    const cellSizeClass = 'h-8 w-8 text-sm sm:h-8 sm:w-8 sm:text-base'
+
+                    const isActive = Boolean(rq?.id && rq.id === currentQuestionId && questionState !== 'hidden')
+                    const rowBgClass = isActive
+                      ? 'bg-sky-950/40 border-sky-400/30'
+                      : lockedWrong
+                        ? 'bg-destructive/15 border-destructive/30'
+                        : opened
+                          ? 'bg-slate-950/30 border-slate-700'
+                          : 'bg-slate-950/15 border-slate-700'
 
                     return (
-                      <div className="flex items-center justify-between gap-4">
-                        <div
-                          className={cn(
-                            'flex flex-1 justify-center',
-                            shouldWrap ? 'flex-wrap' : 'flex-nowrap',
-                            'gap-1.5 sm:gap-2'
-                          )}
-                        >
-                          {letters.length > 0 ? (
-                            letters.map((ch, i) => (
-                              <div
-                                key={`${idxLabel}-${i}`}
-                                className={cn(
-                                  'flex-none shrink-0 rounded-full border flex items-center justify-center font-semibold',
-                                  cellSizeClass,
-                                  opened
-                                    ? 'bg-sky-500/25 border-sky-300/60 text-sky-50 shadow-[0_0_18px_rgba(56,189,248,0.25)]'
-                                    : lockedWrong
-                                      ? 'bg-rose-500/25 border-rose-400/60 text-rose-50'
-                                      : 'bg-slate-950 border-slate-700 text-transparent'
-                                )}
-                              >
-                                {opened ? ch.toUpperCase() : '•'}
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-xs text-slate-300">(Thiếu đáp án hàng)</div>
-                          )}
-                        </div>
-                        <div
-                          className={cn(
-                            'h-8 w-8 sm:h-10 sm:w-10 rounded-full border flex items-center justify-center text-base sm:text-lg font-semibold',
-                            lockedWrong ? 'border-rose-400/60 bg-rose-950/30 text-rose-50' : 'border-slate-700 bg-slate-950/50 text-slate-100'
-                          )}
-                        >
-                          {idxLabel}
+                      <div className={cn('w-full rounded-md border px-3 py-3', rowBgClass)}>
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              'flex min-w-0 flex-1 flex-wrap items-start justify-start gap-1.5 sm:gap-2'
+                            )}
+                          >
+                            {Array.from({ length: slotCount }).map((_, i) => {
+                              const ch = i < letters.length ? letters[i] ?? null : null
+                              const showLetter = opened && ch != null
+                              const placeholder = ch != null ? '' : ''
+
+                              return (
+                                <div
+                                  key={`${idxLabel}-${i}`}
+                                  className={cn(
+                                    'flex-none shrink-0 rounded-full border flex items-center justify-center font-semibold',
+                                    cellSizeClass,
+                                    showLetter
+                                      ? 'bg-sky-500/25 border-sky-300/60 text-sky-50 shadow-[0_0_18px_rgba(56,189,248,0.25)]'
+                                      : lockedWrong
+                                        ? 'bg-destructive/70 border-destructive text-destructive-foreground'
+                                        : 'bg-slate-950 border-slate-700 text-transparent'
+                                  )}
+                                >
+                                  {showLetter ? ch!.toUpperCase() : placeholder}
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          <div
+                            className={cn(
+                              'h-9 w-9 sm:h-8 sm:w-8 rounded-full border flex items-center justify-center text-base sm:text-lg font-semibold self-start',
+                              isActive
+                                ? 'border-sky-300/60 bg-sky-950/40 text-sky-50'
+                                : lockedWrong
+                                  ? 'border-destructive/60 bg-destructive/15 text-destructive-foreground'
+                                  : 'border-slate-700 bg-slate-950/50 text-slate-100'
+                            )}
+                          >
+                            {idxLabel}
+                          </div>
                         </div>
                       </div>
                     )
@@ -1040,7 +1051,7 @@ export function OlympiaGameClient({
                   ]
 
                   return (
-                    <div className="mt-6 grid gap-6 md:grid-cols-3 md:items-start text-left relative">
+                    <div className="mt-6 grid gap-6 md:grid-cols-2 md:items-start text-left relative">
                       {resolvedViewerMode === 'player' && isViewerDisqualifiedObstacle ? (
                         <div className="absolute inset-0 z-10 flex items-center justify-center">
                           <div className="mx-4 w-full max-w-3xl rounded-md border border-rose-400/60 bg-rose-950/80 px-6 py-4 text-center">
@@ -1050,7 +1061,7 @@ export function OlympiaGameClient({
                           </div>
                         </div>
                       ) : null}
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-1">
                         <div className="relative overflow-hidden rounded-md border border-slate-700 bg-slate-950/60">
                           {mediaUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -1066,40 +1077,33 @@ export function OlympiaGameClient({
                           )}
 
                           {covers.map((c) => {
-                            if (c.pos === 1) {
-                              const rq = byCode.get('VCNV-1') ?? null
-                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
-                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                              if (opened || unlockedByWrong) return null
-                            }
-                            if (c.pos === 2) {
-                              const rq = byCode.get('VCNV-2') ?? null
-                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
-                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                              if (opened || unlockedByWrong) return null
-                            }
-                            if (c.pos === 3) {
-                              const rq = byCode.get('VCNV-3') ?? null
-                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
-                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                              if (opened || unlockedByWrong) return null
-                            }
-                            if (c.pos === 4) {
-                              const rq = byCode.get('VCNV-4') ?? null
-                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
-                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                              if (opened || unlockedByWrong) return null
-                            }
+                            const rq =
+                              c.pos === 1
+                                ? (byCode.get('VCNV-1') ?? null)
+                                : c.pos === 2
+                                  ? (byCode.get('VCNV-2') ?? null)
+                                  : c.pos === 3
+                                    ? (byCode.get('VCNV-3') ?? null)
+                                    : c.pos === 4
+                                      ? (byCode.get('VCNV-4') ?? null)
+                                      : (byCode.get('OTT') ?? byCode.get('VCNV-OTT') ?? null)
 
-                            if (c.pos === 5) {
-                              const rq = byCode.get('OTT') ?? byCode.get('VCNV-OTT') ?? null
-                              const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
-                              const unlockedByWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                              if (opened || unlockedByWrong) return null
-                            }
+                            const opened = Boolean(rq?.id && vcnvRevealByRoundQuestionId[rq.id])
+                            const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
+                            if (opened) return null
 
                             return (
-                              <div key={c.pos} className={coverBaseClass} style={c.style} aria-hidden="true">
+                              <div
+                                key={c.pos}
+                                className={cn(
+                                  coverBaseClass,
+                                  lockedWrong
+                                    ? 'bg-destructive border-destructive/70 text-destructive-foreground'
+                                    : null
+                                )}
+                                style={c.style}
+                                aria-hidden="true"
+                              >
                                 {c.label}
                               </div>
                             )
@@ -1126,18 +1130,7 @@ export function OlympiaGameClient({
                         <div className="space-y-3">
                           {rowDefs.map((d) => {
                             const rq = byCode.get(d.code) ?? null
-                            const lockedWrong = Boolean(rq?.id && vcnvLockedWrongByRoundQuestionId[rq.id])
-                            return (
-                              <div
-                                key={d.code}
-                                className={cn(
-                                  'rounded-md border bg-slate-950/40 px-4 py-3',
-                                  lockedWrong ? 'border-rose-400/60' : 'border-slate-700'
-                                )}
-                              >
-                                {renderRow(rq, d.label)}
-                              </div>
-                            )
+                            return <div key={d.code} className="w-full">{renderRow(rq, d.label)}</div>
                           })}
                         </div>
                       </div>

@@ -451,7 +451,7 @@ export function HostQuestionPreviewCard(props: Props) {
                             <Button
                                 type="submit"
                                 size="icon-sm"
-                                disabled={!previewId || (liveSession?.current_round_type === 've_dich' && !(previewRoundQuestion?.target_player_id))}
+                                disabled={!previewId}
                                 title="Show lên (đổi câu đang live)"
                                 aria-label="Show lên (đổi câu đang live)"
                             >

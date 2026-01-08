@@ -543,14 +543,6 @@ export default async function OlympiaHostConsolePage({
 
   const selectedTargetPlayerId = currentRoundQuestion?.target_player_id ?? null
 
-  const vdSeatFromLiveTarget = (() => {
-    if (!selectedTargetPlayerId) return null
-    const p = players.find((x) => x.id === selectedTargetPlayerId)
-    return typeof p?.seat_index === 'number' ? p.seat_index : null
-  })()
-
-  const effectiveVdSeat = vdSeat ?? vdSeatFromLiveTarget
-
   const isKhoiDong = liveSession?.current_round_type === 'khoi_dong'
   const isVcnv = liveSession?.current_round_type === 'vcnv'
   const isTangToc = liveSession?.current_round_type === 'tang_toc'
@@ -577,15 +569,12 @@ export default async function OlympiaHostConsolePage({
   })
 
   const filteredCurrentRoundQuestions = (() => {
+    // Về đích: không lọc câu, tất cả thí sinh đều thấy hết tất cả câu hỏi
     if (isVeDich) {
-      if (typeof effectiveVdSeat !== 'number') return []
-      return currentRoundQuestions.filter((q) => {
-        const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
-        const info = getVeDichCodeInfo(code)
-        return info?.seat === effectiveVdSeat
-      })
+      return currentRoundQuestions
     }
 
+    // Khởi động: lọc theo luật mã câu (KD{seat}- / DKA-)
     if (!isKhoiDong) return currentRoundQuestions
 
     // Lọc theo luật mã câu:
@@ -756,12 +745,10 @@ export default async function OlympiaHostConsolePage({
                   ? `${roundText} · Thi riêng · Ghế ${kdSeat}`
                   : `${roundText} · Thi chung`
               }
-              if (isVeDich) {
-                const p = typeof effectiveVdSeat === 'number'
-                  ? players.find((x) => x.seat_index === effectiveVdSeat) ?? null
-                  : (selectedTargetPlayerId ? (players.find((x) => x.id === selectedTargetPlayerId) ?? null) : null)
-                const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : null)
-                return label ? `${roundText} · Thí sinh: ${label}` : roundText
+              if (selectedTargetPlayerId) {
+                const p = players.find((x) => x.id === selectedTargetPlayerId)
+                const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
+                return `${roundText} · Thí sinh: ${label}`
               }
               return roundText
             })()}
@@ -1253,7 +1240,7 @@ export default async function OlympiaHostConsolePage({
                   {liveSession?.current_round_type === 'tang_toc' ? (
                     <form action={autoScoreTangTocFormAction} className="flex justify-end">
                       <input type="hidden" name="sessionId" value={liveSession?.id ?? ''} />
-                      <Button type="submit" size="icon-sm" variant="outline" disabled={!liveSession?.id} title="Chấm tự động Tăng tốc" aria-label="Chấm tự động Tăng tốc">
+                      <Button type="submit" size="icon-sm" variant="outline" disabled={!liveSession?.id || !liveSession?.current_round_question_id || !currentRoundQuestion} title="Chấm tự động Tăng tốc" aria-label="Chấm tự động Tăng tốc">
                         <Check />
                       </Button>
                     </form>

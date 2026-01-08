@@ -431,9 +431,11 @@ export function HostLiveAnswersCard({
 
     const scoringUnlocked = useMemo(() => {
         if (!hasLiveQuestion) return false
-        if (effectiveQuestionState !== 'showing') return true
+        if (effectiveQuestionState !== 'showing') return false
 
         if (isVcnv) return true
+
+        if (isTangToc) return true
 
         if (isKhoiDong) {
             const codeInfo = getKhoiDongCodeInfo(getMetaCode(roundQuestion?.meta))
@@ -443,7 +445,7 @@ export function HostLiveAnswersCard({
 
         // Các trường hợp khác: giữ rule hiện tại (chỉ mở khi có winner).
         return Boolean(effectiveWinnerBuzzPlayerId)
-    }, [effectiveQuestionState, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVcnv, roundQuestion?.meta])
+    }, [effectiveQuestionState, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isTangToc, isVcnv, roundQuestion?.meta])
 
     const scoringHint = useMemo(() => {
         if (!hasLiveQuestion) return 'Chưa show câu hỏi.'
@@ -501,8 +503,8 @@ export function HostLiveAnswersCard({
                                 Boolean(
                                     hasLiveQuestion &&
                                     scoringUnlocked &&
-                                    !isTangToc &&
                                     (allowAllPlayers ||
+                                        isTangToc ||
                                         (enabledScoringPlayerId && enabledScoringPlayerId === pl.id))
                                 ) &&
                                 !isObstacleDisqualified &&

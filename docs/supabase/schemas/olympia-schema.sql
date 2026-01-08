@@ -49,6 +49,7 @@ CREATE TABLE olympia.live_sessions (
   mc_view_password text,
   buzzer_enabled boolean NOT NULL DEFAULT true,
   show_scoreboard_overlay boolean NOT NULL DEFAULT false,
+  show_answers_overlay boolean NOT NULL DEFAULT false,
   guest_media_control jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT live_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT live_sessions_match_id_fkey FOREIGN KEY (match_id) REFERENCES olympia.matches(id),

@@ -134,11 +134,24 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       if (!supabase) return;
       try {
         const olympia = supabase.schema("olympia");
+
+        // Nếu có câu code = CNV và đã có đáp án đúng, coi như "lật toàn bộ" cho tất cả hàng.
+        const currentRoundId = sessionRef.current.current_round_id;
+        const cnvRqId =
+          roundType === "vcnv" && currentRoundId
+            ? ((roundQuestions ?? [])
+                .filter((rq) => rq.match_round_id === currentRoundId)
+                .map((rq) => ({ id: rq.id, code: resolveRoundQuestionCode(rq) }))
+                .find((item) => item.code === "CNV")?.id ?? null)
+            : null;
+
+        const idsToQuery = cnvRqId ? Array.from(new Set([...rqIds, cnvRqId])) : rqIds;
+
         const { data, error } = await olympia
           .from("answers")
           .select("round_question_id, player_id, is_correct")
           .eq("match_id", matchId)
-          .in("round_question_id", rqIds);
+          .in("round_question_id", idsToQuery);
         if (error) {
           console.warn("[Olympia] fetch VCNV reveal snapshot failed", error.message);
           return;
@@ -167,6 +180,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           decidedByRqId.set(rqId, map);
         }
 
+        const anyCnvCorrect =
+          Boolean(cnvRqId) &&
+          Array.from(decidedByRqId.get(cnvRqId as string)?.values() ?? []).some((v) => v === true);
+
+        // Nếu CNV đã đúng, lật tất cả hàng VCNV (re-use cơ chế lật từng hàng, nhưng thêm guard này).
+        if (anyCnvCorrect) {
+          for (const rqId of rqIds) {
+            next[rqId] = true;
+            nextLocked[rqId] = false;
+          }
+          setVcnvRevealByRoundQuestionId(next);
+          setVcnvLockedWrongByRoundQuestionId(nextLocked);
+          return;
+        }
+
         // Tính số thí sinh chưa bị khóa (không bị disqualified_obstacle)
         const activePlayersCount = players.filter((p) => !p.is_disqualified_obstacle).length;
 
@@ -193,7 +221,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         console.warn("[Olympia] fetch VCNV reveal snapshot failed", err);
       }
     },
-    [matchId, players]
+    [matchId, players, resolveRoundQuestionCode, roundQuestions, roundType]
   );
 
   // Khi router.refresh() hoặc server re-render truyền xuống initialData mới,
@@ -215,6 +243,70 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     vcnvTrackedRqIdsRef.current = nextIds;
     void fetchVcnvRevealSnapshot(nextIds);
   }, [computeVcnvRowQuestionIds, fetchVcnvRevealSnapshot]);
+
+  // Fetch VCNV reveal state khi vào vòng VCNV (ngay cả lúc thoát ra rồi vào lại)
+  useEffect(() => {
+    if (roundType !== "vcnv") return;
+    if (!session.current_round_id) return;
+
+    const fetchVcnvOnRoundChange = async () => {
+      const supabase = supabaseRef.current;
+      if (!supabase) return;
+
+      try {
+        const olympia = supabase.schema("olympia");
+
+        // Lấy tất cả round_questions của vòng VCNV này
+        const { data: rqRows, error: rqError } = await olympia
+          .from("round_questions")
+          .select("id, meta, questions(code), question_set_items(code)")
+          .eq("match_round_id", session.current_round_id);
+
+        if (rqError) {
+          console.warn("[Olympia] fetch VCNV questions on round change failed", rqError.message);
+          return;
+        }
+
+        // Lọc ra các ô VCNV (VCNV-1 đến VCNV-4, OTT/VCNV-OTT)
+        const wanted = new Set(["VCNV-1", "VCNV-2", "VCNV-3", "VCNV-4", "OTT", "VCNV-OTT"]);
+        const rqIds: string[] = [];
+
+        for (const rq of (rqRows as Array<{
+          id: string;
+          meta?: unknown;
+          questions?: { code?: string } | null;
+          question_set_items?: { code?: string } | null;
+        }> | null) ?? []) {
+          let code: string | null = null;
+
+          // Ưu tiên meta.code
+          if (rq.meta && typeof rq.meta === "object") {
+            const raw = (rq.meta as Record<string, unknown>).code;
+            code = typeof raw === "string" ? raw.trim().toUpperCase() : null;
+          }
+
+          // Fallback: questions.code hoặc question_set_items.code
+          if (!code) {
+            code = rq.questions?.code ?? rq.question_set_items?.code ?? null;
+            if (code) code = code.trim().toUpperCase();
+          }
+
+          if (code && wanted.has(code)) {
+            rqIds.push(rq.id);
+          }
+        }
+
+        if (rqIds.length > 0) {
+          vcnvTrackedRqIdsRef.current = rqIds;
+          await fetchVcnvRevealSnapshot(rqIds);
+        }
+      } catch (err) {
+        console.warn("[Olympia] fetch VCNV on round change failed", err);
+      }
+    };
+
+    void fetchVcnvOnRoundChange();
+  }, [roundType, session.current_round_id, fetchVcnvRevealSnapshot]);
 
   const fetchAnswersForQuestion = useCallback(async (roundQuestionId: string) => {
     const supabase = supabaseRef.current;
@@ -257,7 +349,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       const { data: nextSession, error: sessionError } = await olympia
         .from("live_sessions")
         .select(
-          "id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control"
+          "id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, show_answers_overlay, guest_media_control"
         )
         .eq("id", sessionId)
         .maybeSingle();
@@ -505,11 +597,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
               if (isTrackedVcnv || isVcnvRound) {
                 // Fetch snapshot cho tất cả hàng VCNV nếu là round VCNV
-                const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : [];
-                if (rqIdsToCheck.length > 0 || isVcnvRound) {
-                  void fetchVcnvRevealSnapshot(
-                    rqIdsToCheck.length > 0 ? rqIdsToCheck : trackedVcnvIds
-                  );
+                const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : computeVcnvRowQuestionIds();
+                if (rqIdsToCheck.length > 0) {
+                  void fetchVcnvRevealSnapshot(rqIdsToCheck);
                 }
               }
 
@@ -594,7 +684,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId, pollSnapshot, fetchVcnvRevealSnapshot]);
+  }, [sessionId, matchId, pollSnapshot, fetchVcnvRevealSnapshot, computeVcnvRowQuestionIds]);
 
   // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
   useEffect(() => {

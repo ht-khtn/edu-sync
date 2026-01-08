@@ -44,6 +44,7 @@ type Props = {
   currentRoundType?: string | null
   buzzerEnabled?: boolean | null
   showScoreboardOverlay?: boolean | null
+  showAnswersOverlay?: boolean | null
   allowTargetSelection?: boolean
   currentRoundQuestionId?: string | null
   currentTargetPlayerId?: string | null
@@ -52,6 +53,7 @@ type Props = {
   setLiveSessionRoundAction: HostControlAction
   setWaitingScreenAction: HostControlAction
   setScoreboardOverlayAction: HostControlAction
+  setAnswersOverlayAction: HostControlAction
   setBuzzerEnabledAction: HostControlAction
   setRoundQuestionTargetPlayerAction: HostControlAction
 }
@@ -64,6 +66,7 @@ export function HostRoundControls({
   currentRoundType,
   buzzerEnabled,
   showScoreboardOverlay,
+  showAnswersOverlay,
   allowTargetSelection,
   currentRoundQuestionId,
   currentTargetPlayerId,
@@ -71,6 +74,7 @@ export function HostRoundControls({
   setLiveSessionRoundAction,
   setWaitingScreenAction,
   setScoreboardOverlayAction,
+  setAnswersOverlayAction,
   setBuzzerEnabledAction,
   setRoundQuestionTargetPlayerAction,
 }: Props) {
@@ -79,20 +83,25 @@ export function HostRoundControls({
   const searchParams = useSearchParams()
   const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
 
+  const isVeDich = currentRoundType === 've_dich'
+
   const [roundState, roundAction, roundPending] = useActionState(setLiveSessionRoundAction, initialState)
   const [waitingState, waitingAction, waitingPending] = useActionState(setWaitingScreenAction, initialState)
   const [scoreboardState, scoreboardAction, scoreboardPending] = useActionState(setScoreboardOverlayAction, initialState)
+  const [answersState, answersAction, answersPending] = useActionState(setAnswersOverlayAction, initialState)
   const [buzzerState, buzzerAction, buzzerPending] = useActionState(setBuzzerEnabledAction, initialState)
   const [targetState, targetAction, targetPending] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
   const lastRoundToastRef = useRef<string | null>(null)
   const lastWaitingToastRef = useRef<string | null>(null)
   const lastScoreboardToastRef = useRef<string | null>(null)
+  const lastAnswersToastRef = useRef<string | null>(null)
   const lastBuzzerToastRef = useRef<string | null>(null)
   const lastTargetToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const waitingFormRef = useRef<HTMLFormElement | null>(null)
   const scoreboardFormRef = useRef<HTMLFormElement | null>(null)
+  const answersFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
 
@@ -116,14 +125,16 @@ export function HostRoundControls({
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
   const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
   const [scoreboardChecked, setScoreboardChecked] = useState<boolean>(() => (showScoreboardOverlay ?? false))
+  const [answersChecked, setAnswersChecked] = useState<boolean>(() => (showAnswersOverlay ?? false))
   const [buzzerChecked, setBuzzerChecked] = useState<boolean>(() => (buzzerEnabled ?? true))
 
   const roundMessage = roundState.error ?? roundState.success
   const waitingMessage = waitingState.error ?? waitingState.success
   const scoreboardMessage = scoreboardState.error ?? scoreboardState.success
+  const answersMessage = answersState.error ?? answersState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
 
-  const canPickTarget = Boolean(allowTargetSelection && currentRoundQuestionId)
+  const canPickTarget = Boolean(allowTargetSelection && (isVeDich || currentRoundQuestionId))
 
   // Show toasts for messages
   useEffect(() => {
@@ -166,6 +177,19 @@ export function HostRoundControls({
   }, [scoreboardState.error, scoreboardState.success, router])
 
   useEffect(() => {
+    const message = answersState.error ?? answersState.success
+    if (!message) return
+    if (lastAnswersToastRef.current === message) return
+    lastAnswersToastRef.current = message
+
+    if (answersState.error) {
+      toast.error(message)
+    } else {
+      toast.success(message)
+    }
+  }, [answersState.error, answersState.success, router])
+
+  useEffect(() => {
     const message = buzzerState.error ?? buzzerState.success
     if (!message) return
     if (lastBuzzerToastRef.current === message) return
@@ -199,8 +223,9 @@ export function HostRoundControls({
     setRoundId(serverId)
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))
     setScoreboardChecked(showScoreboardOverlay ?? false)
+    setAnswersChecked(showAnswersOverlay ?? false)
     setBuzzerChecked(buzzerEnabled ?? true)
-  }, [roundState.error, currentRound?.id, currentQuestionState, showScoreboardOverlay, buzzerEnabled])
+  }, [roundState.error, currentRound?.id, currentQuestionState, showScoreboardOverlay, showAnswersOverlay, buzzerEnabled])
 
   useEffect(() => {
     if (!targetState.error) return
@@ -216,8 +241,13 @@ export function HostRoundControls({
 
   useEffect(() => {
     if (!scoreboardState.error) return
-    setScoreboardChecked(showScoreboardOverlay ?? false)
-  }, [scoreboardState.error, showScoreboardOverlay])
+    setScoreboardChecked(false)
+  }, [scoreboardState.error])
+
+  useEffect(() => {
+    if (!answersState.error) return
+    setAnswersChecked(false)
+  }, [answersState.error])
 
   useEffect(() => {
     if (!buzzerState.error) return
@@ -254,6 +284,9 @@ export function HostRoundControls({
     params.delete('preview')
     if (submittedRoundType && submittedRoundType !== 'khoi_dong') {
       params.delete('kdSeat')
+    }
+    if (submittedRoundType && submittedRoundType !== 've_dich') {
+      params.delete('vdSeat')
     }
     const qs = params.toString()
     const nextUrl = qs ? `${pathname}?${qs}` : pathname
@@ -293,6 +326,16 @@ export function HostRoundControls({
       else params.delete('kdSeat')
     }
 
+    if (isVeDich) {
+      const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
+      const selectedPlayer = submittedTargetId
+        ? players?.find((p) => p.id === submittedTargetId) ?? null
+        : null
+      const nextSeat = selectedPlayer?.seat_index
+      if (nextSeat != null) params.set('vdSeat', String(nextSeat))
+      else params.delete('vdSeat')
+    }
+
     const qs = params.toString()
     const nextUrl = qs ? `${pathname}?${qs}` : pathname
     if (lastAppliedUrlRef.current === nextUrl) return
@@ -307,7 +350,7 @@ export function HostRoundControls({
       lastServerTargetPlayerIdRef.current = submittedTargetId
       setTargetPlayerId(submittedTargetId)
     }
-  }, [targetState, baseParams, pathname, router, isKhoiDong, players])
+  }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])
 
   useEffect(() => {
     setWaitingChecked(isWaitingScreenOn(currentQuestionState))
@@ -318,12 +361,16 @@ export function HostRoundControls({
   }, [showScoreboardOverlay])
 
   useEffect(() => {
+    setAnswersChecked(showAnswersOverlay ?? false)
+  }, [showAnswersOverlay])
+
+  useEffect(() => {
     // mặc định bật nếu chưa có dữ liệu (trước khi migrate)
     setBuzzerChecked(buzzerEnabled ?? true)
   }, [buzzerEnabled])
 
-  type HostViewMode = 'question' | 'waiting' | 'scoreboard'
-  const viewMode: HostViewMode = scoreboardChecked ? 'scoreboard' : waitingChecked ? 'waiting' : 'question'
+  type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
+  const viewMode: HostViewMode = answersChecked ? 'answers' : scoreboardChecked ? 'scoreboard' : waitingChecked ? 'waiting' : 'question'
 
   const setHiddenEnabledAndSubmit = (form: HTMLFormElement | null, enabled: boolean) => {
     if (!form) return
@@ -337,13 +384,16 @@ export function HostRoundControls({
   const setViewMode = (next: HostViewMode) => {
     const nextWaiting = next === 'waiting'
     const nextScoreboard = next === 'scoreboard'
+    const nextAnswers = next === 'answers'
 
     setWaitingChecked(nextWaiting)
     setScoreboardChecked(nextScoreboard)
+    setAnswersChecked(nextAnswers)
 
     queueMicrotask(() => {
       setHiddenEnabledAndSubmit(waitingFormRef.current, nextWaiting)
       setHiddenEnabledAndSubmit(scoreboardFormRef.current, nextScoreboard)
+      setHiddenEnabledAndSubmit(answersFormRef.current, nextAnswers)
     })
   }
 
@@ -452,7 +502,7 @@ export function HostRoundControls({
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
-            <input type="hidden" name="roundQuestionId" value={currentRoundQuestionId ?? ''} />
+            <input type="hidden" name="roundQuestionId" value={isVeDich ? '' : (currentRoundQuestionId ?? '')} />
             <Label className="sr-only">Chọn thí sinh</Label>
             <div className="flex items-center gap-2">
               <select
@@ -469,9 +519,11 @@ export function HostRoundControls({
                 <option value="">
                   {!allowTargetSelection
                     ? 'Chọn thí sinh (chỉ dùng cho Về đích)'
-                    : !currentRoundQuestionId
-                      ? 'Chọn câu trước để gán thí sinh'
-                      : '(Tuỳ vòng) Chọn thí sinh'}
+                    : isVeDich
+                      ? 'Về đích: chọn thí sinh trước'
+                      : !currentRoundQuestionId
+                        ? 'Chọn câu trước để gán thí sinh'
+                        : '(Tuỳ vòng) Chọn thí sinh'}
                 </option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -502,7 +554,7 @@ export function HostRoundControls({
               value="question"
               checked={viewMode === 'question'}
               onChange={() => setViewMode('question')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending}
+              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Câu hỏi"
             />
             Câu hỏi
@@ -514,7 +566,7 @@ export function HostRoundControls({
               value="waiting"
               checked={viewMode === 'waiting'}
               onChange={() => setViewMode('waiting')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending}
+              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Màn chờ"
             />
             Màn chờ
@@ -526,14 +578,27 @@ export function HostRoundControls({
               value="scoreboard"
               checked={viewMode === 'scoreboard'}
               onChange={() => setViewMode('scoreboard')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending}
+              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Bảng điểm"
             />
             Bảng điểm
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="hostViewMode"
+              value="answers"
+              checked={viewMode === 'answers'}
+              onChange={() => setViewMode('answers')}
+              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
+              aria-label="Đáp án"
+            />
+            Đáp án
+          </label>
         </div>
         {waitingMessage && !waitingState.error ? <p className="text-xs text-green-600">{waitingMessage}</p> : null}
         {scoreboardMessage && !scoreboardState.error ? <p className="text-xs text-green-600">{scoreboardMessage}</p> : null}
+        {answersMessage && !answersState.error ? <p className="text-xs text-green-600">{answersMessage}</p> : null}
       </div>
 
       <form ref={waitingFormRef} action={waitingAction} className="hidden" aria-hidden="true">
@@ -544,6 +609,11 @@ export function HostRoundControls({
       <form ref={scoreboardFormRef} action={scoreboardAction} className="hidden" aria-hidden="true">
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="enabled" value={scoreboardChecked ? '1' : '0'} />
+      </form>
+
+      <form ref={answersFormRef} action={answersAction} className="hidden" aria-hidden="true">
+        <input type="hidden" name="matchId" value={matchId} />
+        <input type="hidden" name="enabled" value={answersChecked ? '1' : '0'} />
       </form>
 
       <form ref={buzzerFormRef} action={buzzerAction} className="grid gap-2">

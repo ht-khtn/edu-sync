@@ -21,7 +21,7 @@ type PageProps = {
 async function getGameSessionData(supabase: SupabaseClient, sessionId: string): Promise<GameSessionPayload | null> {
     const olympia = supabase.schema('olympia')
     const selectWithGuestMediaControl =
-        'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, guest_media_control'
+        'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, show_answers_overlay, guest_media_control'
     const selectWithoutGuestMediaControl =
         'id, match_id, status, join_code, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay'
 

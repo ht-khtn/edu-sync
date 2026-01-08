@@ -37,6 +37,7 @@ import {
   setLiveSessionRoundAction,
   setRoundQuestionTargetPlayerAction,
   setScoreboardOverlayAction,
+  setAnswersOverlayAction,
   setBuzzerEnabledAction,
   setVeDichQuestionValueFormAction,
   setWaitingScreenAction,
@@ -259,7 +260,7 @@ async function fetchHostData(matchCode: string) {
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     olympia
       .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay')
+      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, show_answers_overlay')
       .eq('match_id', realMatchId)
       .maybeSingle(),
     olympia
@@ -469,10 +470,10 @@ export default async function OlympiaHostConsolePage({
   searchParams,
 }: {
   params: Promise<{ matchId: string }>
-  searchParams?: Promise<{ preview?: string | string[]; kdSeat?: string | string[] }>
+  searchParams?: Promise<{ preview?: string | string[]; kdSeat?: string | string[]; vdSeat?: string | string[] }>
 }) {
   const { matchId } = await params
-  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[]; kdSeat?: string | string[] }
+  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[]; kdSeat?: string | string[]; vdSeat?: string | string[] }
   const previewParam = Array.isArray(resolvedSearchParams.preview)
     ? resolvedSearchParams.preview[0]
     : resolvedSearchParams.preview
@@ -483,6 +484,15 @@ export default async function OlympiaHostConsolePage({
   const kdSeat = (() => {
     if (!kdSeatParamRaw) return null
     const n = Number.parseInt(String(kdSeatParamRaw), 10)
+    return Number.isFinite(n) ? n : null
+  })()
+
+  const vdSeatParamRaw = Array.isArray(resolvedSearchParams.vdSeat)
+    ? resolvedSearchParams.vdSeat[0]
+    : resolvedSearchParams.vdSeat
+  const vdSeat = (() => {
+    if (!vdSeatParamRaw) return null
+    const n = Number.parseInt(String(vdSeatParamRaw), 10)
     return Number.isFinite(n) ? n : null
   })()
 
@@ -533,6 +543,14 @@ export default async function OlympiaHostConsolePage({
 
   const selectedTargetPlayerId = currentRoundQuestion?.target_player_id ?? null
 
+  const vdSeatFromLiveTarget = (() => {
+    if (!selectedTargetPlayerId) return null
+    const p = players.find((x) => x.id === selectedTargetPlayerId)
+    return typeof p?.seat_index === 'number' ? p.seat_index : null
+  })()
+
+  const effectiveVdSeat = vdSeat ?? vdSeatFromLiveTarget
+
   const isKhoiDong = liveSession?.current_round_type === 'khoi_dong'
   const isVcnv = liveSession?.current_round_type === 'vcnv'
   const isTangToc = liveSession?.current_round_type === 'tang_toc'
@@ -559,6 +577,15 @@ export default async function OlympiaHostConsolePage({
   })
 
   const filteredCurrentRoundQuestions = (() => {
+    if (isVeDich) {
+      if (typeof effectiveVdSeat !== 'number') return []
+      return currentRoundQuestions.filter((q) => {
+        const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
+        const info = getVeDichCodeInfo(code)
+        return info?.seat === effectiveVdSeat
+      })
+    }
+
     if (!isKhoiDong) return currentRoundQuestions
 
     // Lọc theo luật mã câu:
@@ -729,10 +756,12 @@ export default async function OlympiaHostConsolePage({
                   ? `${roundText} · Thi riêng · Ghế ${kdSeat}`
                   : `${roundText} · Thi chung`
               }
-              if (selectedTargetPlayerId) {
-                const p = players.find((x) => x.id === selectedTargetPlayerId)
-                const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : 'Thí sinh')
-                return `${roundText} · Thí sinh: ${label}`
+              if (isVeDich) {
+                const p = typeof effectiveVdSeat === 'number'
+                  ? players.find((x) => x.seat_index === effectiveVdSeat) ?? null
+                  : (selectedTargetPlayerId ? (players.find((x) => x.id === selectedTargetPlayerId) ?? null) : null)
+                const label = p?.display_name ?? (p?.seat_index != null ? `Ghế ${p.seat_index}` : null)
+                return label ? `${roundText} · Thí sinh: ${label}` : roundText
               }
               return roundText
             })()}
@@ -1074,6 +1103,7 @@ export default async function OlympiaHostConsolePage({
                 setLiveSessionRoundAction={setLiveSessionRoundAction}
                 setWaitingScreenAction={setWaitingScreenAction}
                 setScoreboardOverlayAction={setScoreboardOverlayAction}
+                setAnswersOverlayAction={setAnswersOverlayAction}
                 setBuzzerEnabledAction={setBuzzerEnabledAction}
                 setRoundQuestionTargetPlayerAction={setRoundQuestionTargetPlayerAction}
                 allowTargetSelection={allowTargetSelection}
@@ -1084,6 +1114,7 @@ export default async function OlympiaHostConsolePage({
                 currentQuestionState={liveSession?.question_state}
                 buzzerEnabled={liveSession?.buzzer_enabled ?? null}
                 showScoreboardOverlay={liveSession?.show_scoreboard_overlay ?? null}
+                showAnswersOverlay={liveSession?.show_answers_overlay ?? null}
               />
 
               {allowTargetSelection ? (

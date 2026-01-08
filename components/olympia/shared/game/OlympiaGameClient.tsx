@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
+import { AnswersOverlay } from '@/components/olympia/shared/game/AnswersOverlay'
 import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
 import { toast } from 'sonner'
@@ -176,6 +177,7 @@ export function OlympiaGameClient({
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
 
   const showBigScoreboard = session.show_scoreboard_overlay === true
+  const showAnswersOverlay = session.show_answers_overlay === true
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
     roundQuestionId: null,
     key: null,
@@ -299,7 +301,8 @@ export function OlympiaGameClient({
   // (target có thể là lượt cá nhân hoặc người bấm chuông thắng).
   const isLockedToTarget = roundType !== 'vcnv' && Boolean(targetPlayerId)
   const canSubmitGeneric = !disableInteractions && (!isLockedToTarget || Boolean(isViewerTarget)) && !isViewerDisqualifiedObstacle
-  const disableAnswerSubmit = isVeDich ? !canSubmitVeDich : !canSubmitGeneric
+  // Disable submit nếu câu hiện tại là CNV (chỉ host/MC xác nhận đáp án, không cho client gửi trực tiếp)
+  const disableAnswerSubmit = isCnvQuestion || (isVeDich ? !canSubmitVeDich : !canSubmitGeneric)
 
   const canBuzzVeDich =
     !disableInteractions &&
@@ -831,6 +834,16 @@ export function OlympiaGameClient({
           </div>
         ) : null}
 
+        {/* Overlay đáp án (đồng bộ theo host) */}
+        {showAnswersOverlay ? (
+          <AnswersOverlay
+            session={session}
+            match={match}
+            players={players}
+            scores={scores && scores.length > 0 ? scores.map(s => ({ id: s.id ?? `score:${s.player_id}`, player_id: s.player_id, points: s.points ?? null })) : null}
+          />
+        ) : null}
+
         {/* MAIN SCREEN */}
         <main
           className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-44"
@@ -1233,7 +1246,7 @@ export function OlympiaGameClient({
                 {!isWaitingScreen && (
                   <div className="flex flex-col items-center gap-3">
                     <div className="flex flex-wrap gap-3 justify-center">
-                      {roundType !== 'khoi_dong' ? (
+                      {roundType !== 'khoi_dong' && !isVeDich ? (
                         <form action={answerAction} className="flex items-center gap-2">
                           <input type="hidden" name="sessionId" value={session.id} />
                           <Input
@@ -1267,7 +1280,7 @@ export function OlympiaGameClient({
         ) : null}
 
         {/* Buzzer FAB - bottom right corner */}
-        {!disableInteractions && session.buzzer_enabled !== false && (
+        {!disableInteractions && session.buzzer_enabled !== false && (!isVeDich || isStealWindow) && (
           <div className="fixed bottom-24 right-4 z-50">
             <form action={buzzerAction}>
               <input type="hidden" name="sessionId" value={session.id} />

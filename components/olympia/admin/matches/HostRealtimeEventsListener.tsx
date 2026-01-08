@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
@@ -24,14 +24,6 @@ type BuzzerEventRow = {
     result: string | null
     event_type: string | null
     occurred_at: string | null
-}
-
-type AnswerRow = {
-    id: string
-    match_id?: string | null
-    round_question_id: string
-    player_id: string
-    is_correct?: boolean | null
 }
 
 type LiveSessionRow = {
@@ -76,7 +68,9 @@ export function HostRealtimeEventsListener({
         buzzerEventId: null,
     })
 
-    const toastWinnerOnce = (row: BuzzerEventRow) => {
+    const playerLabelsRef = useRef<Record<string, string>>({})
+
+    const toastWinnerOnce = useCallback((row: BuzzerEventRow) => {
         const activeQ = currentRoundQuestionIdRef.current
         if (!activeQ || row.round_question_id !== activeQ) return
         if (row.result !== 'win') return
@@ -101,9 +95,8 @@ export function HostRealtimeEventsListener({
         lastWinnerToastRef.current = { roundQuestionId: activeQ, buzzerEventId: row.id }
         const label = (row.player_id && playerLabelsRef.current[row.player_id]) || 'Một thí sinh'
         toast.success(`${label} bấm chuông nhanh nhất`)
-    }
+    }, [matchId])
 
-    const playerLabelsRef = useRef<Record<string, string>>({})
     useEffect(() => {
         playerLabelsRef.current = playerLabelsById
     }, [playerLabelsById])
@@ -210,7 +203,7 @@ export function HostRealtimeEventsListener({
             }
         }
 
-        const scheduleReconnect = (reason: string) => {
+        const scheduleReconnect = () => {
             if (!mounted) return
             if (reconnectTimerRef.current) return
             const attempt = reconnectAttemptsRef.current
@@ -218,11 +211,11 @@ export function HostRealtimeEventsListener({
             reconnectTimerRef.current = setTimeout(() => {
                 reconnectTimerRef.current = null
                 reconnectAttemptsRef.current = Math.min(reconnectAttemptsRef.current + 1, 10)
-                void subscribe(`reconnect:${reason}`)
+                void subscribe()
             }, delay)
         }
 
-        const subscribe = async (why: string) => {
+        const subscribe = async () => {
             if (!matchId) return
 
             try {
@@ -325,10 +318,10 @@ export function HostRealtimeEventsListener({
                     }
                     if (status === 'CHANNEL_ERROR') {
                         console.error('[HostRealtimeEventsListener] realtime error', { matchId, sessionId })
-                        scheduleReconnect('CHANNEL_ERROR')
+                        scheduleReconnect()
                     }
                     if (status === 'TIMED_OUT' || status === 'CLOSED') {
-                        scheduleReconnect(status)
+                        scheduleReconnect()
                     }
                 })
 
@@ -338,13 +331,13 @@ export function HostRealtimeEventsListener({
             }
         }
 
-        void subscribe('mount')
+        void subscribe()
 
         return () => {
             mounted = false
             void cleanupChannel()
         }
-    }, [matchId, router, sessionId])
+    }, [matchId, router, sessionId, toastWinnerOnce])
 
     return null
 }

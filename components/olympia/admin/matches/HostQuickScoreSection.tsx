@@ -214,6 +214,8 @@ export function HostQuickScoreSection(props: Props) {
 
     const hasLiveQuestion = Boolean(sessionId && effectiveRoundQuestionId)
 
+    const isVeDichStealWindow = Boolean(isVeDich && effectiveQuestionState === 'answer_revealed')
+
     const enabledScoringPlayerId = useMemo(() => {
         if (!hasLiveQuestion) return null
 
@@ -235,11 +237,13 @@ export function HostQuickScoreSection(props: Props) {
         }
 
         if (isVeDich) {
-            return effectiveRoundQuestion?.target_player_id ?? null
+            return isVeDichStealWindow
+                ? (effectiveWinnerBuzzPlayerId ?? null)
+                : (effectiveRoundQuestion?.target_player_id ?? null)
         }
 
         return null
-    }, [effectiveRoundQuestion, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, resolvePlayerIdBySeat])
+    }, [effectiveRoundQuestion, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, isVeDichStealWindow, resolvePlayerIdBySeat])
 
     const scoringPlayerLabel = useMemo(() => {
         if (!enabledScoringPlayerId) return null
@@ -280,12 +284,17 @@ export function HostQuickScoreSection(props: Props) {
                 return Boolean(effectiveWinnerBuzzPlayerId)
             }
 
+            if (isVeDich) {
+                // Về đích: thí sinh chính không cần buzzer.
+                return true
+            }
+
             return Boolean(effectiveWinnerBuzzPlayerId)
         }
         return true
-    }, [effectiveQuestionState, effectiveRoundQuestion?.meta, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong])
+    }, [effectiveQuestionState, effectiveRoundQuestion?.meta, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich])
 
-    const disabled = !enabledScoringPlayerId || !scoringUnlocked || (isVeDich && effectiveQuestionState === 'answer_revealed')
+    const disabled = !enabledScoringPlayerId || !scoringUnlocked
 
     const hint = useMemo(() => {
         if (!hasLiveQuestion) {
@@ -295,9 +304,10 @@ export function HostQuickScoreSection(props: Props) {
             return `Khởi động thi riêng (KD${khoiDongPersonalSeat}): không tìm thấy thí sinh ghế ${khoiDongPersonalSeat}.`
         }
         if (isKhoiDong && !enabledScoringPlayerId) return 'Khởi động thi chung: cần có thí sinh bấm chuông thắng.'
+        if (isVeDich && isVeDichStealWindow && !enabledScoringPlayerId) return 'Về đích: đang mở cửa cướp, chờ thí sinh bấm chuông.'
         if (isVeDich && !enabledScoringPlayerId) return 'Về đích: cần chọn thí sinh chính trước.'
-        return 'Chấm nhanh (tự trừ điểm và chuyển sang câu tiếp theo).'
-    }, [enabledScoringPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, khoiDongPersonalPlayerId, khoiDongPersonalSeat])
+        return 'Chấm nhanh.'
+    }, [enabledScoringPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, isVeDichStealWindow, khoiDongPersonalPlayerId, khoiDongPersonalSeat])
 
     const showTimeoutButton = Boolean(
         isKhoiDong &&

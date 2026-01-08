@@ -447,11 +447,11 @@ export function HostQuestionPreviewCard(props: Props) {
                         <form action={handleSetCurrentQuestion} className="flex">
                             <input type="hidden" name="matchId" value={matchId} />
                             <input type="hidden" name="roundQuestionId" value={previewId} />
-                            <input type="hidden" name="durationMs" value={5000} />
+                            {/* Không auto-start timer khi show câu */}
                             <Button
                                 type="submit"
                                 size="icon-sm"
-                                disabled={!previewId}
+                                disabled={!previewId || (liveSession?.current_round_type === 've_dich' && !(previewRoundQuestion?.target_player_id))}
                                 title="Show lên (đổi câu đang live)"
                                 aria-label="Show lên (đổi câu đang live)"
                             >

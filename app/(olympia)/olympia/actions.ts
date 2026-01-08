@@ -302,6 +302,11 @@ const veDichValueSchema = z.object({
     .number()
     .int()
     .refine((v) => v === 20 || v === 30, "Giá trị câu chỉ nhận 20 hoặc 30."),
+  // Tuỳ chọn: khi set giá trị câu, đồng thời ấn định thí sinh chính cho câu này
+  playerId: z
+    .union([z.string().uuid(), z.literal("")])
+    .optional()
+    .transform((val) => (val ? val : null)),
 });
 
 const setRoundQuestionTargetSchema = z.object({
@@ -1845,13 +1850,35 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
               (roundQuestion as unknown as { answer_text?: string | null }).answer_text ?? null,
           })
         : null;
+    // Tính response_time_ms dựa trên mốc reset gần nhất (khi host show câu)
+    let responseTimeMs: number | null = null;
+    try {
+      const { data: lastReset } = await olympia
+        .from("buzzer_events")
+        .select("occurred_at")
+        .eq("round_question_id", roundQuestion.id)
+        .eq("event_type", "reset")
+        .order("occurred_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const submittedMs = Date.parse(submittedAt);
+      const resetMs = lastReset?.occurred_at
+        ? Date.parse(lastReset.occurred_at as unknown as string)
+        : NaN;
+      if (Number.isFinite(submittedMs) && Number.isFinite(resetMs)) {
+        responseTimeMs = Math.max(0, submittedMs - resetMs);
+      }
+    } catch {
+      responseTimeMs = null;
+    }
+
     const { error: insertError } = await olympia.from("answers").insert({
       match_id: session.match_id,
       match_round_id: roundQuestion.match_round_id,
       round_question_id: roundQuestion.id,
       player_id: playerRow.id,
       answer_text: parsed.data.answer,
-      response_time_ms: null,
+      response_time_ms: responseTimeMs,
       submitted_at: submittedAt,
       is_correct: autoMarkCorrect,
     });
@@ -2581,7 +2608,7 @@ export async function setCurrentQuestionAction(
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin câu hỏi." };
     }
 
-    const { matchId, roundQuestionId, durationMs } = parsed.data;
+    const { matchId, roundQuestionId } = parsed.data;
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
       .select("id, status")
@@ -2645,11 +2672,6 @@ export async function setCurrentQuestionAction(
       }
     }
 
-    const deadline =
-      typeof durationMs === "number" && Number.isFinite(durationMs)
-        ? new Date(Date.now() + durationMs).toISOString()
-        : null;
-
     const { error: updateError } = await olympia
       .from("live_sessions")
       .update({
@@ -2658,7 +2680,8 @@ export async function setCurrentQuestionAction(
         current_round_question_id: roundQuestion.id,
         // Đổi câu luôn tự tắt màn chờ để hiển thị câu mới.
         question_state: "showing",
-        timer_deadline: deadline,
+        // Không auto-start timer khi show câu; Host sẽ bấm Start riêng.
+        timer_deadline: null,
         // Khởi động thi chung + CNV: chuông bật sẵn. Các trường hợp khác: mặc định tắt.
         buzzer_enabled: isVcnv || (isKhoiDong && isKhoiDongCommon),
       })
@@ -2906,10 +2929,8 @@ export async function advanceCurrentQuestionAction(
       }
     }
 
-    const timerDeadline =
-      shouldAutoShow && typeof durationMs === "number" && Number.isFinite(durationMs)
-        ? new Date(Date.now() + durationMs).toISOString()
-        : null;
+    // Không auto-start timer khi chuyển câu, kể cả autoShow; Host sẽ bấm Start riêng.
+    const timerDeadline = null;
     const nextQuestionState = shouldAutoShow ? "showing" : "hidden";
 
     const nextInfo =
@@ -4019,6 +4040,7 @@ export async function setVeDichQuestionValueAction(
       matchId: formData.get("matchId"),
       roundQuestionId: formData.get("roundQuestionId"),
       value: Number(formData.get("value")),
+      playerId: formData.get("playerId"),
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin giá trị câu." };
@@ -4038,9 +4060,14 @@ export async function setVeDichQuestionValueAction(
       ve_dich_value: parsed.data.value,
     };
 
+    const updatePayload: { meta: Record<string, unknown>; target_player_id?: string | null } = {
+      meta: nextMeta,
+    };
+    if (parsed.data.playerId) updatePayload.target_player_id = parsed.data.playerId;
+
     const { error: updateError } = await olympia
       .from("round_questions")
-      .update({ meta: nextMeta })
+      .update(updatePayload)
       .eq("id", rq.id);
     if (updateError) return { error: updateError.message };
 

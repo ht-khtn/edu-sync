@@ -285,7 +285,7 @@ export function HostQuickScoreSection(props: Props) {
         return true
     }, [effectiveQuestionState, effectiveRoundQuestion?.meta, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong])
 
-    const disabled = !enabledScoringPlayerId || !scoringUnlocked
+    const disabled = !enabledScoringPlayerId || !scoringUnlocked || (isVeDich && effectiveQuestionState === 'answer_revealed')
 
     const hint = useMemo(() => {
         if (!hasLiveQuestion) {

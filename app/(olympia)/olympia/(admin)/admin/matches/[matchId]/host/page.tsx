@@ -11,7 +11,7 @@ import { HostAutoAdvancePersonalKhoiDong } from '@/components/olympia/admin/matc
 import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/HostRealtimeEventsListener'
 import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/HostQuestionPreviewCard'
 import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQuickScoreSection'
-import { HostLiveAnswersCard } from '@/components/olympia/admin/matches/HostLiveAnswersCard'
+import { HostAnswersTabs } from '@/components/olympia/admin/matches/HostAnswersTabs'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -32,7 +32,6 @@ import {
   confirmVeDichMainDecisionFormAction,
   confirmVeDichStealDecisionFormAction,
   openStealWindowFormAction,
-  selectVeDichPackageFormAction,
   setCurrentQuestionFormAction,
   startSessionTimerFormAction,
   setLiveSessionRoundAction,
@@ -653,6 +652,25 @@ export default async function OlympiaHostConsolePage({
     return out
   })()
 
+  const veDichQuestionsBySeat = (() => {
+    const map = new Map<number, Array<RoundQuestionRow>>()
+    if (!liveSession?.current_round_id) return map
+    const rqInVeDich = roundQuestions.filter((q) => q.match_round_id === liveSession.current_round_id)
+    for (const q of rqInVeDich) {
+      const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
+      const info = getVeDichCodeInfo(code)
+      if (!info) continue
+      const seatList = map.get(info.seat) ?? []
+      seatList.push(q as unknown as RoundQuestionRow)
+      map.set(info.seat, seatList)
+    }
+    for (const [seat, list] of map) {
+      list.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+      map.set(seat, list.slice(0, 3))
+    }
+    return map
+  })()
+
   const nextVeDichChooserPlayerId = (() => {
     for (const p of veDichOrder) {
       if (!p.playerId) continue
@@ -780,13 +798,14 @@ export default async function OlympiaHostConsolePage({
                 )
               }
 
-              const computeTileStatus = (tile: HostObstacleTileRow | null) => {
-                if (!tile?.round_question_id) return { attempted: false, anyCorrect: false, locked: false }
-                const rows = vcnvAnswerSummary.filter((a) => a.round_question_id === tile.round_question_id)
+              const computeRowStatus = (rqId: string | null) => {
+                if (!rqId) return { attempted: false, anyCorrect: false, locked: false }
+                const rows = vcnvAnswerSummary.filter((a) => a.round_question_id === rqId)
                 // Chỉ coi là "đã có kết quả" khi host đã chấm (is_correct != null).
                 const attempted = rows.some((r) => r.is_correct != null)
                 const anyCorrect = rows.some((r) => r.is_correct === true)
-                const locked = attempted && !anyCorrect && tile.is_open === false
+                // Khoá = có kết quả nhưng không ai đúng (không dùng tile.is_open, chỉ dùng answers)
+                const locked = attempted && !anyCorrect
                 return { attempted, anyCorrect, locked }
               }
 
@@ -802,8 +821,8 @@ export default async function OlympiaHostConsolePage({
                 const tile = byPos.get(pos) ?? null
                 const rq = getRq(tile?.round_question_id ?? null)
                 const answer = normalizeWord(rq?.answer_text)
-                const { locked } = computeTileStatus(tile)
-                const reveal = Boolean(tile?.is_open)
+                const { anyCorrect, locked } = computeRowStatus(tile?.round_question_id ?? null)
+                const reveal = anyCorrect
 
                 return (
                   <div className="space-y-1">
@@ -840,8 +859,8 @@ export default async function OlympiaHostConsolePage({
 
                         {tilesForImage.map((t) => {
                           const tile = byPos.get(t.pos) ?? null
-                          const { locked } = computeTileStatus(tile)
-                          const hidden = Boolean(tile?.is_open)
+                          const { anyCorrect, locked } = computeRowStatus(tile?.round_question_id ?? null)
+                          const hidden = anyCorrect
                           if (hidden) return null
                           return (
                             <div
@@ -968,42 +987,46 @@ export default async function OlympiaHostConsolePage({
           ) : null}
 
           <div className="space-y-2">
-            <HostLiveAnswersCard
-              matchId={match.id}
-              sessionId={liveSession?.id ?? null}
-              initialRoundQuestionId={liveSession?.current_round_question_id ?? null}
-              initialQuestionState={liveSession?.question_state ?? null}
-              initialWinnerBuzzPlayerId={winnerBuzz?.player_id ?? null}
-              initialAnswers={recentAnswers.map((a) => ({
-                id: a.id,
-                player_id: a.player_id,
-                answer_text: a.answer_text,
-                is_correct: a.is_correct,
-                points_awarded: a.points_awarded,
-                submitted_at: a.submitted_at,
-              }))}
-              initialRoundQuestion={
-                currentRoundQuestion
-                  ? {
-                    id: currentRoundQuestion.id,
-                    target_player_id: currentRoundQuestion.target_player_id ?? null,
-                    meta: currentRoundQuestion.meta ?? null,
+            {
+              (
+                <HostAnswersTabs
+                  matchId={match.id}
+                  sessionId={liveSession?.id ?? null}
+                  initialRoundQuestionId={liveSession?.current_round_question_id ?? null}
+                  initialQuestionState={liveSession?.question_state ?? null}
+                  initialWinnerBuzzPlayerId={winnerBuzz?.player_id ?? null}
+                  initialAnswers={recentAnswers.map((a) => ({
+                    id: a.id,
+                    player_id: a.player_id,
+                    answer_text: a.answer_text,
+                    is_correct: a.is_correct,
+                    points_awarded: a.points_awarded,
+                    submitted_at: a.submitted_at,
+                  }))}
+                  initialRoundQuestion={
+                    currentRoundQuestion
+                      ? {
+                        id: currentRoundQuestion.id,
+                        target_player_id: currentRoundQuestion.target_player_id ?? null,
+                        meta: currentRoundQuestion.meta ?? null,
+                      }
+                      : null
                   }
-                  : null
-              }
-              players={players.map((p) => ({
-                id: p.id,
-                seat_index: p.seat_index ?? null,
-                display_name: p.display_name ?? null,
-                is_disqualified_obstacle: p.is_disqualified_obstacle ?? null,
-              }))}
-              isKhoiDong={isKhoiDong}
-              isVcnv={isVcnv}
-              isTangToc={isTangToc}
-              isVeDich={isVeDich}
-              confirmDecisionVoidFormAction={confirmDecisionVoidFormAction}
-              confirmVcnvRowDecisionFormAction={confirmVcnvRowDecisionFormAction}
-            />
+                  players={players.map((p) => ({
+                    id: p.id,
+                    seat_index: p.seat_index ?? null,
+                    display_name: p.display_name ?? null,
+                    is_disqualified_obstacle: p.is_disqualified_obstacle ?? null,
+                  }))}
+                  isKhoiDong={isKhoiDong}
+                  isVcnv={isVcnv}
+                  isTangToc={isTangToc}
+                  isVeDich={isVeDich}
+                  confirmDecisionVoidFormAction={confirmDecisionVoidFormAction}
+                  confirmVcnvRowDecisionFormAction={confirmVcnvRowDecisionFormAction}
+                />
+              )
+            }
 
             <div className="flex items-center justify-end gap-2">
               <form action={undoLastScoreChangeFormAction} className="flex items-center justify-end gap-2">
@@ -1074,37 +1097,41 @@ export default async function OlympiaHostConsolePage({
                         </p>
                         <div className="mt-3 grid gap-2">
                           {veDichOrder.map((p) => {
-                            const pkg = veDichPackageByPlayerId.get(p.playerId) ?? null
                             const isNext = nextVeDichChooserPlayerId === p.playerId
                             const seatText = p.seat != null ? `Ghế ${p.seat}` : 'Ghế —'
                             const nameText = p.name ? ` · ${p.name}` : ''
-                            const pkgText = pkg ? `Gói ${pkg}` : 'Chưa chọn'
+                            const questions = typeof p.seat === 'number' ? (veDichQuestionsBySeat.get(p.seat) ?? []) : []
                             return (
-                              <div key={p.playerId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background p-2">
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium truncate">
-                                    {seatText}
-                                    {nameText}
-                                  </p>
-                                  <p className="text-[11px] text-muted-foreground">Điểm: {p.score} · {pkgText}</p>
+                              <div key={p.playerId} className="rounded-md border bg-background p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium truncate">{seatText}{nameText}</p>
+                                    <p className="text-[11px] text-muted-foreground">Điểm: {p.score}</p>
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground">{isNext ? 'Đang chọn…' : 'Chờ đến lượt'}</div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <form action={selectVeDichPackageFormAction}>
-                                    <input type="hidden" name="matchId" value={match.id} />
-                                    <input type="hidden" name="playerId" value={p.playerId} />
-                                    <input type="hidden" name="value" value={20} />
-                                    <Button type="submit" size="sm" variant="outline" className="h-8 px-3 text-xs" disabled={!isNext || pkg != null}>
-                                      Gói 20
-                                    </Button>
-                                  </form>
-                                  <form action={selectVeDichPackageFormAction}>
-                                    <input type="hidden" name="matchId" value={match.id} />
-                                    <input type="hidden" name="playerId" value={p.playerId} />
-                                    <input type="hidden" name="value" value={30} />
-                                    <Button type="submit" size="sm" variant="outline" className="h-8 px-3 text-xs" disabled={!isNext || pkg != null}>
-                                      Gói 30
-                                    </Button>
-                                  </form>
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                  {questions.map((rq, idx) => {
+                                    const rqId = rq.id
+                                    const valueRaw = (rq.meta && typeof rq.meta === 'object' ? (rq.meta as Record<string, unknown>).ve_dich_value : undefined)
+                                    const v = typeof valueRaw === 'number' ? valueRaw : (valueRaw ? Number(valueRaw) : undefined)
+                                    const valueText = v === 20 || v === 30 ? String(v) : ''
+                                    return (
+                                      <form key={rqId} action={setVeDichQuestionValueFormAction} className="flex gap-2 items-center">
+                                        <input type="hidden" name="matchId" value={match.id} />
+                                        <input type="hidden" name="roundQuestionId" value={rqId} />
+                                        <input type="hidden" name="playerId" value={p.playerId} />
+                                        <select name="value" defaultValue={valueText} className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs" disabled={!isNext} aria-label={`Giá trị câu ${idx + 1}`}>
+                                          <option value="">20/30</option>
+                                          <option value="20">20</option>
+                                          <option value="30">30</option>
+                                        </select>
+                                        <Button type="submit" size="icon-sm" variant="outline" disabled={!isNext} title={`Lưu câu ${idx + 1}`} aria-label={`Lưu câu ${idx + 1}`}>
+                                          <Check />
+                                        </Button>
+                                      </form>
+                                    )
+                                  })}
                                 </div>
                               </div>
                             )

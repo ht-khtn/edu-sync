@@ -49,7 +49,7 @@ Nguồn luật và bối cảnh tham chiếu:
   - Bảng 4 thí sinh (giống bố cục “Bảng điểm”) nhưng hiển thị thêm:
     - Nội dung đáp án đã nộp (nếu vòng cho phép hiển thị; MC/Host luôn thấy full, P/G có thể ẩn theo role).
     - `response_time_ms`: thời gian trả lời tính từ thời điểm Host bấm “Show Question” đến thời điểm submit/ghi nhận server.
-  - Nhóm radio (per-player) dùng cho thao tác chấm/confirm nhanh trong 2 vòng này (đồng bộ với panel chấm hiện có).
+  - Nhóm radio (per-player) dùng cho thao tác chuyển đổi giao diện (Màn chờ/ Câu hỏi/ Bảng điểm)
 
 - Dữ liệu và tính toán thời gian:
   - Nguồn `response_time_ms` lấy từ server khi insert `answers` (đã có trường). Nếu thiếu, tính: `now() - question_show_timestamp` (server-side) khi nhận submit để đảm bảo authoritative.

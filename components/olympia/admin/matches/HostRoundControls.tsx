@@ -160,6 +160,7 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
+      router.refresh()
     }
   }, [waitingState.error, waitingState.success, router])
 
@@ -173,6 +174,7 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
+      router.refresh()
     }
   }, [scoreboardState.error, scoreboardState.success, router])
 
@@ -186,6 +188,7 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
+      router.refresh()
     }
   }, [answersState.error, answersState.success, router])
 
@@ -503,6 +506,7 @@ export function HostRoundControls({
           >
             <input type="hidden" name="matchId" value={matchId} />
             <input type="hidden" name="roundQuestionId" value={isVeDich ? '' : (currentRoundQuestionId ?? '')} />
+            {isVeDich ? <input type="hidden" name="roundType" value="ve_dich" /> : null}
             <Label className="sr-only">Chọn thí sinh</Label>
             <div className="flex items-center gap-2">
               <select

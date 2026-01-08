@@ -1,13 +1,21 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import getSupabase from '@/lib/supabase'
 import { subscribeHostBuzzerUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
-import { Check, Timer, X } from 'lucide-react'
+import { Check, Loader2, Timer, X } from 'lucide-react'
+
+type DecisionValue = 'correct' | 'wrong' | 'timeout'
+
+type BatchDecision = {
+    playerId: string
+    decision: DecisionValue
+}
 
 type HostSnapshotRoundQuestion = {
     id: string
@@ -76,6 +84,7 @@ type Props = {
 
     confirmDecisionVoidFormAction: HostControlAction
     confirmVcnvRowDecisionFormAction: HostControlAction
+    confirmDecisionsBatchFormAction: HostControlAction
 }
 
 function getMetaCode(meta: Record<string, unknown> | null | undefined): string | null {
@@ -115,7 +124,9 @@ export function HostLiveAnswersCard({
     isVeDich,
     confirmDecisionVoidFormAction,
     confirmVcnvRowDecisionFormAction,
+    confirmDecisionsBatchFormAction,
 }: Props) {
+    const [isPending, startTransition] = useTransition()
     const [effectiveRoundQuestionId, setEffectiveRoundQuestionId] = useState<string | null>(initialRoundQuestionId)
     const [effectiveQuestionState, setEffectiveQuestionState] = useState<string | null>(initialQuestionState)
     const [effectiveWinnerBuzzPlayerId, setEffectiveWinnerBuzzPlayerId] = useState<string | null>(
@@ -125,6 +136,9 @@ export function HostLiveAnswersCard({
     const [effectivePlayers, setEffectivePlayers] = useState<PlayerRow[]>(players)
     const [answers, setAnswers] = useState<AnswerRow[]>(initialAnswers)
     const [roundQuestion, setRoundQuestion] = useState<RoundQuestionSnapshot | null>(initialRoundQuestion)
+
+    const [batchEnabled, setBatchEnabled] = useState(false)
+    const [batchDecisions, setBatchDecisions] = useState<BatchDecision[]>([])
 
     const supabaseRef = useRef<SupabaseClient | null>(null)
     const answersChannelRef = useRef<RealtimeChannel | null>(null)
@@ -141,6 +155,11 @@ export function HostLiveAnswersCard({
     useEffect(() => {
         setEffectivePlayers(players)
     }, [players])
+
+    useEffect(() => {
+        // Khi đổi câu, reset danh sách chấm batch để tránh chấm nhầm.
+        setBatchDecisions([])
+    }, [effectiveRoundQuestionId])
 
     useEffect(() => {
         // Đồng bộ theo host-events để không phụ thuộc router.refresh.
@@ -449,7 +468,11 @@ export function HostLiveAnswersCard({
 
     const scoringHint = useMemo(() => {
         if (!hasLiveQuestion) return 'Chưa show câu hỏi.'
-        if (isTangToc) return 'Tăng tốc: chấm tự động theo thứ tự thời gian (40/30/20/10).'
+        if (isTangToc) {
+            return batchEnabled
+                ? 'Tăng tốc: chấm theo thứ tự host chấm (Đúng trước: 40/30/20/10; Sai/Hết giờ: 0 và không tính thứ tự).'
+                : 'Tăng tốc: bật “Chấm cùng lúc” để chấm theo thứ tự host chấm (40/30/20/10).'
+        }
         if (isKhoiDong) {
             const info = getKhoiDongCodeInfo(getMetaCode(roundQuestion?.meta))
             if (info?.kind === 'personal') return `Khởi động · Thi riêng: chỉ chấm cho Ghế ${info.seat}. (Sai/Hết giờ: 0 điểm)`
@@ -460,7 +483,29 @@ export function HostLiveAnswersCard({
         if (isVeDich) return 'Về đích: chỉ chấm cho thí sinh chính.'
         if (isVcnv) return 'VCNV: đúng +10, sai/hết giờ 0.'
         return 'Chấm điểm theo luật vòng hiện tại.'
-    }, [effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isTangToc, isVcnv, isVeDich, roundQuestion?.meta])
+    }, [batchEnabled, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isTangToc, isVcnv, isVeDich, roundQuestion?.meta])
+
+    const queueBatchDecision = useCallback((playerId: string, decision: DecisionValue) => {
+        setBatchDecisions((prev) => {
+            // Giữ thứ tự click: click lại cùng 1 thí sinh sẽ đưa quyết định lên cuối.
+            const next = prev.filter((x) => x.playerId !== playerId)
+            next.push({ playerId, decision })
+            return next
+        })
+    }, [])
+
+    const batchDecisionByPlayerId = useMemo(() => {
+        const map = new Map<string, DecisionValue>()
+        for (const item of batchDecisions) {
+            map.set(item.playerId, item.decision)
+        }
+        return map
+    }, [batchDecisions])
+
+    const batchItemsJson = useMemo(() => {
+        // Server action sẽ parse JSON này theo đúng thứ tự.
+        return JSON.stringify(batchDecisions)
+    }, [batchDecisions])
 
     const getDecisionLabels = (playerId: string) => {
         void playerId
@@ -481,14 +526,56 @@ export function HostLiveAnswersCard({
     return (
         <Card>
             <CardHeader className="pb-3">
-                <CardTitle className="text-base">Câu trả lời</CardTitle>
-                <CardDescription>
-                    Câu trả lời của thí sinh cho câu đang live. Khung này cập nhật realtime/poll (không cần tải lại trang).
-                </CardDescription>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <CardTitle className="text-base">Câu trả lời</CardTitle>
+                        <CardDescription>
+                            Câu trả lời của thí sinh cho câu đang live. Khung này cập nhật realtime/poll (không cần tải lại trang).
+                        </CardDescription>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm">Chấm cùng lúc</span>
+                        <Switch
+                            checked={batchEnabled}
+                            onCheckedChange={(checked) => {
+                                setBatchEnabled(checked)
+                                if (!checked) setBatchDecisions([])
+                            }}
+                            aria-label="Chấm cùng lúc"
+                        />
+                    </div>
+                </div>
             </CardHeader>
             <CardContent className="space-y-3">
                 <div className="space-y-2">
                     <p className="text-xs text-muted-foreground">{scoringHint}</p>
+
+                    {batchEnabled ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-muted-foreground">Đã lưu {batchDecisions.length} quyết định.</p>
+                            <form
+                                action={(formData) =>
+                                    startTransition(async () => {
+                                        await confirmDecisionsBatchFormAction(formData)
+                                        setBatchDecisions([])
+                                    })
+                                }
+                                className="flex items-center gap-2"
+                            >
+                                <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+                                <input type="hidden" name="itemsJson" value={batchItemsJson} />
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={!sessionId || batchDecisions.length === 0 || isPending}
+                                >
+                                    Chấm điểm
+                                </Button>
+                            </form>
+                        </div>
+                    ) : null}
+
                     <div className="grid gap-2">
                         {effectivePlayers.map((pl) => {
                             const latest = latestByPlayer.get(pl.id) ?? null
@@ -503,6 +590,7 @@ export function HostLiveAnswersCard({
                                 Boolean(
                                     hasLiveQuestion &&
                                     scoringUnlocked &&
+                                    (!isTangToc || batchEnabled) &&
                                     (allowAllPlayers ||
                                         isTangToc ||
                                         (enabledScoringPlayerId && enabledScoringPlayerId === pl.id))
@@ -516,6 +604,8 @@ export function HostLiveAnswersCard({
                             const decisionFormAction = isVcnv
                                 ? confirmVcnvRowDecisionFormAction
                                 : confirmDecisionVoidFormAction
+
+                            const selectedBatchDecision = batchDecisionByPlayerId.get(pl.id) ?? null
 
                             return (
                                 <div key={pl.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -556,56 +646,123 @@ export function HostLiveAnswersCard({
                                     ) : null}
 
                                     <div className="mt-3 grid grid-cols-3 gap-2">
-                                        <form action={decisionFormAction} className="col-span-1">
-                                            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-                                            <input type="hidden" name="playerId" value={pl.id} />
-                                            <input type="hidden" name="decision" value="correct" />
-                                            <Button
-                                                type="submit"
-                                                size="lg"
-                                                className="w-full font-bold text-base disabled:opacity-40"
-                                                disabled={!canScore}
-                                                title={labels.correct}
-                                                aria-label={labels.correct}
-                                            >
-                                                <Check className="w-5 h-5 mr-1" />
-                                                Đúng
-                                            </Button>
-                                        </form>
-                                        <form action={decisionFormAction} className="col-span-1">
-                                            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-                                            <input type="hidden" name="playerId" value={pl.id} />
-                                            <input type="hidden" name="decision" value="wrong" />
-                                            <Button
-                                                type="submit"
-                                                size="lg"
-                                                variant="outline"
-                                                className="w-full font-bold text-base disabled:opacity-40"
-                                                disabled={!canScore}
-                                                title={labels.wrong}
-                                                aria-label={labels.wrong}
-                                            >
-                                                <X className="w-5 h-5 mr-1" />
-                                                Sai
-                                            </Button>
-                                        </form>
-                                        <form action={decisionFormAction} className="col-span-1">
-                                            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-                                            <input type="hidden" name="playerId" value={pl.id} />
-                                            <input type="hidden" name="decision" value="timeout" />
-                                            <Button
-                                                type="submit"
-                                                size="lg"
-                                                variant="outline"
-                                                className="w-full font-bold text-base disabled:opacity-40"
-                                                disabled={!canScore}
-                                                title={labels.timeout}
-                                                aria-label={labels.timeout}
-                                            >
-                                                <Timer className="w-5 h-5 mr-1" />
-                                                Hết giờ
-                                            </Button>
-                                        </form>
+                                        {batchEnabled ? (
+                                            <>
+                                                <Button
+                                                    type="button"
+                                                    size="lg"
+                                                    className="w-full font-bold text-base disabled:opacity-40"
+                                                    variant={selectedBatchDecision === 'correct' ? 'default' : 'outline'}
+                                                    disabled={!canScore || isPending}
+                                                    title={labels.correct}
+                                                    aria-label={labels.correct}
+                                                    onClick={() => queueBatchDecision(pl.id, 'correct')}
+                                                >
+                                                    <Check className="w-5 h-5 mr-1" />
+                                                    Đúng
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="lg"
+                                                    className="w-full font-bold text-base disabled:opacity-40"
+                                                    variant={selectedBatchDecision === 'wrong' ? 'default' : 'outline'}
+                                                    disabled={!canScore || isPending}
+                                                    title={labels.wrong}
+                                                    aria-label={labels.wrong}
+                                                    onClick={() => queueBatchDecision(pl.id, 'wrong')}
+                                                >
+                                                    <X className="w-5 h-5 mr-1" />
+                                                    Sai
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="lg"
+                                                    className="w-full font-bold text-base disabled:opacity-40"
+                                                    variant={selectedBatchDecision === 'timeout' ? 'default' : 'outline'}
+                                                    disabled={!canScore || isPending}
+                                                    title={labels.timeout}
+                                                    aria-label={labels.timeout}
+                                                    onClick={() => queueBatchDecision(pl.id, 'timeout')}
+                                                >
+                                                    <Timer className="w-5 h-5 mr-1" />
+                                                    Hết giờ
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <form
+                                                    action={(formData) => startTransition(() => decisionFormAction(formData))}
+                                                    className="col-span-1"
+                                                >
+                                                    <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+                                                    <input type="hidden" name="playerId" value={pl.id} />
+                                                    <input type="hidden" name="decision" value="correct" />
+                                                    <Button
+                                                        type="submit"
+                                                        size="lg"
+                                                        className="w-full font-bold text-base disabled:opacity-40"
+                                                        disabled={!canScore || isPending}
+                                                        title={labels.correct}
+                                                        aria-label={labels.correct}
+                                                    >
+                                                        {isPending ? (
+                                                            <Loader2 className="w-5 h-5 mr-1 animate-spin" />
+                                                        ) : (
+                                                            <Check className="w-5 h-5 mr-1" />
+                                                        )}
+                                                        Đúng
+                                                    </Button>
+                                                </form>
+                                                <form
+                                                    action={(formData) => startTransition(() => decisionFormAction(formData))}
+                                                    className="col-span-1"
+                                                >
+                                                    <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+                                                    <input type="hidden" name="playerId" value={pl.id} />
+                                                    <input type="hidden" name="decision" value="wrong" />
+                                                    <Button
+                                                        type="submit"
+                                                        size="lg"
+                                                        variant="outline"
+                                                        className="w-full font-bold text-base disabled:opacity-40"
+                                                        disabled={!canScore || isPending}
+                                                        title={labels.wrong}
+                                                        aria-label={labels.wrong}
+                                                    >
+                                                        {isPending ? (
+                                                            <Loader2 className="w-5 h-5 mr-1 animate-spin" />
+                                                        ) : (
+                                                            <X className="w-5 h-5 mr-1" />
+                                                        )}
+                                                        Sai
+                                                    </Button>
+                                                </form>
+                                                <form
+                                                    action={(formData) => startTransition(() => decisionFormAction(formData))}
+                                                    className="col-span-1"
+                                                >
+                                                    <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+                                                    <input type="hidden" name="playerId" value={pl.id} />
+                                                    <input type="hidden" name="decision" value="timeout" />
+                                                    <Button
+                                                        type="submit"
+                                                        size="lg"
+                                                        variant="outline"
+                                                        className="w-full font-bold text-base disabled:opacity-40"
+                                                        disabled={!canScore || isPending}
+                                                        title={labels.timeout}
+                                                        aria-label={labels.timeout}
+                                                    >
+                                                        {isPending ? (
+                                                            <Loader2 className="w-5 h-5 mr-1 animate-spin" />
+                                                        ) : (
+                                                            <Timer className="w-5 h-5 mr-1" />
+                                                        )}
+                                                        Hết giờ
+                                                    </Button>
+                                                </form>
+                                            </>
+                                        )}
                                     </div>
 
                                     {latest?.submitted_at ? (

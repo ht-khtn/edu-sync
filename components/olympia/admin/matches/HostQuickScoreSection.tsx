@@ -99,6 +99,7 @@ export function HostQuickScoreSection(props: Props) {
     const [effectiveWinnerBuzzPlayerId, setEffectiveWinnerBuzzPlayerId] = useState<string | null>(
         winnerBuzzPlayerId ?? null
     )
+    const [effectiveTargetPlayerId, setEffectiveTargetPlayerId] = useState<string | null>(null)
 
     const effectiveRoundQuestionIdRef = useRef<string | null>(initialRoundQuestionId)
     const pollInFlightRef = useRef(false)
@@ -122,6 +123,16 @@ export function HostQuickScoreSection(props: Props) {
     useEffect(() => {
         setEffectiveWinnerBuzzPlayerId(winnerBuzzPlayerId ?? null)
     }, [winnerBuzzPlayerId])
+
+    useEffect(() => {
+        // Cập nhật target_player_id khi currentRoundQuestions thay đổi
+        if (!effectiveRoundQuestionId) {
+            setEffectiveTargetPlayerId(null)
+            return
+        }
+        const question = currentRoundQuestions.find((q) => q.id === effectiveRoundQuestionId)
+        setEffectiveTargetPlayerId(question?.target_player_id ?? null)
+    }, [currentRoundQuestions, effectiveRoundQuestionId])
 
     useEffect(() => {
         return subscribeHostSessionUpdate((payload) => {
@@ -239,11 +250,11 @@ export function HostQuickScoreSection(props: Props) {
         if (isVeDich) {
             return isVeDichStealWindow
                 ? (effectiveWinnerBuzzPlayerId ?? null)
-                : (effectiveRoundQuestion?.target_player_id ?? null)
+                : (effectiveTargetPlayerId ?? null)
         }
 
         return null
-    }, [effectiveRoundQuestion, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, isVeDichStealWindow, resolvePlayerIdBySeat])
+    }, [effectiveRoundQuestion, effectiveTargetPlayerId, effectiveWinnerBuzzPlayerId, hasLiveQuestion, isKhoiDong, isVeDich, isVeDichStealWindow, resolvePlayerIdBySeat])
 
     const scoringPlayerLabel = useMemo(() => {
         if (!enabledScoringPlayerId) return null

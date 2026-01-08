@@ -10,9 +10,10 @@ type Props = {
     match: { id: string; name: string }
     players: PlayerRow[]
     scores: Array<{ id: string; player_id: string; points: number | null }> | null
+    embedded?: boolean
 }
 
-export function AnswersOverlay({ session, match, players }: Props) {
+export function AnswersOverlay({ session, match, players, embedded }: Props) {
     const [answers, setAnswers] = useState<AnswerRow[]>([])
     const supabaseRef = useRef<SupabaseClient | null>(null)
     const answersChannelRef = useRef<RealtimeChannel | null>(null)
@@ -42,8 +43,6 @@ export function AnswersOverlay({ session, match, players }: Props) {
     }, [currentQuestionId])
 
     useEffect(() => {
-        let mounted = true
-
         const subscribe = async () => {
             try {
                 const supabase = supabaseRef.current ?? (await getSupabase())
@@ -78,7 +77,6 @@ export function AnswersOverlay({ session, match, players }: Props) {
 
         void subscribe()
         return () => {
-            mounted = false
             if (pollTimerRef.current) {
                 clearInterval(pollTimerRef.current)
                 pollTimerRef.current = null
@@ -105,8 +103,32 @@ export function AnswersOverlay({ session, match, players }: Props) {
         return arr
     }, [answers])
 
+    const rows = useMemo(() => {
+        // Lấy câu trả lời theo từng thí sinh (ưu tiên cái có response_time_ms nhỏ nhất).
+        const answerByPlayerId = new Map<string, AnswerRow>()
+        for (const a of sorted) {
+            if (!answerByPlayerId.has(a.player_id)) answerByPlayerId.set(a.player_id, a)
+        }
+
+        const list = players.map((p) => {
+            const answer = answerByPlayerId.get(p.id) ?? null
+            const responseTimeMs = typeof answer?.response_time_ms === 'number' ? answer.response_time_ms : null
+            return { player: p, answer, responseTimeMs }
+        })
+
+        list.sort((ra, rb) => {
+            const aMs = ra.responseTimeMs ?? Number.MAX_SAFE_INTEGER
+            const bMs = rb.responseTimeMs ?? Number.MAX_SAFE_INTEGER
+            if (aMs !== bMs) return aMs - bMs
+            const aSeat = ra.player.seat_index ?? Number.MAX_SAFE_INTEGER
+            const bSeat = rb.player.seat_index ?? Number.MAX_SAFE_INTEGER
+            return aSeat - bSeat
+        })
+        return list
+    }, [players, sorted])
+
     return (
-        <div className="fixed inset-0 z-[60]">
+        <div className={embedded ? 'absolute inset-0 z-[60]' : 'fixed inset-0 z-[60]'}>
             <div
                 className="absolute inset-0"
                 style={{
@@ -127,32 +149,33 @@ export function AnswersOverlay({ session, match, players }: Props) {
                     </div>
 
                     <div className="mt-6 grid gap-3">
-                        {players.length > 0 ? (
-                            players.map((p) => {
-                                const answer = sorted.find((a) => a.player_id === p.id) ?? null
-                                const seatText = p.seat_index != null ? `Ghế ${p.seat_index}` : 'Ghế —'
-                                const nameText = p.display_name ? ` · ${p.display_name}` : ''
+                        {rows.length > 0 ? (
+                            rows.map(({ player, answer, responseTimeMs }) => {
+                                const seatText = player.seat_index != null ? `Ghế ${player.seat_index}` : 'Ghế —'
+                                const nameText = player.display_name ? ` · ${player.display_name}` : ''
                                 const responseTimeText =
-                                    typeof answer?.response_time_ms === 'number'
-                                        ? `${(answer.response_time_ms / 1000).toFixed(2)} s`
+                                    typeof responseTimeMs === 'number'
+                                        ? `${(responseTimeMs / 1000).toFixed(2)} s`
                                         : '(chưa xác định)'
 
                                 return (
                                     <div
-                                        key={p.id}
+                                        key={player.id}
                                         className="flex items-stretch justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 overflow-hidden"
                                     >
-                                        {/* Cột trái: Thông tin thí sinh */}
                                         <div className="flex-1 min-w-0 px-5 py-4">
                                             <p className="text-sm font-medium text-slate-50 truncate">
                                                 {seatText}{nameText}
                                             </p>
                                             <p className="mt-2 text-sm text-slate-200 line-clamp-2">
-                                                {answer?.answer_text?.trim() ? answer.answer_text : <span className="text-muted-foreground">(Chưa nộp)</span>}
+                                                {answer?.answer_text?.trim() ? (
+                                                    answer.answer_text
+                                                ) : (
+                                                    <span className="text-muted-foreground">(Chưa nộp)</span>
+                                                )}
                                             </p>
                                         </div>
 
-                                        {/* Cột phải: Thời gian trả lời */}
                                         <div className="flex flex-col items-end justify-center px-5 py-4 border-l border-slate-700/50">
                                             <p className="text-xs uppercase tracking-widest text-slate-200">Thời gian</p>
                                             <p className="text-sm font-mono text-white">{responseTimeText}</p>

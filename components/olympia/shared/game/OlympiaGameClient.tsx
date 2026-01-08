@@ -693,7 +693,7 @@ export function OlympiaGameClient({
         storageKey={`olympia:preload:client:${session.id}`}
       />
       <div
-        className="min-h-screen bg-black text-white flex flex-col"
+        className="min-h-screen bg-black text-white flex flex-col relative"
         style={{
           backgroundImage: isWaitingScreen
             ? `url('/olympia-theme/pointscreen_default_O22_new.png')`
@@ -789,7 +789,7 @@ export function OlympiaGameClient({
 
         {/* Overlay bảng điểm lớn (đồng bộ theo host) */}
         {showBigScoreboard ? (
-          <div className="fixed inset-0 z-[60]">
+          <div className={cn(isMc ? 'absolute inset-0 z-[60]' : 'fixed inset-0 z-[60]')}>
             <div
               className="absolute inset-0"
               style={{
@@ -841,6 +841,7 @@ export function OlympiaGameClient({
             match={match}
             players={players}
             scores={scores && scores.length > 0 ? scores.map(s => ({ id: s.id ?? `score:${s.player_id}`, player_id: s.player_id, points: s.points ?? null })) : null}
+            embedded={isMc}
           />
         ) : null}
 

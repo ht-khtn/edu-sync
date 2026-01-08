@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import getSupabase from '@/lib/supabase'
 
 type ActionState = {
   error?: string | null
@@ -51,6 +52,48 @@ export function LiveScoreboard({
   const [editState, editFormAction, pendingEdit] = useActionState(editScoreAction ?? noopAction, initialState)
   const lastToastRef = useRef<string | null>(null)
   const [editing, setEditing] = useState<boolean>(false)
+  const [realtimeScores, setRealtimeScores] = useState<PlayerScore[]>(scores)
+
+  // Subscribe to realtime score updates
+  useEffect(() => {
+    const setupSubscription = async () => {
+      try {
+        const supabase = await getSupabase()
+
+        // Subscribe to match_scores changes for this match using realtime
+        const subscription = supabase
+          .channel(`match-scores-${matchId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'olympia',
+              table: 'match_scores',
+              filter: `match_id=eq.${matchId}`,
+            },
+            () => {
+              // When scores change, force parent to refetch
+              // Parent component will pass new scores via props
+              setRealtimeScores((prev) => [...prev])
+            }
+          )
+          .subscribe()
+
+        return () => {
+          supabase.removeChannel(subscription)
+        }
+      } catch (error) {
+        console.warn('[LiveScoreboard] Failed to setup realtime subscription:', error)
+      }
+    }
+
+    void setupSubscription()
+  }, [matchId])
+
+  // Update local state when props change
+  useEffect(() => {
+    setRealtimeScores(scores)
+  }, [scores])
 
   useEffect(() => {
     const message = resetState.error ?? resetState.success ?? editState.error ?? editState.success
@@ -63,8 +106,8 @@ export function LiveScoreboard({
   }, [editState.error, editState.success, resetState.error, resetState.success])
 
   const sortedScores = useMemo(
-    () => [...scores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
-    [scores]
+    () => [...realtimeScores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
+    [realtimeScores]
   )
 
   return (

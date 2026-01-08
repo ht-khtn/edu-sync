@@ -320,7 +320,26 @@ const setRoundQuestionTargetSchema = z.object({
     .transform((val) => (val ? val : null)),
   // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
   playerId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
+  // Phân biệt trường hợp chọn thí sinh trước khi chọn câu (chỉ dùng cho Về đích).
+  roundType: z
+    .union([z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]), z.literal(""), z.undefined()])
+    .optional()
+    .transform((val) => (val ? val : null)),
 });
+
+const decisionBatchSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  itemsJson: z.string().min(2, "Thiếu danh sách chấm."),
+});
+
+const decisionBatchItemsSchema = z
+  .array(
+    z.object({
+      playerId: z.string().uuid("Thí sinh không hợp lệ."),
+      decision: z.enum(["correct", "wrong", "timeout"]),
+    })
+  )
+  .max(10);
 
 const toggleStarSchema = z.object({
   matchId: z.string().uuid("Trận không hợp lệ."),
@@ -4099,6 +4118,7 @@ export async function setRoundQuestionTargetPlayerAction(
       matchId: formData.get("matchId"),
       roundQuestionId: formData.get("roundQuestionId"),
       playerId: formData.get("playerId"),
+      roundType: formData.get("roundType"),
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin target." };
@@ -4116,6 +4136,57 @@ export async function setRoundQuestionTargetPlayerAction(
       if (!updatedRqs || updatedRqs.length === 0) {
         return { error: "Không tìm thấy câu hỏi để cập nhật thí sinh." };
       }
+    } else if (parsed.data.roundType === "ve_dich" && parsed.data.playerId) {
+      // Về đích: cho phép chọn thí sinh chính trước khi chọn câu.
+      // Khi đó, set target_player_id cho 3 câu VD-{seat}.1..3 của thí sinh.
+      const { data: playerRow, error: playerErr } = await olympia
+        .from("match_players")
+        .select("id, seat_index")
+        .eq("match_id", parsed.data.matchId)
+        .eq("id", parsed.data.playerId)
+        .maybeSingle();
+      if (playerErr) return { error: playerErr.message };
+      const seatIndex = (playerRow as unknown as { seat_index?: unknown } | null)?.seat_index;
+      const seat = typeof seatIndex === "number" ? seatIndex : null;
+      if (!seat) {
+        return { error: "Không xác định được ghế của thí sinh để gán Về đích." };
+      }
+
+      const { data: veDichRound, error: veDichRoundErr } = await olympia
+        .from("match_rounds")
+        .select("id")
+        .eq("match_id", parsed.data.matchId)
+        .eq("round_type", "ve_dich")
+        .maybeSingle();
+      if (veDichRoundErr) return { error: veDichRoundErr.message };
+      if (!veDichRound?.id) return { error: "Không tìm thấy vòng Về đích." };
+
+      const { data: rqRows, error: rqErr } = await olympia
+        .from("round_questions")
+        .select("id, meta")
+        .eq("match_round_id", veDichRound.id);
+      if (rqErr) return { error: rqErr.message };
+
+      const prefix = `VD-${seat}.`;
+      const mine = (rqRows ?? []).filter((rq) => {
+        const meta = (rq as unknown as { meta?: unknown }).meta;
+        const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
+        const code = metaObj && typeof metaObj.code === "string" ? metaObj.code : null;
+        return typeof code === "string" && code.startsWith(prefix);
+      });
+      if (mine.length < 3) {
+        return { error: `Không tìm thấy đủ 3 câu Về đích cho Ghế ${seat} (VD-${seat}.1..3).` };
+      }
+
+      const updates = mine.slice(0, 3).map((rq) =>
+        olympia
+          .from("round_questions")
+          .update({ target_player_id: parsed.data.playerId })
+          .eq("id", (rq as unknown as { id: string }).id)
+      );
+      const results = await Promise.all(updates);
+      const firstError = results.find((r) => r.error)?.error;
+      if (firstError) return { error: firstError.message };
     }
 
     // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
@@ -4150,6 +4221,172 @@ export async function setRoundQuestionTargetPlayerAction(
 
 export async function setRoundQuestionTargetPlayerFormAction(formData: FormData): Promise<void> {
   await setRoundQuestionTargetPlayerAction({}, formData);
+}
+
+export async function confirmDecisionsBatchAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = decisionBatchSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+      itemsJson: formData.get("itemsJson"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chấm batch." };
+    }
+
+    let rawItems: unknown;
+    try {
+      rawItems = JSON.parse(parsed.data.itemsJson);
+    } catch {
+      return { error: "Danh sách chấm không hợp lệ (JSON)." };
+    }
+
+    const itemsParsed = decisionBatchItemsSchema.safeParse(rawItems);
+    if (!itemsParsed.success) {
+      return { error: itemsParsed.error.issues[0]?.message ?? "Danh sách chấm không hợp lệ." };
+    }
+
+    const items = itemsParsed.data;
+    if (items.length === 0) return { error: "Chưa có quyết định nào để chấm." };
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
+
+    const roundType = (session.current_round_type ?? "khoi_dong") as
+      | "khoi_dong"
+      | "vcnv"
+      | "tang_toc"
+      | "ve_dich";
+
+    if (roundType !== "tang_toc") {
+      // Batch cho các vòng khác: gọi lại confirmDecisionAction để tái dùng rule/validate.
+      for (const item of items) {
+        const fd = new FormData();
+        fd.set("sessionId", parsed.data.sessionId);
+        fd.set("playerId", item.playerId);
+        fd.set("decision", item.decision);
+        const res = await confirmDecisionAction({}, fd);
+        if (res.error) return { error: res.error };
+      }
+      return { success: `Đã chấm batch ${items.length} quyết định.` };
+    }
+
+    // Tăng tốc: tính điểm theo thứ tự host chấm (đúng-only: 40/30/20/10).
+    if (!session.current_round_question_id) {
+      return { error: "Chưa chọn câu hỏi Tăng tốc." };
+    }
+
+    const awardByRank = [40, 30, 20, 10];
+    let correctRank = 0;
+
+    const playerIds = items.map((x) => x.playerId);
+
+    const { data: scoreRows, error: scoreErr } = await olympia
+      .from("match_scores")
+      .select("id, player_id, points")
+      .eq("match_id", session.match_id)
+      .eq("round_type", "tang_toc")
+      .in("player_id", playerIds);
+    if (scoreErr) return { error: scoreErr.message };
+
+    const currentPointsByPlayerId = new Map<string, { id: string | null; points: number }>();
+    for (const pid of playerIds) {
+      currentPointsByPlayerId.set(pid, { id: null, points: 0 });
+    }
+    for (const row of scoreRows ?? []) {
+      const r = row as unknown as { id: string; player_id: string; points: number | null };
+      currentPointsByPlayerId.set(r.player_id, { id: r.id, points: r.points ?? 0 });
+    }
+
+    for (const item of items) {
+      const prev = currentPointsByPlayerId.get(item.playerId) ?? { id: null, points: 0 };
+
+      const requestedDelta = item.decision === "correct" ? (awardByRank[correctRank] ?? 0) : 0;
+      if (item.decision === "correct") correctRank += 1;
+
+      const nextPoints = Math.max(0, prev.points + requestedDelta);
+      const appliedDelta = nextPoints - prev.points;
+
+      if (prev.id) {
+        const { error: updateScoreError } = await olympia
+          .from("match_scores")
+          .update({ points: nextPoints, updated_at: new Date().toISOString() })
+          .eq("id", prev.id);
+        if (updateScoreError) return { error: updateScoreError.message };
+      } else {
+        const { error: insertScoreError } = await olympia.from("match_scores").insert({
+          match_id: session.match_id,
+          player_id: item.playerId,
+          round_type: "tang_toc",
+          points: nextPoints,
+        });
+        if (insertScoreError) return { error: insertScoreError.message };
+      }
+
+      // Update đáp án mới nhất (nếu có) để lưu đúng/sai và điểm.
+      let answerId: string | null = null;
+      const { data: latestAnswer, error: answerError } = await olympia
+        .from("answers")
+        .select("id")
+        .eq("match_id", session.match_id)
+        .eq("player_id", item.playerId)
+        .eq("round_question_id", session.current_round_question_id)
+        .order("submitted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (answerError) return { error: answerError.message };
+      if (latestAnswer?.id) {
+        answerId = latestAnswer.id;
+        const { error: updateAnswerError } = await olympia
+          .from("answers")
+          .update({
+            is_correct: item.decision === "correct",
+            points_awarded: appliedDelta,
+          })
+          .eq("id", latestAnswer.id);
+        if (updateAnswerError) return { error: updateAnswerError.message };
+      }
+
+      const { error: auditErr } = await insertScoreChange({
+        olympia,
+        matchId: session.match_id,
+        playerId: item.playerId,
+        roundType: "tang_toc",
+        requestedDelta,
+        appliedDelta,
+        pointsBefore: prev.points,
+        pointsAfter: nextPoints,
+        source: "tang_toc_batch",
+        createdBy: appUserId ?? null,
+        roundQuestionId: session.current_round_question_id,
+        answerId,
+      });
+      if (auditErr) {
+        console.warn("[Olympia] insertScoreChange(confirmDecisionsBatch) failed:", auditErr);
+      }
+
+      currentPointsByPlayerId.set(item.playerId, { id: prev.id, points: nextPoints });
+    }
+
+    return { success: `Đã chấm Tăng tốc (batch) cho ${items.length} quyết định.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể chấm batch." };
+  }
+}
+
+export async function confirmDecisionsBatchFormAction(formData: FormData): Promise<void> {
+  await confirmDecisionsBatchAction({}, formData);
 }
 
 export async function toggleStarUseAction(

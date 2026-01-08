@@ -26,6 +26,7 @@ import {
 import {
   autoScoreTangTocFormAction,
   confirmDecisionAndAdvanceFormAction,
+  confirmDecisionsBatchFormAction,
   confirmDecisionVoidFormAction,
   confirmObstacleGuessFormAction,
   confirmVcnvRowDecisionFormAction,
@@ -487,14 +488,10 @@ export default async function OlympiaHostConsolePage({
     return Number.isFinite(n) ? n : null
   })()
 
-  const vdSeatParamRaw = Array.isArray(resolvedSearchParams.vdSeat)
+  // vdSeat is handled by HostRoundControls but not used for filtering in this page
+  void (Array.isArray(resolvedSearchParams.vdSeat)
     ? resolvedSearchParams.vdSeat[0]
-    : resolvedSearchParams.vdSeat
-  const vdSeat = (() => {
-    if (!vdSeatParamRaw) return null
-    const n = Number.parseInt(String(vdSeatParamRaw), 10)
-    return Number.isFinite(n) ? n : null
-  })()
+    : resolvedSearchParams.vdSeat)
 
   const data = await fetchHostData(matchId)
   if (!data) {
@@ -1039,6 +1036,7 @@ export default async function OlympiaHostConsolePage({
                   isTangToc={isTangToc}
                   isVeDich={isVeDich}
                   confirmDecisionVoidFormAction={confirmDecisionVoidFormAction}
+                  confirmDecisionsBatchFormAction={confirmDecisionsBatchFormAction}
                   confirmVcnvRowDecisionFormAction={confirmVcnvRowDecisionFormAction}
                 />
               )

@@ -41,6 +41,7 @@ type Props = {
     isVeDich: boolean
     confirmDecisionVoidFormAction: (formData: FormData) => Promise<void>
     confirmVcnvRowDecisionFormAction: (formData: FormData) => Promise<void>
+    confirmDecisionsBatchFormAction: (formData: FormData) => Promise<void>
 }
 
 export function HostAnswersTabs(props: Props) {
@@ -59,6 +60,7 @@ export function HostAnswersTabs(props: Props) {
         isVeDich,
         confirmDecisionVoidFormAction,
         confirmVcnvRowDecisionFormAction,
+        confirmDecisionsBatchFormAction,
     } = props
 
     return (
@@ -83,6 +85,7 @@ export function HostAnswersTabs(props: Props) {
                     isVeDich={isVeDich}
                     confirmDecisionVoidFormAction={confirmDecisionVoidFormAction}
                     confirmVcnvRowDecisionFormAction={confirmVcnvRowDecisionFormAction}
+                    confirmDecisionsBatchFormAction={confirmDecisionsBatchFormAction}
                 />
             </TabsContent>
             <TabsContent value="dap-an" className="mt-2">

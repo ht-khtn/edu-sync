@@ -38,3 +38,6 @@ Provide project context and coding guidelines that AI should follow when generat
    - For multi-step tasks, always break down the task into smaller sub-tasks and create a to-do list before starting.
    - After completing each sub-task, review the changes and ensure everything is correct before moving on to the next step.
    - Always do all steps in a single response, do not wait for my confirmation to proceed to the next step.
+
+10. Database
+   - Do not use the following table: "obstacles", "obstacle_guesses", "obsstacle_tiles"

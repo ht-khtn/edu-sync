@@ -2464,8 +2464,8 @@ export async function selectVeDichPackageAction(
     const updates = slots.map((rq, idx) => {
       const meta = (rq as unknown as { meta?: unknown }).meta;
       const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
-      const nextMeta = { ...metaObj, ve_dich_value: values[idx] };
       const item = chosenItems[idx];
+      const nextMeta = { ...metaObj, ve_dich_value: values[idx], code: item.code };
       return olympia
         .from("round_questions")
         .update({
@@ -4468,7 +4468,7 @@ export async function setRoundQuestionTargetPlayerAction(
       }
     } else if (parsed.data.roundType === "ve_dich" && parsed.data.playerId) {
       // Về đích: cho phép chọn thí sinh chính trước khi chọn câu.
-      // Khi đó, set target_player_id cho 3 câu VD-{seat}.1..3 của thí sinh.
+      // Khi đó, set target_player_id cho 3 câu của thí sinh (theo order_index).
       const { data: playerRow, error: playerErr } = await olympia
         .from("match_players")
         .select("id, seat_index")
@@ -4493,27 +4493,31 @@ export async function setRoundQuestionTargetPlayerAction(
 
       const { data: rqRows, error: rqErr } = await olympia
         .from("round_questions")
-        .select("id, meta")
+        .select("id, order_index")
         .eq("match_round_id", veDichRound.id);
       if (rqErr) return { error: rqErr.message };
 
-      const prefix = `VD-${seat}.`;
+      const range = getVeDichSlotRangeForSeat(seat);
       const mine = (rqRows ?? []).filter((rq) => {
-        const meta = (rq as unknown as { meta?: unknown }).meta;
-        const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
-        const code = metaObj && typeof metaObj.code === "string" ? metaObj.code : null;
-        return typeof code === "string" && code.startsWith(prefix);
+        const orderIndex = (rq as unknown as { order_index?: unknown }).order_index;
+        return getVeDichSeatFromOrderIndex(orderIndex) === seat;
       });
       if (mine.length < 3) {
-        return { error: `Không tìm thấy đủ 3 câu Về đích cho Ghế ${seat} (VD-${seat}.1..3).` };
+        return {
+          error: `Không tìm thấy đủ 3 slot Về đích cho Ghế ${seat} (order_index ${range.start}..${range.end}).`,
+        };
       }
 
-      const updates = mine.slice(0, 3).map((rq) =>
-        olympia
-          .from("round_questions")
-          .update({ target_player_id: parsed.data.playerId })
-          .eq("id", (rq as unknown as { id: string }).id)
-      );
+      const updates = mine
+        .slice()
+        .sort((a, b) => ((a.order_index ?? 0) as number) - ((b.order_index ?? 0) as number))
+        .slice(0, 3)
+        .map((rq) =>
+          olympia
+            .from("round_questions")
+            .update({ target_player_id: parsed.data.playerId })
+            .eq("id", (rq as unknown as { id: string }).id)
+        );
       const results = await Promise.all(updates);
       const firstError = results.find((r) => r.error)?.error;
       if (firstError) return { error: firstError.message };

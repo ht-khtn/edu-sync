@@ -335,6 +335,11 @@ export function HostRoundControls({
     if (lastAppliedUrlRef.current === nextUrl) return
     lastAppliedUrlRef.current = nextUrl
     router.replace(nextUrl)
+
+    // Reset local state sau khi URL được update thành công
+    queueMicrotask(() => {
+      setTargetPlayerId('')
+    })
   }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])
 
   const canStartTimer = Boolean(

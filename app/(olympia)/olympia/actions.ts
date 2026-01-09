@@ -4463,7 +4463,16 @@ export async function setRoundQuestionTargetPlayerAction(
       roundType: formData.get("roundType"),
     });
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin target." };
+      const issue = parsed.error.issues[0];
+      let errorMsg = "Thiếu thông tin target.";
+      if (issue?.path?.includes("matchId")) {
+        errorMsg = "Trận thi không hợp lệ hoặc không tìm thấy.";
+      } else if (issue?.path?.includes("playerId")) {
+        errorMsg = "Thí sinh không hợp lệ hoặc không được chọn.";
+      } else if (issue?.path?.includes("roundQuestionId")) {
+        errorMsg = "Câu hỏi không hợp lệ.";
+      }
+      return { error: errorMsg };
     }
 
     // Resolve matchId từ UUID, join_code, hoặc sessionId
@@ -4559,7 +4568,8 @@ export async function setRoundQuestionTargetPlayerAction(
 
     // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
     // Đây là hành vi yêu cầu để tránh UI giữ câu cũ khi đổi ghế/thí sinh.
-    const { data: resetRows, error: resetErr } = await olympia
+    // Chỉ reset nếu phòng đang running; nếu chưa mở phòng thì skip (không báo lỗi).
+    const { error: resetErr } = await olympia
       .from("live_sessions")
       .update({
         current_round_question_id: null,
@@ -4568,12 +4578,9 @@ export async function setRoundQuestionTargetPlayerAction(
         buzzer_enabled: false,
       })
       .eq("match_id", realMatchId)
-      .eq("status", "running")
-      .select("id");
+      .eq("status", "running");
     if (resetErr) return { error: resetErr.message };
-    if (!resetRows || resetRows.length === 0) {
-      return { error: "Không tìm thấy phòng đang running để cập nhật." };
-    }
+    // Nếu không có phòng running, không cần báo lỗi (có thể chưa mở phòng, chỉ setup thôi)
 
     // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
 

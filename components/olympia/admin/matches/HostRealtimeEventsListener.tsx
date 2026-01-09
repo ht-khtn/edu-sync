@@ -28,9 +28,14 @@ type BuzzerEventRow = {
 
 type LiveSessionRow = {
     id: string
+    current_round_id: string | null
+    current_round_type: string | null
     current_round_question_id: string | null
     question_state: string | null
     timer_deadline: string | null
+    buzzer_enabled: boolean | null
+    show_scoreboard_overlay: boolean | null
+    show_answers_overlay: boolean | null
 }
 
 export function HostRealtimeEventsListener({
@@ -49,16 +54,26 @@ export function HostRealtimeEventsListener({
 
     const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+    const hasSeenLiveSessionRef = useRef<boolean>(false)
+    const currentRoundIdRef = useRef<string | null>(null)
+    const currentRoundTypeRef = useRef<string | null>(null)
+
     const currentRoundQuestionIdRef = useRef<string | null>(null)
     useEffect(() => {
         currentRoundQuestionIdRef.current = currentRoundQuestionId
     }, [currentRoundQuestionId])
 
-    // Đồng bộ activeQ ngay cả khi host đang optimistic (đổi câu) và SSR chưa refresh kịp.
+    // Đồng bộ activeQ/round ngay cả khi host đang optimistic và SSR chưa refresh kịp.
     useEffect(() => {
         return subscribeHostSessionUpdate((payload) => {
             if (payload.currentRoundQuestionId !== undefined) {
                 currentRoundQuestionIdRef.current = payload.currentRoundQuestionId
+            }
+            if (payload.currentRoundId !== undefined) {
+                currentRoundIdRef.current = payload.currentRoundId
+            }
+            if (payload.currentRoundType !== undefined) {
+                currentRoundTypeRef.current = payload.currentRoundType
             }
         })
     }, [])
@@ -240,16 +255,35 @@ export function HostRealtimeEventsListener({
 
                             const row = (payload.new as LiveSessionRow | null) ?? null
                             if (row) {
+                                const prevRoundId = currentRoundIdRef.current
+                                const prevRoundType = currentRoundTypeRef.current
+
+                                const hadBaseline = hasSeenLiveSessionRef.current
+                                hasSeenLiveSessionRef.current = true
+
+                                currentRoundIdRef.current = row.current_round_id
+                                currentRoundTypeRef.current = row.current_round_type
+
                                 dispatchHostSessionUpdate({
+                                    currentRoundId: row.current_round_id,
+                                    currentRoundType: row.current_round_type,
                                     currentRoundQuestionId: row.current_round_question_id,
                                     questionState: row.question_state,
                                     timerDeadline: row.timer_deadline,
+                                    buzzerEnabled: row.buzzer_enabled,
+                                    showScoreboardOverlay: row.show_scoreboard_overlay,
+                                    showAnswersOverlay: row.show_answers_overlay,
                                     source: 'realtime',
                                 })
-                            }
 
-                            // Host page là SSR; đồng bộ nhẹ khi session đổi câu/trạng thái.
-                            scheduleRefresh('live_sessions')
+                                // Chỉ refresh toàn trang khi đổi vòng (SSR cần load danh sách câu/vòng, VCNV/VD bundles...).
+                                const roundChanged =
+                                    (prevRoundId ?? null) !== (row.current_round_id ?? null) ||
+                                    (prevRoundType ?? null) !== (row.current_round_type ?? null)
+                                if (hadBaseline && roundChanged) {
+                                    scheduleRefresh('live_sessions:round_changed')
+                                }
+                            }
                         }
                     )
                     .on(
@@ -257,7 +291,10 @@ export function HostRealtimeEventsListener({
                         { event: '*', schema: 'olympia', table: 'star_uses', filter: `match_id=eq.${matchId}` },
                         () => {
                             trackReason('star_uses')
-                            scheduleRefresh('star_uses')
+                            // Star chủ yếu dùng cho Về đích; tránh refresh không cần thiết.
+                            if (currentRoundTypeRef.current === 've_dich') {
+                                scheduleRefresh('star_uses')
+                            }
                         }
                     )
                     .on(
@@ -265,11 +302,8 @@ export function HostRealtimeEventsListener({
                         { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
                         (payload) => {
                             trackReason('answers')
-                            // Chỉ refresh khi host chấm điểm (UPDATE), không refresh khi thí sinh submit (INSERT)
-                            // UPDATE → is_correct được set → host cần thấy kết quả lật hết
-                            if (payload.eventType === 'UPDATE') {
-                                scheduleRefresh('answers:update')
-                            }
+                            // Không refresh toàn trang theo answers: các card client tự subscribe/poll snapshot.
+                            void payload
                         }
                     )
                     .on(
@@ -290,7 +324,6 @@ export function HostRealtimeEventsListener({
                                         winnerPlayerId: null,
                                         source: 'realtime',
                                     })
-                                    scheduleRefresh('buzzer_events:reset')
                                 }
 
                                 if (row.result === 'win' && (row.event_type === 'buzz' || row.event_type === 'steal')) {
@@ -299,7 +332,6 @@ export function HostRealtimeEventsListener({
                                         winnerPlayerId: row.player_id ?? null,
                                         source: 'realtime',
                                     })
-                                    scheduleRefresh('buzzer_events:win')
                                 }
                             }
 

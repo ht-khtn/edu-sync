@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Timer } from 'lucide-react'
+import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
 export type ActionState = {
   error?: string | null
@@ -93,7 +94,28 @@ export function HostRoundControls({
   const searchParams = useSearchParams()
   const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
 
-  const isVeDich = currentRoundType === 've_dich'
+  const [effectiveCurrentRoundQuestionId, setEffectiveCurrentRoundQuestionId] = useState<string | null>(() => currentRoundQuestionId ?? null)
+  const [effectiveCurrentQuestionState, setEffectiveCurrentQuestionState] = useState<string | null>(() => currentQuestionState ?? null)
+  const [effectiveTimerDeadline, setEffectiveTimerDeadline] = useState<string | null>(() => timerDeadline ?? null)
+  const [effectiveBuzzerEnabled, setEffectiveBuzzerEnabled] = useState<boolean | null>(() => buzzerEnabled ?? null)
+  const [effectiveShowScoreboardOverlay, setEffectiveShowScoreboardOverlay] = useState<boolean | null>(() => showScoreboardOverlay ?? null)
+  const [effectiveShowAnswersOverlay, setEffectiveShowAnswersOverlay] = useState<boolean | null>(() => showAnswersOverlay ?? null)
+  const [effectiveCurrentRoundType, setEffectiveCurrentRoundType] = useState<string | null>(() => currentRoundType ?? null)
+
+  useEffect(() => {
+    // Đồng bộ realtime/optimistic updates để giảm phụ thuộc router.refresh().
+    return subscribeHostSessionUpdate((payload) => {
+      if (payload.currentRoundQuestionId !== undefined) setEffectiveCurrentRoundQuestionId(payload.currentRoundQuestionId)
+      if (payload.questionState !== undefined) setEffectiveCurrentQuestionState(payload.questionState)
+      if (payload.timerDeadline !== undefined) setEffectiveTimerDeadline(payload.timerDeadline)
+      if (payload.buzzerEnabled !== undefined) setEffectiveBuzzerEnabled(payload.buzzerEnabled)
+      if (payload.showScoreboardOverlay !== undefined) setEffectiveShowScoreboardOverlay(payload.showScoreboardOverlay)
+      if (payload.showAnswersOverlay !== undefined) setEffectiveShowAnswersOverlay(payload.showAnswersOverlay)
+      if (payload.currentRoundType !== undefined) setEffectiveCurrentRoundType(payload.currentRoundType)
+    })
+  }, [])
+
+  const isVeDich = effectiveCurrentRoundType === 've_dich'
 
   const [roundState, roundAction, roundPending] = useActionState(setLiveSessionRoundAction, initialState)
   const [waitingState, waitingAction, waitingPending] = useActionState(setWaitingScreenAction, initialState)
@@ -127,7 +149,7 @@ export function HostRoundControls({
     return map
   }, [rounds])
 
-  const currentRound = rounds.find((r) => r.round_type === currentRoundType) ?? null
+  const currentRound = rounds.find((r) => r.round_type === effectiveCurrentRoundType) ?? null
   const [roundId, setRoundId] = useState<string>(() => currentRound?.id ?? '')
   const selectedRoundType = roundId ? roundById.get(roundId)?.round_type ?? '' : ''
 
@@ -139,11 +161,11 @@ export function HostRoundControls({
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
 
   type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
-  const serverViewMode: HostViewMode = showAnswersOverlay
+  const serverViewMode: HostViewMode = effectiveShowAnswersOverlay
     ? 'answers'
-    : showScoreboardOverlay
+    : effectiveShowScoreboardOverlay
       ? 'scoreboard'
-      : isWaitingScreenOn(currentQuestionState)
+      : isWaitingScreenOn(effectiveCurrentQuestionState)
         ? 'waiting'
         : 'question'
 
@@ -151,7 +173,7 @@ export function HostRoundControls({
   const [optimisticViewMode, setOptimisticViewMode] = useState<HostViewMode>(() => serverViewMode)
   const viewMode: HostViewMode = isViewPending ? optimisticViewMode : serverViewMode
 
-  const serverBuzzerChecked = buzzerEnabled ?? true
+  const serverBuzzerChecked = effectiveBuzzerEnabled ?? true
   const [optimisticBuzzerChecked, setOptimisticBuzzerChecked] = useState<boolean>(() => serverBuzzerChecked)
   const buzzerChecked = buzzerPending ? optimisticBuzzerChecked : serverBuzzerChecked
 
@@ -161,7 +183,7 @@ export function HostRoundControls({
   const answersMessage = answersState.error ?? answersState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
 
-  const canPickTarget = Boolean(allowTargetSelection && (isVeDich || currentRoundQuestionId))
+  const canPickTarget = Boolean(allowTargetSelection && (isVeDich || effectiveCurrentRoundQuestionId))
 
   // Show toasts for messages
   useEffect(() => {
@@ -316,17 +338,17 @@ export function HostRoundControls({
 
   const canStartTimer = Boolean(
     sessionId &&
-    currentRoundQuestionId &&
-    currentQuestionState === 'showing' &&
+    effectiveCurrentRoundQuestionId &&
+    effectiveCurrentQuestionState === 'showing' &&
     true
   )
 
   const canExpireTimer = Boolean(
     sessionId &&
-    currentRoundQuestionId &&
-    currentQuestionState === 'showing' &&
-    Boolean(timerDeadline) &&
-    (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc')
+    effectiveCurrentRoundQuestionId &&
+    effectiveCurrentQuestionState === 'showing' &&
+    Boolean(effectiveTimerDeadline) &&
+    (effectiveCurrentRoundType === 'vcnv' || effectiveCurrentRoundType === 'tang_toc')
   )
 
   const setHiddenEnabledAndSubmit = (form: HTMLFormElement | null, enabled: boolean) => {

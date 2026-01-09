@@ -131,7 +131,7 @@ export function HostAnswersByTimeCard(props: Props) {
                 pollTimerRef.current = setInterval(() => {
                     if (typeof document !== 'undefined' && document.hidden) return
                     void refreshAnswers()
-                }, 1000)
+                }, 2500)
             } catch {
                 // ignore
             }

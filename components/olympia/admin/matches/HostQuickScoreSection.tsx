@@ -203,7 +203,7 @@ export function HostQuickScoreSection(props: Props) {
         void refreshSnapshot()
         const t = setInterval(() => {
             void refreshSnapshot()
-        }, 900)
+        }, 2000)
         return () => clearInterval(t)
     }, [refreshSnapshot])
 

@@ -1,7 +1,12 @@
 export type HostSessionUpdatePayload = {
   currentRoundQuestionId: string | null;
+  currentRoundId?: string | null;
+  currentRoundType?: string | null;
   questionState?: string | null;
   timerDeadline?: string | null;
+  buzzerEnabled?: boolean | null;
+  showScoreboardOverlay?: boolean | null;
+  showAnswersOverlay?: boolean | null;
   source?: "optimistic" | "realtime";
 };
 

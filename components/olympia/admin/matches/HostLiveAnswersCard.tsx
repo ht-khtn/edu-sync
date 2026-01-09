@@ -398,7 +398,7 @@ export function HostLiveAnswersCard({
                 pollTimerRef.current = setInterval(() => {
                     if (typeof document !== 'undefined' && document.hidden) return
                     void refreshSnapshot('poll')
-                }, 900)
+                }, 2000)
             } catch {
                 // ignore
             }

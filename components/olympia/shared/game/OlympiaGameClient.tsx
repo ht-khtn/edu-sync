@@ -1378,7 +1378,7 @@ export function OlympiaGameClient({
               {scoreboard.slice(0, 4).map((p, idx) => (
                 <div key={p.id} className="flex items-center justify-between gap-3">
                   <span className="text-slate-100">
-                    {idx + 1}. Ghế {p.seat ?? '—'}
+                    {idx + 1}. {p.name}
                   </span>
                   <span className="font-mono text-white">{p.total}</span>
                 </div>

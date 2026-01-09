@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { matchId: matchIdRaw, participantId, seatIndex } = parsedBody.data;
-    const matchId = await resolveMatchId(olympia, matchIdRaw);
+    const matchId = await resolveMatchId(supabase, matchIdRaw);
     if (!matchId) {
       return NextResponse.json(
         { error: "Không tìm thấy trận (matchId/join_code không hợp lệ)" },

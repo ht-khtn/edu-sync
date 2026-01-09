@@ -80,6 +80,9 @@ export function AddPlayersToMatch({
             return
         }
 
+        // Capture participant info locally so we can dispatch it after successful insert
+        const participantInfo = availableParticipants.find((p) => p.user_id === selectedParticipant) ?? null
+
         setIsLoading(true)
         try {
             const response = await fetch('/api/olympia/match-players', {
@@ -105,11 +108,12 @@ export function AddPlayersToMatch({
             onAddSuccess?.()
 
             // Try to update client components without full page reload by
-            // dispatching a custom event with the created player data.
+            // dispatching a custom event with the created player data and participant info.
             try {
                 const created = result as any
                 if (created && typeof window !== 'undefined') {
-                    window.dispatchEvent(new CustomEvent('olympia:player-added', { detail: created }))
+                    const detail = { ...created, participantInfo }
+                    window.dispatchEvent(new CustomEvent('olympia:player-added', { detail }))
                 }
             } catch (err) {
                 // ignore

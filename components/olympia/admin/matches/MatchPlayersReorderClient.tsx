@@ -14,6 +14,7 @@ type Player = {
     seat_index: number
     display_name: string | null
     participant_id: string | null
+    participant_info?: ParticipantInfo
 }
 
 type ParticipantInfo = {
@@ -52,7 +53,7 @@ export function MatchPlayersReorderClient({ matchId, players, participantLookup,
     // Listen for player-added events to update list without full reload
     useEffect(() => {
         function onPlayerAdded(e: Event) {
-            const detail = (e as CustomEvent).detail as Player | null
+            const detail = (e as CustomEvent).detail as any
             if (!detail) return
             // only add if belongs to this match
             // detail.match_id may or may not exist; defensively check
@@ -63,7 +64,16 @@ export function MatchPlayersReorderClient({ matchId, players, participantLookup,
             setPlayerList((prev) => {
                 // ignore if already exists
                 if (prev.some((p) => p.id === detail.id)) return prev
-                const merged = [...prev, { id: detail.id, seat_index: detail.seat_index, display_name: detail.display_name ?? null, participant_id: detail.participant_id ?? null }]
+                const merged = [
+                    ...prev,
+                    {
+                        id: detail.id,
+                        seat_index: detail.seat_index,
+                        display_name: detail.display_name ?? null,
+                        participant_id: detail.participant_id ?? null,
+                        participant_info: detail.participantInfo ?? undefined,
+                    },
+                ]
                 return merged.sort((a, b) => a.seat_index - b.seat_index)
             })
         }
@@ -152,7 +162,9 @@ export function MatchPlayersReorderClient({ matchId, players, participantLookup,
 
             <div className="space-y-2">
                 {playerList.map((player, index) => {
-                    const participant = player.participant_id ? participantLookup.get(player.participant_id) : null
+                    const participant = player.participant_id
+                        ? participantLookup.get(player.participant_id) ?? (player.participant_info as ParticipantInfo | undefined) ?? null
+                        : (player.participant_info as ParticipantInfo | undefined) ?? null
                     const code = participant?.contestant_code ?? '—'
                     const name = participant?.display_name ?? player.display_name ?? '—'
                     const classInfo = Array.isArray(participant?.class_name)

@@ -1,0 +1,11 @@
+function git-sync {
+    param(
+        [string]$main,
+        [string]$feature
+    )
+
+    git checkout $main
+    git pull origin $main
+    git merge $feature
+    git checkout $feature
+}

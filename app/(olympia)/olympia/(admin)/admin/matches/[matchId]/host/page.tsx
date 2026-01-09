@@ -12,6 +12,7 @@ import { HostRealtimeEventsListener } from '@/components/olympia/admin/matches/H
 import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/HostQuestionPreviewCard'
 import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQuickScoreSection'
 import { HostAnswersTabs } from '@/components/olympia/admin/matches/HostAnswersTabs'
+import { VeDichPackageFormComponent } from '@/components/olympia/admin/matches/VeDichPackageFormComponent'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -40,7 +41,6 @@ import {
   setScoreboardOverlayAction,
   setAnswersOverlayAction,
   setBuzzerEnabledAction,
-  selectVeDichPackageFormAction,
   setWaitingScreenAction,
   setGuestMediaControlAction,
   resetMatchScoresAction,
@@ -1078,48 +1078,12 @@ export default async function OlympiaHostConsolePage({
                           const confirmed = Boolean(pkg?.confirmed)
                           const values = pkg?.values ?? [null, null, null]
                           return (
-                            <div className="mt-3 rounded-md border bg-background p-2">
-                              <p className="text-xs font-medium truncate">Ghế {vdSeat} · {selectedPlayer.display_name ?? 'Thí sinh'}</p>
-                              <p className="text-[11px] text-muted-foreground">{confirmed ? 'Đã chốt gói' : 'Chưa chốt gói'}</p>
-                              <form action={selectVeDichPackageFormAction} className="mt-2 grid gap-2">
-                                <input type="hidden" name="matchId" value={match.id} />
-                                <input type="hidden" name="playerId" value={selectedPlayer.id} />
-
-                                <div className="grid grid-cols-3 gap-2">
-                                  {values.map((v, idx) => (
-                                    <select
-                                      key={idx}
-                                      name="values"
-                                      defaultValue={v === 20 || v === 30 ? String(v) : ''}
-                                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                                      disabled={confirmed}
-                                      aria-label={`Giá trị câu ${idx + 1}`}
-                                    >
-                                      {!(v === 20 || v === 30) ? (
-                                        <option value="">— Chọn —</option>
-                                      ) : null}
-                                      <option value="20">20</option>
-                                      <option value="30">30</option>
-                                    </select>
-                                  ))}
-                                </div>
-
-                                <div className="flex justify-end">
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-8"
-                                    disabled={confirmed}
-                                    aria-label="Xác nhận gói Về đích"
-                                    title="Xác nhận gói Về đích"
-                                  >
-                                    <Check className="h-4 w-4 mr-1" />
-                                    Xác nhận gói
-                                  </Button>
-                                </div>
-                              </form>
-                            </div>
+                            <VeDichPackageFormComponent
+                              matchId={match.id}
+                              selectedPlayer={selectedPlayer}
+                              values={values}
+                              confirmed={confirmed}
+                            />
                           )
                         })()}
                       </div>

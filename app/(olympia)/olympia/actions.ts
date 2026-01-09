@@ -2532,6 +2532,13 @@ export async function selectVeDichPackageFormAction(formData: FormData): Promise
   await selectVeDichPackageAction({}, formData);
 }
 
+export async function selectVeDichPackageClientAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  return await selectVeDichPackageAction({}, formData);
+}
+
 export async function confirmDecisionAction(
   _: ActionState,
   formData: FormData

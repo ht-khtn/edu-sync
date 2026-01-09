@@ -63,6 +63,7 @@ export function DeleteMatchButton({ matchId, matchName }: DeleteMatchButtonProps
                 aria-label="Xóa trận"
                 onClick={handleClick}
                 disabled={pending}
+                className="text-red-600"
             >
                 <Trash2 className="h-4 w-4" />
                 <span className="sr-only">Xóa</span>

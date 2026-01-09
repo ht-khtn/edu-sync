@@ -104,9 +104,14 @@ export function AddPlayersToMatch({
             setIsOpen(false)
             onAddSuccess?.()
 
+            // Try to update client components without full page reload by
+            // dispatching a custom event with the created player data.
             try {
-                router.refresh()
-            } catch {
+                const created = result as any
+                if (created && typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('olympia:player-added', { detail: created }))
+                }
+            } catch (err) {
                 // ignore
             }
         } catch (error) {

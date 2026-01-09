@@ -15,8 +15,9 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-async function resolveMatchId(olympia: SupabaseClient, raw: string): Promise<string | null> {
+async function resolveMatchId(supabaseClient: SupabaseClient, raw: string): Promise<string | null> {
   // raw có thể là match UUID, live_sessions.id hoặc join_code.
+  const olympia = supabaseClient.schema("olympia");
   if (isUuid(raw)) {
     const { data: matchDirect, error: matchDirectError } = await olympia
       .from("matches")

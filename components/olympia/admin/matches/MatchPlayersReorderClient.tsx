@@ -49,6 +49,29 @@ export function MatchPlayersReorderClient({ matchId, players, participantLookup,
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
     const [isRemoving, setIsRemoving] = useState(false)
 
+    // Listen for player-added events to update list without full reload
+    useEffect(() => {
+        function onPlayerAdded(e: Event) {
+            const detail = (e as CustomEvent).detail as Player | null
+            if (!detail) return
+            // only add if belongs to this match
+            // detail.match_id may or may not exist; defensively check
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const matchIdOfDetail = (detail as any).match_id as string | undefined
+            if (matchIdOfDetail && matchIdOfDetail !== matchId) return
+
+            setPlayerList((prev) => {
+                // ignore if already exists
+                if (prev.some((p) => p.id === detail.id)) return prev
+                const merged = [...prev, { id: detail.id, seat_index: detail.seat_index, display_name: detail.display_name ?? null, participant_id: detail.participant_id ?? null }]
+                return merged.sort((a, b) => a.seat_index - b.seat_index)
+            })
+        }
+
+        window.addEventListener('olympia:player-added', onPlayerAdded as EventListener)
+        return () => window.removeEventListener('olympia:player-added', onPlayerAdded as EventListener)
+    }, [matchId])
+
     const [orderState, formAction] = useActionState(updateOrderAction, actionInitialState)
 
     useEffect(() => {
@@ -145,8 +168,8 @@ export function MatchPlayersReorderClient({ matchId, players, participantLookup,
                             onDragOver={handleDragOver}
                             onDrop={() => handleDrop(index)}
                             className={`flex items-center gap-3 rounded-lg border-2 bg-slate-50 p-3 transition-all ${draggedIndex === index
-                                    ? 'border-blue-400 bg-blue-50 opacity-50'
-                                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-100 cursor-move'
+                                ? 'border-blue-400 bg-blue-50 opacity-50'
+                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-100 cursor-move'
                                 }`}
                         >
                             <GripVertical className="w-5 h-5 flex-shrink-0 text-muted-foreground" />

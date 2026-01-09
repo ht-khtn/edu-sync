@@ -26,19 +26,18 @@ const matchStatusColor: Record<string, 'default' | 'outline' | 'secondary' | 'de
     finished: 'secondary',
 }
 
+type MatchRow = {
+    id: string
+    name: string
+    status: string
+    scheduled_at: string | null
+    created_at?: string | null
+    updated_at: string | null
+}
+
 type MatchesPayload = {
-    upcomingMatches: Array<{
-        id: string
-        name: string
-        status: string
-        scheduled_at: string | null
-    }>
-    pastMatches: Array<{
-        id: string
-        name: string
-        status: string
-        scheduled_at: string | null
-    }>
+    upcomingMatches: Array<MatchRow>
+    pastMatches: Array<MatchRow>
     sessions: Array<{
         id: string
         match_id: string
@@ -55,8 +54,8 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
     try {
         const { data: allMatches, error } = await olympia
             .from('matches')
-            .select('id, name, status, scheduled_at')
-            .order('scheduled_at', { ascending: false, nullsFirst: true })
+            .select('id, name, status, scheduled_at, created_at, updated_at')
+            .order('created_at', { ascending: false })
 
         if (error) {
             console.error('[Olympia] Không tải được danh sách trận:', error.message)
@@ -77,11 +76,22 @@ const fetchAllMatches = cache(async (): Promise<MatchesPayload> => {
             return new Date(m.scheduled_at) > now
         })
 
+        // Sắp xếp rõ ràng theo created_at giảm dần sau khi lọc
+        const sortByCreatedDesc = (a: { created_at?: string | null }, b: { created_at?: string | null }) => {
+            const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+            const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+            return tb - ta
+        }
+
         const pastMatches = matches.filter((m) => {
             if (m.status === 'finished') return true
             if (!m.scheduled_at) return false
             return new Date(m.scheduled_at) <= now
         })
+
+        // Áp dụng sort theo created_at cho từng danh sách
+        upcomingMatches.sort(sortByCreatedDesc)
+        pastMatches.sort(sortByCreatedDesc)
 
         // Fetch live sessions for all matches
         const { data: sessions } = await olympia

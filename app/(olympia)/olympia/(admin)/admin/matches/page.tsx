@@ -7,6 +7,7 @@ import { CreateMatchDialog } from '@/components/olympia/admin/matches/CreateMatc
 import { CreateTournamentDialog } from '@/components/olympia/admin/matches/CreateTournamentDialogEntry'
 import { EditTournamentDialog } from '@/components/olympia/admin/matches/EditTournamentDialog'
 import { EditMatchDialog } from '@/components/olympia/admin/matches/EditMatchDialog'
+import { DeleteMatchButton } from '@/components/olympia/admin/matches/DeleteMatchButton'
 import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
@@ -219,14 +220,17 @@ export default async function OlympiaMatchesAdminPage() {
                         <LiveSessionControls matchId={match.id} liveSession={session} />
                       </TableCell>
                       <TableCell>
-                        <EditMatchDialog
-                          matchId={match.id}
-                          currentName={match.name}
-                          currentTournamentId={match.tournament_id}
-                          currentStatus={match.status}
-                          currentScheduledAt={match.scheduled_at}
-                          tournaments={tournaments}
-                        />
+                        <div className="flex items-center gap-1">
+                          <EditMatchDialog
+                            matchId={match.id}
+                            currentName={match.name}
+                            currentTournamentId={match.tournament_id}
+                            currentStatus={match.status}
+                            currentScheduledAt={match.scheduled_at}
+                            tournaments={tournaments}
+                          />
+                          <DeleteMatchButton matchId={match.id} matchName={match.name} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   )

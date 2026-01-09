@@ -600,6 +600,33 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
   }
 }
 
+export async function deleteMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ." };
+    }
+
+    const { matchId } = parsed.data;
+
+    const { error } = await olympia.from("matches").delete().eq("id", matchId);
+    if (error) return { error: error.message };
+
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    revalidatePath(`/olympia/admin/matches/${matchId}`);
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+
+    return { success: "Đã xóa trận." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể xóa trận." };
+  }
+}
+
 export async function createQuestionAction(
   _: ActionState,
   formData: FormData

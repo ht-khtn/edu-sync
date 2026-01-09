@@ -1933,6 +1933,24 @@ export async function resetLiveSessionAndScoresAction(
     const { error: delAnswersErr } = await olympia.from("answers").delete().eq("match_id", matchId);
     if (delAnswersErr) return { error: delAnswersErr.message };
 
+    // Reset các gói Về đích: clear target_player_id và question_set_item_id
+    const { data: rounds, error: roundsErr } = await olympia
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("round_type", "ve_dich");
+    if (roundsErr) return { error: roundsErr.message };
+
+    if (rounds && rounds.length > 0) {
+      for (const round of rounds) {
+        const { error: resetVeDichErr } = await olympia
+          .from("round_questions")
+          .update({ target_player_id: null, question_set_item_id: null })
+          .eq("match_round_id", (round as unknown as { id: string }).id);
+        if (resetVeDichErr) return { error: resetVeDichErr.message };
+      }
+    }
+
     revalidatePath(`/olympia/admin/matches/${matchId}/host`);
     revalidatePath(`/olympia/admin/matches/${matchId}`);
 
@@ -4515,12 +4533,28 @@ export async function setRoundQuestionTargetPlayerAction(
         .map((rq) =>
           olympia
             .from("round_questions")
-            .update({ target_player_id: parsed.data.playerId })
+            .update({ target_player_id: parsed.data.playerId, question_set_item_id: null })
             .eq("id", (rq as unknown as { id: string }).id)
         );
       const results = await Promise.all(updates);
       const firstError = results.find((r) => r.error)?.error;
       if (firstError) return { error: firstError.message };
+    } else if (parsed.data.roundType === "ve_dich" && !parsed.data.playerId) {
+      // Về đích: reset thành thi chung → clear target_player_id và question_set_item_id
+      const { data: veDichRound, error: veDichRoundErr } = await olympia
+        .from("match_rounds")
+        .select("id")
+        .eq("match_id", realMatchId)
+        .eq("round_type", "ve_dich")
+        .maybeSingle();
+      if (veDichRoundErr) return { error: veDichRoundErr.message };
+      if (veDichRound?.id) {
+        const { error: clearErr } = await olympia
+          .from("round_questions")
+          .update({ target_player_id: null, question_set_item_id: null })
+          .eq("match_round_id", veDichRound.id);
+        if (clearErr) return { error: clearErr.message };
+      }
     }
 
     // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
@@ -4947,11 +4981,12 @@ export async function confirmVeDichMainDecisionAction(
 
     if (isCorrect) {
       // Về đích: KHÔNG auto chuyển câu.
-      // Chấm xong thì đóng chuông và đánh dấu completed để tránh thao tác nhầm.
+      // Chấm xong thì quay lại màn chờ (hidden) để chuẩn bị câu tiếp theo.
       const { error: completeErr } = await olympia
         .from("live_sessions")
         .update({
-          question_state: "completed",
+          question_state: "hidden",
+          current_round_question_id: null,
           timer_deadline: null,
           buzzer_enabled: false,
         })

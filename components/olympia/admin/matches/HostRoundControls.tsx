@@ -184,7 +184,9 @@ export function HostRoundControls({
   const answersMessage = answersState.error ?? answersState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
 
-  const canPickTarget = Boolean(allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId))
+  const canPickTarget = Boolean(
+    allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId || isKhoiDong)
+  )
 
   // Show toasts for messages
   useEffect(() => {
@@ -279,9 +281,14 @@ export function HostRoundControls({
     lastTargetToastRef.current = message
 
     if (targetState.error) {
-      toast.error(message)
+      toast.error(message, {
+        description: 'Vui lòng kiểm tra lại thông tin và thử lại.',
+        duration: 5000,
+      })
     } else {
-      toast.success(message)
+      toast.success(message, {
+        duration: 3000,
+      })
     }
   }, [targetState.error, targetState.success, router])
 
@@ -533,15 +540,17 @@ export function HostRoundControls({
                 aria-label="Chọn thí sinh"
                 disabled={!allowTargetSelection || targetPending}
               >
-                <option value="">
-                  {!allowTargetSelection
-                    ? 'Chọn thí sinh (chỉ dùng cho Về đích)'
-                    : isVeDichLike
-                      ? 'Về đích: chọn thí sinh trước'
-                      : !currentRoundQuestionId
-                        ? 'Chọn câu trước để gán thí sinh'
-                        : '(Tuỳ vòng) Chọn thí sinh'}
-                </option>
+                {!targetPlayerId ? (
+                  <option value="">
+                    {!allowTargetSelection
+                      ? 'Chọn thí sinh (chỉ dùng cho Về đích)'
+                      : isVeDichLike
+                        ? 'Về đích: chọn thí sinh trước'
+                        : !currentRoundQuestionId
+                          ? 'Chọn câu trước để gán thí sinh'
+                          : '(Tuỳ vòng) Chọn thí sinh'}
+                  </option>
+                ) : null}
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
                     Ghế {p.seat_index ?? '—'} · {p.display_name ?? 'Thí sinh'}

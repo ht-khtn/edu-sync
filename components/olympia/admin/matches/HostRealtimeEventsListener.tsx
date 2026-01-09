@@ -342,7 +342,7 @@ export function HostRealtimeEventsListener({
                         }
                     )
 
-                channel.subscribe((status) => {
+                channel.subscribe((status: unknown) => {
                     if (status === 'SUBSCRIBED') {
                         reconnectAttemptsRef.current = 0
                         void hydrateExistingWinnerToast()

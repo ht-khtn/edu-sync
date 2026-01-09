@@ -1095,7 +1095,9 @@ export default async function OlympiaHostConsolePage({
                                       disabled={confirmed}
                                       aria-label={`Giá trị câu ${idx + 1}`}
                                     >
-                                      <option value="">20/30</option>
+                                      {!(v === 20 || v === 30) ? (
+                                        <option value="">— Chọn —</option>
+                                      ) : null}
                                       <option value="20">20</option>
                                       <option value="30">30</option>
                                     </select>

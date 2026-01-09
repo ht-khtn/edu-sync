@@ -152,6 +152,7 @@ export function HostRoundControls({
   const currentRound = rounds.find((r) => r.round_type === effectiveCurrentRoundType) ?? null
   const [roundId, setRoundId] = useState<string>(() => currentRound?.id ?? '')
   const selectedRoundType = roundId ? roundById.get(roundId)?.round_type ?? '' : ''
+  const isVeDichLike = isVeDich || selectedRoundType === 've_dich'
 
   const lastSubmittedRoundIdRef = useRef<string | null>(null)
   const lastSubmittedRoundTypeRef = useRef<string | null>(null)
@@ -183,7 +184,7 @@ export function HostRoundControls({
   const answersMessage = answersState.error ?? answersState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
 
-  const canPickTarget = Boolean(allowTargetSelection && (isVeDich || effectiveCurrentRoundQuestionId))
+  const canPickTarget = Boolean(allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId))
 
   // Show toasts for messages
   useEffect(() => {
@@ -512,8 +513,8 @@ export function HostRoundControls({
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
-            <input type="hidden" name="roundQuestionId" value={isVeDich ? '' : (currentRoundQuestionId ?? '')} />
-            {isVeDich ? <input type="hidden" name="roundType" value="ve_dich" /> : null}
+            <input type="hidden" name="roundQuestionId" value={isVeDichLike ? '' : (currentRoundQuestionId ?? '')} />
+            {isVeDichLike ? <input type="hidden" name="roundType" value="ve_dich" /> : null}
             <Label className="sr-only">Chọn thí sinh</Label>
             <div className="flex items-center gap-2">
               <select
@@ -530,7 +531,7 @@ export function HostRoundControls({
                 <option value="">
                   {!allowTargetSelection
                     ? 'Chọn thí sinh (chỉ dùng cho Về đích)'
-                    : isVeDich
+                    : isVeDichLike
                       ? 'Về đích: chọn thí sinh trước'
                       : !currentRoundQuestionId
                         ? 'Chọn câu trước để gán thí sinh'

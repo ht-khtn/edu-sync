@@ -101,6 +101,66 @@ export function OlympiaGameClient({
   // Ưu tiên preload từ initialData để chạy ngay khi mount.
   const preloadRoundQuestions = useMemo(() => initialData.roundQuestions ?? [], [initialData.roundQuestions])
 
+  const veDichNotifiedBySeatRef = useRef<Map<number, string>>(new Map())
+
+  useEffect(() => {
+    if (roundType !== 've_dich') {
+      veDichNotifiedBySeatRef.current.clear()
+      return
+    }
+
+    const currentRoundId = session.current_round_id
+    if (!currentRoundId) return
+
+    const rqs = roundQuestions.filter((rq) => rq.match_round_id === currentRoundId)
+    if (rqs.length === 0) return
+
+    const getSeatFromOrderIndex = (orderIndex: unknown): number | null => {
+      const n = typeof orderIndex === 'number' ? orderIndex : Number(orderIndex)
+      if (!Number.isFinite(n)) return null
+      if (n < 1 || n > 12) return null
+      const seat = Math.floor((n - 1) / 3) + 1
+      return seat >= 1 && seat <= 4 ? seat : null
+    }
+
+    const seatBlocks = new Map<number, typeof rqs>()
+    for (const rq of rqs) {
+      const seat = getSeatFromOrderIndex(rq.order_index)
+      if (!seat) continue
+      const list = seatBlocks.get(seat) ?? []
+      list.push(rq)
+      seatBlocks.set(seat, list)
+    }
+
+    for (const [seat, list] of seatBlocks) {
+      const top3 = list.slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)).slice(0, 3)
+      if (top3.length < 3) continue
+
+      const confirmed = top3.every((rq) => Boolean(rq.question_set_item_id))
+      if (!confirmed) continue
+
+      const values = top3.map((rq) => {
+        const meta = rq.meta
+        const raw = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).ve_dich_value : undefined
+        const v = typeof raw === 'number' ? raw : raw ? Number(raw) : NaN
+        return v === 20 || v === 30 ? v : null
+      })
+      if (values.some((v) => v == null)) continue
+      const summary = (values as Array<20 | 30>).join('-')
+
+      const last = veDichNotifiedBySeatRef.current.get(seat) ?? null
+      if (last === summary) continue
+      veDichNotifiedBySeatRef.current.set(seat, summary)
+
+      const ownerPlayerId =
+        top3.find((rq) => typeof rq.target_player_id === 'string' && rq.target_player_id)?.target_player_id ?? null
+      const owner = ownerPlayerId ? players.find((p) => p.id === ownerPlayerId) ?? null : null
+      const ownerName = owner?.display_name ? ` · ${owner.display_name}` : ''
+
+      toast.info(`Ghế ${seat}${ownerName} đã chọn gói Về đích: ${summary}`)
+    }
+  }, [players, roundQuestions, roundType, session.current_round_id])
+
   // Toast notifications for feedback
   useEffect(() => {
     const answerFeedback = answerState.error ?? answerState.success

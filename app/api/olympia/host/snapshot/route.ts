@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext } from "@/lib/server-auth";
 
 type SnapshotRoundQuestion = {
@@ -42,10 +41,24 @@ type BuzzerWinnerRow = {
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureOlympiaAdminAccess();
-
-    const { supabase } = await getServerAuthContext();
+    const { supabase, appUserId } = await getServerAuthContext();
+    if (!appUserId) {
+      return NextResponse.json({ error: "FORBIDDEN_OLYMPIA_ADMIN" }, { status: 403 });
+    }
     const olympia = supabase.schema("olympia");
+
+    const { data: participant, error: participantErr } = await olympia
+      .from("participants")
+      .select("role")
+      .eq("user_id", appUserId)
+      .maybeSingle();
+
+    if (participantErr) {
+      return NextResponse.json({ error: participantErr.message }, { status: 500 });
+    }
+    if (!participant || participant.role !== "AD") {
+      return NextResponse.json({ error: "FORBIDDEN_OLYMPIA_ADMIN" }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const matchId = url.searchParams.get("matchId");

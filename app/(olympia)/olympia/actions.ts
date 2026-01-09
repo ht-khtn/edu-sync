@@ -61,7 +61,7 @@ const matchSchema = z.object({
   name: z.string().min(3, "Tên trận tối thiểu 3 ký tự"),
   tournamentId: z
     .string()
-    .uuid()
+    .uuid("ID giải đấu không hợp lệ.")
     .optional()
     .or(z.literal(""))
     .transform((val) => (val ? val : null)),
@@ -308,24 +308,66 @@ const veDichValueSchema = z.object({
     .refine((v) => v === 20 || v === 30, "Giá trị câu chỉ nhận 20 hoặc 30."),
   // Tuỳ chọn: khi set giá trị câu, đồng thời ấn định thí sinh chính cho câu này
   playerId: z
-    .union([z.string().uuid(), z.literal("")])
+    .union([z.string().uuid("Thí sinh không hợp lệ."), z.literal("")])
     .optional()
     .transform((val) => (val ? val : null)),
 });
 
 const setRoundQuestionTargetSchema = z.object({
-  matchId: z.string().uuid("Trận không hợp lệ."),
+  matchId: z.string().min(1, "Trận không hợp lệ."), // Allow any non-empty string (UUID, join_code, etc.)
   roundQuestionId: z
-    .union([z.string().uuid(), z.literal("")])
+    .union([z.string().uuid("Câu hỏi không hợp lệ."), z.literal("")])
     .transform((val) => (val ? val : null)),
   // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
-  playerId: z.union([z.string().uuid(), z.literal("")]).transform((val) => (val ? val : null)),
+  playerId: z
+    .union([z.string().uuid("Thí sinh không hợp lệ."), z.literal("")])
+    .transform((val) => (val ? val : null)),
   // Phân biệt trường hợp chọn thí sinh trước khi chọn câu (chỉ dùng cho Về đích).
   roundType: z
     .union([z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]), z.literal(""), z.undefined()])
     .optional()
     .transform((val) => (val ? val : null)),
 });
+
+// Helper để resolve matchId từ UUID, join_code, hoặc sessionId
+async function resolveMatchIdFromRaw(
+  supabase: SupabaseClient,
+  raw: string
+): Promise<string | null> {
+  if (!raw) return null;
+
+  const olympia = supabase.schema("olympia");
+
+  function isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  // Try as UUID first
+  if (isUuid(raw)) {
+    const { data: matchDirect } = await olympia
+      .from("matches")
+      .select("id")
+      .eq("id", raw)
+      .maybeSingle();
+    if (matchDirect?.id) return matchDirect.id;
+
+    // Try as sessionId
+    const { data: sessionByIdOrJoin } = await olympia
+      .from("live_sessions")
+      .select("match_id")
+      .or(`id.eq.${raw},join_code.eq.${raw}`)
+      .maybeSingle();
+    return (sessionByIdOrJoin as { match_id?: string | null } | null)?.match_id ?? null;
+  }
+
+  // Try as join_code
+  const { data: sessionByJoin } = await olympia
+    .from("live_sessions")
+    .select("match_id")
+    .eq("join_code", raw)
+    .maybeSingle();
+  return (sessionByJoin as { match_id?: string | null } | null)?.match_id ?? null;
+}
 
 const decisionBatchSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
@@ -379,17 +421,19 @@ const veDichPackageSchema = z.object({
 
 type VeDichPackageValue = 20 | 30;
 
-function parseVeDichSeatFromMeta(meta: unknown): number | null {
-  if (!meta || typeof meta !== "object") return null;
-  const code = (meta as Record<string, unknown>).code;
-  if (typeof code !== "string") return null;
-  const trimmed = code.trim().toUpperCase();
-  if (!trimmed) return null;
-  // VD-{seat}.{n} hoặc VD{seat}.{n}
-  const m = /^VD-?(\d+)\.(\d+)/i.exec(trimmed);
-  if (!m) return null;
-  const seat = Number(m[1]);
-  return Number.isFinite(seat) ? seat : null;
+function getVeDichSeatFromOrderIndex(orderIndex: unknown): number | null {
+  const n = typeof orderIndex === "number" ? orderIndex : Number(orderIndex);
+  if (!Number.isFinite(n)) return null;
+  // Convention: Về đích có 12 câu placeholder, chia 4 ghế * 3 câu.
+  // order_index: 1..3 => ghế 1; 4..6 => ghế 2; 7..9 => ghế 3; 10..12 => ghế 4.
+  if (n < 1 || n > 12) return null;
+  const seat = Math.floor((n - 1) / 3) + 1;
+  return seat >= 1 && seat <= 4 ? seat : null;
+}
+
+function getVeDichSlotRangeForSeat(seat: number): { start: number; end: number } {
+  const start = (seat - 1) * 3 + 1;
+  return { start, end: start + 2 };
 }
 
 function computeVeDichDurationMsFromMeta(meta: unknown): number {
@@ -2266,8 +2310,7 @@ export async function selectVeDichPackageAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const rawValues = formData.getAll("values");
@@ -2310,11 +2353,15 @@ export async function selectVeDichPackageAction(
     if (rqErr) return { error: rqErr.message };
 
     const seat = player.seat_index;
-    const mine = (rqRows ?? []).filter(
-      (rq) => parseVeDichSeatFromMeta((rq as unknown as { meta?: unknown }).meta) === seat
-    );
+    const range = getVeDichSlotRangeForSeat(seat);
+    const mine = (rqRows ?? []).filter((rq) => {
+      const orderIndex = (rq as unknown as { order_index?: unknown }).order_index;
+      return getVeDichSeatFromOrderIndex(orderIndex) === seat;
+    });
     if (mine.length < 3) {
-      return { error: `Không tìm thấy đủ 3 câu Về đích cho ghế ${seat} (VD-${seat}.1..3).` };
+      return {
+        error: `Không tìm thấy đủ 3 slot Về đích cho ghế ${seat} (order_index ${range.start}..${range.end}).`,
+      };
     }
 
     const slots = mine
@@ -3572,8 +3619,7 @@ export async function undoLastScoreChangeAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = undoLastScoreChangeSchema.safeParse({
@@ -3684,8 +3730,7 @@ export async function submitObstacleGuessAction(
 
 export async function submitObstacleGuessByHostFormAction(formData: FormData): Promise<void> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = obstacleGuessHostSubmitSchema.safeParse({
@@ -3768,8 +3813,7 @@ export async function confirmVcnvRowDecisionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = vcnvRowDecisionSchema.safeParse({
@@ -3957,8 +4001,7 @@ export async function confirmObstacleGuessAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = obstacleGuessConfirmSchema.safeParse({
@@ -4215,8 +4258,7 @@ export async function autoScoreTangTocAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = autoScoreTangTocSchema.safeParse({ sessionId: formData.get("sessionId") });
@@ -4338,8 +4380,7 @@ export async function setVeDichQuestionValueAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = veDichValueSchema.safeParse({
@@ -4407,6 +4448,12 @@ export async function setRoundQuestionTargetPlayerAction(
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin target." };
     }
 
+    // Resolve matchId từ UUID, join_code, hoặc sessionId
+    const realMatchId = await resolveMatchIdFromRaw(supabase, parsed.data.matchId);
+    if (!realMatchId) {
+      return { error: "Không tìm thấy trận khớp với ID hoặc mã vào." };
+    }
+
     // Nếu có roundQuestionId cụ thể thì cập nhật target cho câu đó.
     // (Cho phép chọn ghế trước khi chọn câu → roundQuestionId có thể null.)
     if (parsed.data.roundQuestionId) {
@@ -4425,7 +4472,7 @@ export async function setRoundQuestionTargetPlayerAction(
       const { data: playerRow, error: playerErr } = await olympia
         .from("match_players")
         .select("id, seat_index")
-        .eq("match_id", parsed.data.matchId)
+        .eq("match_id", realMatchId)
         .eq("id", parsed.data.playerId)
         .maybeSingle();
       if (playerErr) return { error: playerErr.message };
@@ -4438,7 +4485,7 @@ export async function setRoundQuestionTargetPlayerAction(
       const { data: veDichRound, error: veDichRoundErr } = await olympia
         .from("match_rounds")
         .select("id")
-        .eq("match_id", parsed.data.matchId)
+        .eq("match_id", realMatchId)
         .eq("round_type", "ve_dich")
         .maybeSingle();
       if (veDichRoundErr) return { error: veDichRoundErr.message };
@@ -4482,7 +4529,7 @@ export async function setRoundQuestionTargetPlayerAction(
         timer_deadline: null,
         buzzer_enabled: false,
       })
-      .eq("match_id", parsed.data.matchId)
+      .eq("match_id", realMatchId)
       .eq("status", "running")
       .select("id");
     if (resetErr) return { error: resetErr.message };
@@ -4677,8 +4724,7 @@ export async function toggleStarUseAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = toggleStarSchema.safeParse({
@@ -4729,8 +4775,7 @@ export async function openStealWindowAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = openStealWindowSchema.safeParse({
@@ -4782,8 +4827,7 @@ export async function confirmVeDichMainDecisionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = confirmVeDichMainSchema.safeParse({
@@ -4950,8 +4994,7 @@ export async function confirmVeDichStealDecisionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = confirmVeDichStealSchema.safeParse({
@@ -5440,7 +5483,7 @@ export async function updateMatchAction(_: ActionState, formData: FormData): Pro
         name: z.string().min(3, "Tên trận tối thiểu 3 ký tự"),
         tournamentId: z
           .string()
-          .uuid()
+          .uuid("ID giải không hợp lệ.")
           .optional()
           .or(z.literal(""))
           .transform((val) => (val ? val : null)),
@@ -5654,7 +5697,7 @@ async function generateRoundQuestionsFromSetsAction(
 
 const updateMatchQuestionSetsSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
-  questionSetIds: z.array(z.string().uuid()).default([]),
+  questionSetIds: z.array(z.string().uuid("Bộ đề không hợp lệ.")).default([]),
 });
 
 export async function updateMatchQuestionSetsAction(
@@ -5735,7 +5778,7 @@ const updateMatchPlayersOrderSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   playerOrder: z.array(
     z.object({
-      playerId: z.string().uuid(),
+      playerId: z.string().uuid("Thí sinh không hợp lệ."),
       seatIndex: z.number().int().min(1).max(4),
     })
   ),

@@ -17,7 +17,6 @@ import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
   ArrowLeft,
   Check,
-  Hand,
   Sparkles,
   Timer,
   Undo2,
@@ -32,7 +31,6 @@ import {
   confirmVcnvRowDecisionFormAction,
   confirmVeDichMainDecisionFormAction,
   confirmVeDichStealDecisionFormAction,
-  openStealWindowFormAction,
   setCurrentQuestionFormAction,
   startSessionTimerFormAction,
   startSessionTimerAutoAction,
@@ -42,7 +40,6 @@ import {
   setScoreboardOverlayAction,
   setAnswersOverlayAction,
   setBuzzerEnabledAction,
-  setVeDichQuestionValueFormAction,
   selectVeDichPackageFormAction,
   setWaitingScreenAction,
   setGuestMediaControlAction,
@@ -181,16 +178,12 @@ function getKhoiDongCodeInfo(code: string | null): { kind: 'personal'; seat: num
   return { kind: 'personal', seat }
 }
 
-function getVeDichCodeInfo(code: string | null): { seat: number; index: number } | null {
-  if (!code) return null
-  const trimmed = code.trim().toUpperCase()
-  if (!trimmed) return null
-  const m = /^VD-?(\d+)\.(\d+)/i.exec(trimmed)
-  if (!m) return null
-  const seat = Number(m[1])
-  const index = Number(m[2])
-  if (!Number.isFinite(seat) || !Number.isFinite(index)) return null
-  return { seat, index }
+function getVeDichSeatFromOrderIndex(orderIndex: unknown): number | null {
+  const n = typeof orderIndex === 'number' ? orderIndex : Number(orderIndex)
+  if (!Number.isFinite(n)) return null
+  if (n < 1 || n > 12) return null
+  const seat = Math.floor((n - 1) / 3) + 1
+  return seat >= 1 && seat <= 4 ? seat : null
 }
 
 // KEEP force-dynamic: Host controls real-time game flow (send questions, manage timers)
@@ -574,17 +567,16 @@ export default async function OlympiaHostConsolePage({
 
   const filteredCurrentRoundQuestions = (() => {
     if (isVeDich) {
-      if (typeof vdSeat === 'number') {
-        const prefix = `VD-${vdSeat}.`
-        return currentRoundQuestions
-          .filter((q) => {
-            const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
-            return typeof code === 'string' && code.toUpperCase().startsWith(prefix)
-          })
-          .slice(0, 3)
-      }
-
+      if (typeof vdSeat !== 'number') return []
       return currentRoundQuestions
+        .filter((q) => {
+          const oi = (q as unknown as RoundQuestionRow).order_index
+          const seat = getVeDichSeatFromOrderIndex(oi)
+          return seat === vdSeat
+        })
+        .slice()
+        .sort((a, b) => ((a as unknown as RoundQuestionRow).order_index ?? 0) - ((b as unknown as RoundQuestionRow).order_index ?? 0))
+        .slice(0, 3)
     }
 
     // Khởi động: lọc theo luật mã câu (KD{seat}- / DKA-)
@@ -615,32 +607,6 @@ export default async function OlympiaHostConsolePage({
         ? liveSession.current_round_question_id
         : null
 
-  const veDichValueRaw =
-    currentRoundQuestion?.meta && typeof currentRoundQuestion.meta === 'object'
-      ? (currentRoundQuestion.meta as Record<string, unknown>).ve_dich_value
-      : undefined
-  const veDichValue = typeof veDichValueRaw === 'number' ? veDichValueRaw : veDichValueRaw ? Number(veDichValueRaw) : undefined
-  const veDichValueText = veDichValue === 20 || veDichValue === 30 ? String(veDichValue) : ''
-
-  const veDichOrder = (() => {
-    const scoreByPlayerId = new Map<string, number>()
-    for (const s of scores) scoreByPlayerId.set(s.playerId, s.totalScore ?? 0)
-    return players
-      .slice()
-      .sort((a, b) => {
-        const sa = scoreByPlayerId.get(a.id) ?? 0
-        const sb = scoreByPlayerId.get(b.id) ?? 0
-        if (sb !== sa) return sb - sa
-        // Tie-break: vị trí đứng/ghế
-        return (a.seat_index ?? 999) - (b.seat_index ?? 999)
-      })
-      .map((p) => ({
-        playerId: p.id,
-        seat: p.seat_index ?? null,
-        name: p.display_name,
-        score: scoreByPlayerId.get(p.id) ?? 0,
-      }))
-  })()
 
   const veDichPackageByPlayerId = (() => {
     if (!liveSession?.current_round_id) {
@@ -649,12 +615,12 @@ export default async function OlympiaHostConsolePage({
     const rqInVeDich = roundQuestions.filter((q) => q.match_round_id === liveSession.current_round_id)
     const bySeat = new Map<number, Array<RoundQuestionRow>>()
     for (const q of rqInVeDich) {
-      const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
-      const info = getVeDichCodeInfo(code)
-      if (!info) continue
-      const list = bySeat.get(info.seat) ?? []
+      const oi = (q as unknown as RoundQuestionRow).order_index
+      const seat = getVeDichSeatFromOrderIndex(oi)
+      if (!seat) continue
+      const list = bySeat.get(seat) ?? []
       list.push(q as unknown as RoundQuestionRow)
-      bySeat.set(info.seat, list)
+      bySeat.set(seat, list)
     }
 
     const out = new Map<string, { values: Array<20 | 30 | null>; confirmed: boolean }>()
@@ -677,33 +643,6 @@ export default async function OlympiaHostConsolePage({
     return out
   })()
 
-  const veDichQuestionsBySeat = (() => {
-    const map = new Map<number, Array<RoundQuestionRow>>()
-    if (!liveSession?.current_round_id) return map
-    const rqInVeDich = roundQuestions.filter((q) => q.match_round_id === liveSession.current_round_id)
-    for (const q of rqInVeDich) {
-      const code = getMetaCode((q as unknown as RoundQuestionRow).meta)
-      const info = getVeDichCodeInfo(code)
-      if (!info) continue
-      const seatList = map.get(info.seat) ?? []
-      seatList.push(q as unknown as RoundQuestionRow)
-      map.set(info.seat, seatList)
-    }
-    for (const [seat, list] of map) {
-      list.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-      map.set(seat, list.slice(0, 3))
-    }
-    return map
-  })()
-
-  const nextVeDichChooserPlayerId = (() => {
-    for (const p of veDichOrder) {
-      if (!p.playerId) continue
-      const pkg = veDichPackageByPlayerId.get(p.playerId) ?? null
-      if (!pkg?.confirmed) return p.playerId
-    }
-    return null
-  })()
 
   return (
     <section className="space-y-4">
@@ -1123,99 +1062,70 @@ export default async function OlympiaHostConsolePage({
                   {isVeDich ? (
                     <div className="grid gap-2">
                       <div className="rounded-md border bg-slate-50 p-3">
-                        <p className="text-xs font-semibold text-slate-700">Chọn gói Về đích (theo thứ tự)</p>
+                        <p className="text-xs font-semibold text-slate-700">Về đích: Chọn thí sinh → Chọn gói (3 câu)</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Thứ tự thi theo điểm hiện tại (cao → thấp). Chỉ người tiếp theo mới được chọn gói.
+                          Tất cả thao tác trên Host. Mỗi câu chọn 20 hoặc 30.
                         </p>
-                        <div className="mt-3 grid gap-2">
-                          {veDichOrder.map((p) => {
-                            const isNext = nextVeDichChooserPlayerId === p.playerId
-                            const seatText = p.seat != null ? `Ghế ${p.seat}` : 'Ghế —'
-                            const nameText = p.name ? ` · ${p.name}` : ''
-                            const questions = typeof p.seat === 'number' ? (veDichQuestionsBySeat.get(p.seat) ?? []) : []
-                            const pkg = veDichPackageByPlayerId.get(p.playerId) ?? null
-                            const confirmed = Boolean(pkg?.confirmed)
-                            return (
-                              <div key={p.playerId} className="rounded-md border bg-background p-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium truncate">{seatText}{nameText}</p>
-                                    <p className="text-[11px] text-muted-foreground">Điểm: {p.score}</p>
-                                  </div>
-                                  <div className="text-[11px] text-muted-foreground">{confirmed ? 'Đã chốt' : isNext ? 'Đang chọn…' : 'Chờ đến lượt'}</div>
-                                </div>
-                                <form action={selectVeDichPackageFormAction} className="mt-2 grid gap-2">
-                                  <input type="hidden" name="matchId" value={match.id} />
-                                  <input type="hidden" name="playerId" value={p.playerId} />
 
-                                  <div className="grid grid-cols-3 gap-2">
-                                    {questions.map((rq, idx) => {
-                                      const valueRaw = (rq.meta && typeof rq.meta === 'object' ? (rq.meta as Record<string, unknown>).ve_dich_value : undefined)
-                                      const v = typeof valueRaw === 'number' ? valueRaw : (valueRaw ? Number(valueRaw) : undefined)
-                                      const valueText = v === 20 || v === 30 ? String(v) : ''
-                                      return (
-                                        <select
-                                          key={rq.id}
-                                          name="values"
-                                          defaultValue={valueText}
-                                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                                          disabled={!isNext || confirmed}
-                                          aria-label={`Giá trị câu ${idx + 1}`}
-                                        >
-                                          <option value="">20/30</option>
-                                          <option value="20">20</option>
-                                          <option value="30">30</option>
-                                        </select>
-                                      )
-                                    })}
-                                  </div>
+                        {typeof vdSeat !== 'number' ? (
+                          <p className="mt-3 text-xs text-muted-foreground">Hãy chọn thí sinh trước (dropdown ở trên).</p>
+                        ) : (() => {
+                          const selectedPlayer = players.find((x) => x.seat_index === vdSeat) ?? null
+                          if (!selectedPlayer) {
+                            return <p className="mt-3 text-xs text-muted-foreground">Không tìm thấy thí sinh của Ghế {vdSeat}.</p>
+                          }
+                          const pkg = veDichPackageByPlayerId.get(selectedPlayer.id) ?? null
+                          const confirmed = Boolean(pkg?.confirmed)
+                          const values = pkg?.values ?? [null, null, null]
+                          return (
+                            <div className="mt-3 rounded-md border bg-background p-2">
+                              <p className="text-xs font-medium truncate">Ghế {vdSeat} · {selectedPlayer.display_name ?? 'Thí sinh'}</p>
+                              <p className="text-[11px] text-muted-foreground">{confirmed ? 'Đã chốt gói' : 'Chưa chốt gói'}</p>
+                              <form action={selectVeDichPackageFormAction} className="mt-2 grid gap-2">
+                                <input type="hidden" name="matchId" value={match.id} />
+                                <input type="hidden" name="playerId" value={selectedPlayer.id} />
 
-                                  <div className="flex justify-end">
-                                    <Button
-                                      type="submit"
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-8"
-                                      disabled={!isNext || confirmed}
-                                      aria-label="Xác nhận gói Về đích"
-                                      title="Xác nhận gói Về đích"
+                                <div className="grid grid-cols-3 gap-2">
+                                  {values.map((v, idx) => (
+                                    <select
+                                      key={idx}
+                                      name="values"
+                                      defaultValue={v === 20 || v === 30 ? String(v) : ''}
+                                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                                      disabled={confirmed}
+                                      aria-label={`Giá trị câu ${idx + 1}`}
                                     >
-                                      <Check className="h-4 w-4 mr-1" />
-                                      Xác nhận gói
-                                    </Button>
-                                  </div>
-                                </form>
-                              </div>
-                            )
-                          })}
-                        </div>
+                                      <option value="">20/30</option>
+                                      <option value="20">20</option>
+                                      <option value="30">30</option>
+                                    </select>
+                                  ))}
+                                </div>
+
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8"
+                                    disabled={confirmed}
+                                    aria-label="Xác nhận gói Về đích"
+                                    title="Xác nhận gói Về đích"
+                                  >
+                                    <Check className="h-4 w-4 mr-1" />
+                                    Xác nhận gói
+                                  </Button>
+                                </div>
+                              </form>
+                            </div>
+                          )
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
-                        <form action={setVeDichQuestionValueFormAction} className="flex gap-2">
-                          <input type="hidden" name="matchId" value={match.id} />
-                          <input type="hidden" name="roundQuestionId" value={liveSession?.current_round_question_id ?? ''} />
-                          <select
-                            name="value"
-                            defaultValue={veDichValueText}
-                            className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                            aria-label="Giá trị câu"
-                          >
-                            <option value="">20/30</option>
-                            <option value="20">20</option>
-                            <option value="30">30</option>
-                          </select>
-                          <Button
-                            type="submit"
-                            size="icon-sm"
-                            title="Lưu giá trị"
-                            aria-label="Lưu giá trị"
-                            variant="outline"
-                            disabled={!liveSession?.current_round_question_id}
-                          >
-                            <Check />
-                          </Button>
-                        </form>
+                        <div className="flex items-center text-xs text-muted-foreground">
+                          Giá trị 20/30 được chốt theo gói (3 dropdown).
+                        </div>
 
                         <form action={toggleStarUseFormAction} className="flex justify-end">
                           <input type="hidden" name="matchId" value={match.id} />
@@ -1236,13 +1146,6 @@ export default async function OlympiaHostConsolePage({
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <form action={openStealWindowFormAction}>
-                          <input type="hidden" name="matchId" value={match.id} />
-                          <input type="hidden" name="durationMs" value={5000} />
-                          <Button type="submit" size="icon-sm" variant="outline" title="Mở cửa cướp (5s)" aria-label="Mở cửa cướp (5s)">
-                            <Hand />
-                          </Button>
-                        </form>
                         <form action={confirmVeDichMainDecisionFormAction} className="flex gap-1">
                           <input type="hidden" name="sessionId" value={liveSession!.id} />
                           <Button type="submit" size="icon-sm" name="decision" value="correct" title="Chính: Đúng" aria-label="Chính: Đúng">

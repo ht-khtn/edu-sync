@@ -29,31 +29,16 @@ export function ServiceWorkerRegistration() {
     registerServiceWorker()
       .then(async (registration) => {
         if (registration) {
-          // Aggressive full precache immediately after SW ready
-          // Send all pages + common image patterns to cache
-          const allPagesToCache = [
-            '/admin',
-            '/admin/violation-entry',
-            '/admin/violation-history',
-            '/admin/violation-stats',
-            '/admin/leaderboard',
-            '/admin/criteria',
-            '/admin/accounts',
-            '/admin/roles',
-            '/admin/classes',
-            '/client',
-            '/client/violations',
-            '/client/leaderboard',
-            '/offline',
+          // Minimal precache: chỉ cache khi user thực sự visit (on-demand)
+          // Tránh aggressive precache để tránh lưu các page không cần thiết
+          // Pages sẽ được cache tự động khi user visit theo cache strategy
+
+          // Optional: preload critical static assets (not HTML pages)
+          const criticalAssets = [
+            '/manifest.webmanifest',
           ];
 
-          const imagePatterns = [
-            '/globe.svg',
-            '/file.svg',
-            '/window.svg',
-          ];
-
-          const urlsToCache = [...allPagesToCache, ...imagePatterns];
+          const urlsToCache = criticalAssets;
 
           // Check which URLs are already cached to avoid re-caching
           const cache = await caches.open(CACHE_NAMES.pages);
@@ -134,7 +119,7 @@ export function ServiceWorkerRegistration() {
         if (hasUpdate && !updateAvailable) {
           updateAvailable = true;
           console.log('Service worker update available');
-          
+
           // Auto-reload to apply update after 5 seconds
           const timer = setTimeout(() => {
             skipWaitingServiceWorker().then((success) => {
@@ -144,7 +129,7 @@ export function ServiceWorkerRegistration() {
               }
             });
           }, 5000);
-          
+
           return () => clearTimeout(timer);
         }
       });

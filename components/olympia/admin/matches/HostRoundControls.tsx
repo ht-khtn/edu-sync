@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Timer } from 'lucide-react'
 
 export type ActionState = {
   error?: string | null
@@ -38,10 +39,12 @@ type MatchRound = {
 
 type Props = {
   matchId: string
+  sessionId?: string | null
   rounds: MatchRound[]
   players?: Array<{ id: string; seat_index: number | null; display_name: string | null }>
   currentQuestionState?: string | null
   currentRoundType?: string | null
+  timerDeadline?: string | null
   buzzerEnabled?: boolean | null
   showScoreboardOverlay?: boolean | null
   showAnswersOverlay?: boolean | null
@@ -56,14 +59,19 @@ type Props = {
   setAnswersOverlayAction: HostControlAction
   setBuzzerEnabledAction: HostControlAction
   setRoundQuestionTargetPlayerAction: HostControlAction
+
+  startSessionTimerAutoAction: HostControlAction
+  expireSessionTimerAction: HostControlAction
 }
 
 export function HostRoundControls({
   matchId,
+  sessionId,
   rounds,
   players,
   currentQuestionState,
   currentRoundType,
+  timerDeadline,
   buzzerEnabled,
   showScoreboardOverlay,
   showAnswersOverlay,
@@ -77,6 +85,8 @@ export function HostRoundControls({
   setAnswersOverlayAction,
   setBuzzerEnabledAction,
   setRoundQuestionTargetPlayerAction,
+  startSessionTimerAutoAction,
+  expireSessionTimerAction,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
@@ -91,12 +101,16 @@ export function HostRoundControls({
   const [answersState, answersAction, answersPending] = useActionState(setAnswersOverlayAction, initialState)
   const [buzzerState, buzzerAction, buzzerPending] = useActionState(setBuzzerEnabledAction, initialState)
   const [targetState, targetAction, targetPending] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
+  const [timerStartState, timerStartAction, timerStartPending] = useActionState(startSessionTimerAutoAction, initialState)
+  const [timerExpireState, timerExpireAction, timerExpirePending] = useActionState(expireSessionTimerAction, initialState)
   const lastRoundToastRef = useRef<string | null>(null)
   const lastWaitingToastRef = useRef<string | null>(null)
   const lastScoreboardToastRef = useRef<string | null>(null)
   const lastAnswersToastRef = useRef<string | null>(null)
   const lastBuzzerToastRef = useRef<string | null>(null)
   const lastTargetToastRef = useRef<string | null>(null)
+  const lastTimerStartToastRef = useRef<string | null>(null)
+  const lastTimerExpireToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const waitingFormRef = useRef<HTMLFormElement | null>(null)
@@ -104,6 +118,8 @@ export function HostRoundControls({
   const answersFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
+  const timerStartFormRef = useRef<HTMLFormElement | null>(null)
+  const timerExpireFormRef = useRef<HTMLFormElement | null>(null)
 
   const roundById = useMemo(() => {
     const map = new Map<string, MatchRound>()
@@ -115,18 +131,29 @@ export function HostRoundControls({
   const [roundId, setRoundId] = useState<string>(() => currentRound?.id ?? '')
   const selectedRoundType = roundId ? roundById.get(roundId)?.round_type ?? '' : ''
 
-  const lastServerRoundIdRef = useRef<string>('')
-  const lastServerTargetPlayerIdRef = useRef<string>('')
   const lastSubmittedRoundIdRef = useRef<string | null>(null)
   const lastSubmittedRoundTypeRef = useRef<string | null>(null)
   const lastSubmittedTargetPlayerIdRef = useRef<string | null>(null)
   const lastAppliedUrlRef = useRef<string | null>(null)
 
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
-  const [waitingChecked, setWaitingChecked] = useState<boolean>(() => isWaitingScreenOn(currentQuestionState))
-  const [scoreboardChecked, setScoreboardChecked] = useState<boolean>(() => (showScoreboardOverlay ?? false))
-  const [answersChecked, setAnswersChecked] = useState<boolean>(() => (showAnswersOverlay ?? false))
-  const [buzzerChecked, setBuzzerChecked] = useState<boolean>(() => (buzzerEnabled ?? true))
+
+  type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
+  const serverViewMode: HostViewMode = showAnswersOverlay
+    ? 'answers'
+    : showScoreboardOverlay
+      ? 'scoreboard'
+      : isWaitingScreenOn(currentQuestionState)
+        ? 'waiting'
+        : 'question'
+
+  const isViewPending = waitingPending || scoreboardPending || answersPending
+  const [optimisticViewMode, setOptimisticViewMode] = useState<HostViewMode>(() => serverViewMode)
+  const viewMode: HostViewMode = isViewPending ? optimisticViewMode : serverViewMode
+
+  const serverBuzzerChecked = buzzerEnabled ?? true
+  const [optimisticBuzzerChecked, setOptimisticBuzzerChecked] = useState<boolean>(() => serverBuzzerChecked)
+  const buzzerChecked = buzzerPending ? optimisticBuzzerChecked : serverBuzzerChecked
 
   const roundMessage = roundState.error ?? roundState.success
   const waitingMessage = waitingState.error ?? waitingState.success
@@ -160,7 +187,6 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
-      router.refresh()
     }
   }, [waitingState.error, waitingState.success, router])
 
@@ -174,7 +200,6 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
-      router.refresh()
     }
   }, [scoreboardState.error, scoreboardState.success, router])
 
@@ -188,9 +213,28 @@ export function HostRoundControls({
       toast.error(message)
     } else {
       toast.success(message)
-      router.refresh()
     }
   }, [answersState.error, answersState.success, router])
+
+  useEffect(() => {
+    const message = timerStartState.error ?? timerStartState.success
+    if (!message) return
+    if (lastTimerStartToastRef.current === message) return
+    lastTimerStartToastRef.current = message
+
+    if (timerStartState.error) toast.error(message)
+    else toast.success(message)
+  }, [timerStartState.error, timerStartState.success])
+
+  useEffect(() => {
+    const message = timerExpireState.error ?? timerExpireState.success
+    if (!message) return
+    if (lastTimerExpireToastRef.current === message) return
+    lastTimerExpireToastRef.current = message
+
+    if (timerExpireState.error) toast.error(message)
+    else toast.success(message)
+  }, [timerExpireState.error, timerExpireState.success])
 
   useEffect(() => {
     const message = buzzerState.error ?? buzzerState.success
@@ -218,67 +262,6 @@ export function HostRoundControls({
     }
   }, [targetState.error, targetState.success, router])
 
-  // Rollback local UI when actions fail (không để UI lệch server).
-  useEffect(() => {
-    if (!roundState.error) return
-    const serverId = currentRound?.id ?? ''
-    lastServerRoundIdRef.current = serverId
-    setRoundId(serverId)
-    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
-    setScoreboardChecked(showScoreboardOverlay ?? false)
-    setAnswersChecked(showAnswersOverlay ?? false)
-    setBuzzerChecked(buzzerEnabled ?? true)
-  }, [roundState.error, currentRound?.id, currentQuestionState, showScoreboardOverlay, showAnswersOverlay, buzzerEnabled])
-
-  useEffect(() => {
-    if (!targetState.error) return
-    const serverTarget = currentTargetPlayerId ?? ''
-    lastServerTargetPlayerIdRef.current = serverTarget
-    setTargetPlayerId(serverTarget)
-  }, [targetState.error, currentTargetPlayerId])
-
-  useEffect(() => {
-    if (!waitingState.error) return
-    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
-  }, [waitingState.error, currentQuestionState])
-
-  useEffect(() => {
-    if (!scoreboardState.error) return
-    setScoreboardChecked(false)
-  }, [scoreboardState.error])
-
-  useEffect(() => {
-    if (!answersState.error) return
-    setAnswersChecked(false)
-  }, [answersState.error])
-
-  useEffect(() => {
-    if (!buzzerState.error) return
-    setBuzzerChecked(buzzerEnabled ?? true)
-  }, [buzzerState.error, buzzerEnabled])
-
-  useEffect(() => {
-    const nextServerId = currentRound?.id ?? ''
-    setRoundId((prev) => {
-      const prevServerId = lastServerRoundIdRef.current
-      if (nextServerId === prevServerId) return prev
-      const shouldSync = prev.length === 0 || prev === prevServerId
-      lastServerRoundIdRef.current = nextServerId
-      return shouldSync ? nextServerId : prev
-    })
-  }, [currentRound?.id])
-
-  useEffect(() => {
-    const nextServerTarget = currentTargetPlayerId ?? ''
-    setTargetPlayerId((prev) => {
-      const prevServerTarget = lastServerTargetPlayerIdRef.current
-      if (nextServerTarget === prevServerTarget) return prev
-      const shouldSync = prev.length === 0 || prev === prevServerTarget
-      lastServerTargetPlayerIdRef.current = nextServerTarget
-      return shouldSync ? nextServerTarget : prev
-    })
-  }, [currentTargetPlayerId])
-
   // Chỉ update query params sau khi server action thành công (tránh navigation/refresh trước khi action chạy xong).
   useEffect(() => {
     if (!roundState.success || roundState.error) return
@@ -296,21 +279,6 @@ export function HostRoundControls({
     if (lastAppliedUrlRef.current === nextUrl) return
     lastAppliedUrlRef.current = nextUrl
     router.replace(nextUrl)
-
-    // Đổi vòng: đảm bảo host SSR cập nhật ngay (tránh phải F5 lần 2).
-    router.refresh()
-
-    // Optimistic UI: sau khi đổi vòng, đưa về màn chờ và tắt overlay.
-    setWaitingChecked(true)
-    setScoreboardChecked(false)
-    // Không tự bật buzzer ở đây; server đang set false.
-    setBuzzerChecked(false)
-
-    const submittedRoundId = lastSubmittedRoundIdRef.current
-    if (submittedRoundId) {
-      lastServerRoundIdRef.current = submittedRoundId
-      setRoundId(submittedRoundId)
-    }
   }, [roundState, baseParams, pathname, router])
 
   useEffect(() => {
@@ -344,36 +312,22 @@ export function HostRoundControls({
     if (lastAppliedUrlRef.current === nextUrl) return
     lastAppliedUrlRef.current = nextUrl
     router.replace(nextUrl)
-
-    // Đổi thí sinh/thi chung-thi riêng: action có reset live_session + target, cần refresh SSR để mọi panel sync ngay.
-    router.refresh()
-
-    const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
-    if (submittedTargetId != null) {
-      lastServerTargetPlayerIdRef.current = submittedTargetId
-      setTargetPlayerId(submittedTargetId)
-    }
   }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])
 
-  useEffect(() => {
-    setWaitingChecked(isWaitingScreenOn(currentQuestionState))
-  }, [currentQuestionState])
+  const canStartTimer = Boolean(
+    sessionId &&
+    currentRoundQuestionId &&
+    currentQuestionState === 'showing' &&
+    true
+  )
 
-  useEffect(() => {
-    setScoreboardChecked(showScoreboardOverlay ?? false)
-  }, [showScoreboardOverlay])
-
-  useEffect(() => {
-    setAnswersChecked(showAnswersOverlay ?? false)
-  }, [showAnswersOverlay])
-
-  useEffect(() => {
-    // mặc định bật nếu chưa có dữ liệu (trước khi migrate)
-    setBuzzerChecked(buzzerEnabled ?? true)
-  }, [buzzerEnabled])
-
-  type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
-  const viewMode: HostViewMode = answersChecked ? 'answers' : scoreboardChecked ? 'scoreboard' : waitingChecked ? 'waiting' : 'question'
+  const canExpireTimer = Boolean(
+    sessionId &&
+    currentRoundQuestionId &&
+    currentQuestionState === 'showing' &&
+    Boolean(timerDeadline) &&
+    (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc')
+  )
 
   const setHiddenEnabledAndSubmit = (form: HTMLFormElement | null, enabled: boolean) => {
     if (!form) return
@@ -389,9 +343,7 @@ export function HostRoundControls({
     const nextScoreboard = next === 'scoreboard'
     const nextAnswers = next === 'answers'
 
-    setWaitingChecked(nextWaiting)
-    setScoreboardChecked(nextScoreboard)
-    setAnswersChecked(nextAnswers)
+    setOptimisticViewMode(next)
 
     queueMicrotask(() => {
       setHiddenEnabledAndSubmit(waitingFormRef.current, nextWaiting)
@@ -402,6 +354,39 @@ export function HostRoundControls({
 
   return (
     <div className="grid gap-3">
+      <div className="flex items-center justify-end gap-2">
+        <form ref={timerStartFormRef} action={timerStartAction}>
+          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!canStartTimer || timerStartPending}
+            title="Bấm giờ (theo luật vòng hiện tại)"
+            aria-label="Bấm giờ"
+          >
+            <Timer className="h-4 w-4 mr-1" />
+            Bấm giờ
+          </Button>
+        </form>
+
+        <form ref={timerExpireFormRef} action={timerExpireAction}>
+          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!canExpireTimer || timerExpirePending}
+            title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
+            aria-label="Hết giờ"
+          >
+            Hết giờ
+          </Button>
+        </form>
+      </div>
+
       <form
         ref={roundFormRef}
         action={roundAction}
@@ -607,17 +592,17 @@ export function HostRoundControls({
 
       <form ref={waitingFormRef} action={waitingAction} className="hidden" aria-hidden="true">
         <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={waitingChecked ? '1' : '0'} />
+        <input type="hidden" name="enabled" value={viewMode === 'waiting' ? '1' : '0'} />
       </form>
 
       <form ref={scoreboardFormRef} action={scoreboardAction} className="hidden" aria-hidden="true">
         <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={scoreboardChecked ? '1' : '0'} />
+        <input type="hidden" name="enabled" value={viewMode === 'scoreboard' ? '1' : '0'} />
       </form>
 
       <form ref={answersFormRef} action={answersAction} className="hidden" aria-hidden="true">
         <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={answersChecked ? '1' : '0'} />
+        <input type="hidden" name="enabled" value={viewMode === 'answers' ? '1' : '0'} />
       </form>
 
       <form ref={buzzerFormRef} action={buzzerAction} className="grid gap-2">
@@ -629,7 +614,7 @@ export function HostRoundControls({
             checked={buzzerChecked}
             onCheckedChange={(v) => {
               const next = Boolean(v)
-              setBuzzerChecked(next)
+              setOptimisticBuzzerChecked(next)
               queueMicrotask(() => buzzerFormRef.current?.requestSubmit())
             }}
             disabled={!currentRoundType || buzzerPending}

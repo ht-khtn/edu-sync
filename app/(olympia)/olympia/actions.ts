@@ -356,14 +356,28 @@ const openStealWindowSchema = z.object({
   durationMs: z.number().int().min(1000).max(120000).optional().default(5000),
 });
 
+const startTimerAutoSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+});
+
+const expireTimerSchema = z.object({
+  sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+});
+
 const veDichPackageSchema = z.object({
   matchId: z.string().uuid("Trận không hợp lệ."),
   playerId: z.string().uuid("Thí sinh không hợp lệ."),
-  value: z
-    .number()
-    .int()
-    .refine((v) => v === 20 || v === 30, "Gói chỉ nhận 20 hoặc 30."),
+  values: z
+    .array(
+      z
+        .number()
+        .int()
+        .refine((v) => v === 20 || v === 30, "Gói chỉ nhận 20 hoặc 30.")
+    )
+    .length(3, "Cần chọn đủ 3 câu (20/30) theo thứ tự."),
 });
+
+type VeDichPackageValue = 20 | 30;
 
 function parseVeDichSeatFromMeta(meta: unknown): number | null {
   if (!meta || typeof meta !== "object") return null;
@@ -376,6 +390,13 @@ function parseVeDichSeatFromMeta(meta: unknown): number | null {
   if (!m) return null;
   const seat = Number(m[1]);
   return Number.isFinite(seat) ? seat : null;
+}
+
+function computeVeDichDurationMsFromMeta(meta: unknown): number {
+  if (!meta || typeof meta !== "object") return 15000;
+  const raw = (meta as Record<string, unknown>).ve_dich_value;
+  const val = typeof raw === "number" ? raw : Number(raw);
+  return val === 30 ? 20000 : 15000;
 }
 
 const confirmVeDichMainSchema = z.object({
@@ -1254,6 +1275,12 @@ export async function setQuestionStateAction(
       .update({
         question_state: questionState,
         timer_deadline: null,
+        ...(questionState === "showing"
+          ? {
+              show_scoreboard_overlay: false,
+              show_answers_overlay: false,
+            }
+          : {}),
         ...(buzzerEnabledPatch != null ? { buzzer_enabled: buzzerEnabledPatch } : {}),
       })
       .eq("id", session.id);
@@ -1335,6 +1362,133 @@ export async function startSessionTimerAction(
     return { success: "Đã bắt đầu đếm giờ." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể bắt đầu đếm giờ." };
+  }
+}
+
+export async function startSessionTimerAutoAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = startTimerAutoSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm giờ." };
+    }
+
+    const { data: session, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select(
+        "id, status, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline"
+      )
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionErr) return { error: sessionErr.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+    if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
+      return { error: "Host chưa mở câu hỏi/cửa cướp để bấm giờ." };
+    }
+
+    if (session.timer_deadline) {
+      const remaining = Date.parse(session.timer_deadline) - Date.now();
+      if (Number.isFinite(remaining) && remaining > 0) {
+        return { error: "Timer đang chạy." };
+      }
+    }
+
+    const roundType =
+      (session as unknown as { current_round_type?: string | null }).current_round_type ?? null;
+    const currentRoundId =
+      (session as unknown as { current_round_id?: string | null }).current_round_id ?? null;
+    const currentRqId =
+      (session as unknown as { current_round_question_id?: string | null })
+        .current_round_question_id ?? null;
+
+    let durationMs = 5000;
+    if (roundType === "khoi_dong") durationMs = 5000;
+    else if (roundType === "vcnv") durationMs = 15000;
+    else if (roundType === "ve_dich" && currentRqId) {
+      const { data: rq, error: rqErr } = await olympia
+        .from("round_questions")
+        .select("id, meta")
+        .eq("id", currentRqId)
+        .maybeSingle();
+      if (rqErr) return { error: rqErr.message };
+      durationMs = computeVeDichDurationMsFromMeta((rq as unknown as { meta?: unknown })?.meta);
+    } else if (roundType === "tang_toc" && currentRoundId && currentRqId) {
+      const { data: rqs, error: rqsErr } = await olympia
+        .from("round_questions")
+        .select("id, order_index")
+        .eq("match_round_id", currentRoundId)
+        .order("order_index", { ascending: true });
+      if (rqsErr) return { error: rqsErr.message };
+      const list = (rqs as unknown as Array<{ id: string; order_index: number }> | null) ?? [];
+      const idx = list.findIndex((r) => r.id === currentRqId);
+      // Theo luật: TT 1-2 = 20s, TT 3-4 = 30s.
+      if (idx === 0 || idx === 1) durationMs = 20000;
+      else if (idx === 2 || idx === 3) durationMs = 30000;
+      else durationMs = 20000;
+    }
+
+    const deadline = new Date(Date.now() + durationMs).toISOString();
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({ timer_deadline: deadline })
+      .eq("id", session.id);
+    if (updateErr) return { error: updateErr.message };
+
+    return { success: "Đã bắt đầu đếm giờ." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể bắt đầu đếm giờ." };
+  }
+}
+
+export async function expireSessionTimerAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = expireTimerSchema.safeParse({
+      sessionId: formData.get("sessionId"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin hết giờ." };
+    }
+
+    const { data: session, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select("id, status, question_state, current_round_question_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    if (sessionErr) return { error: sessionErr.message };
+    if (!session) return { error: "Không tìm thấy phòng thi." };
+    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+    if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
+      return { error: "Host chưa mở câu hỏi/cửa cướp để hết giờ." };
+    }
+
+    const deadline = new Date(Date.now() - 1000).toISOString();
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({ timer_deadline: deadline })
+      .eq("id", session.id);
+    if (updateErr) return { error: updateErr.message };
+
+    return { success: "Đã đặt timer về hết giờ." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể đặt hết giờ." };
   }
 }
 
@@ -1769,7 +1923,9 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     const sessionId = parsed.data.sessionId;
     const { data: session, error } = await olympia
       .from("live_sessions")
-      .select("id, status, match_id, current_round_question_id, current_round_type, question_state")
+      .select(
+        "id, status, match_id, current_round_question_id, current_round_type, question_state, timer_deadline"
+      )
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -1780,6 +1936,22 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     }
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
     if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang mở." };
+
+    const isVeDichStealWindow =
+      session.current_round_type === "ve_dich" && session.question_state === "answer_revealed";
+    const canAnswerNow = session.question_state === "showing" || isVeDichStealWindow;
+    if (!canAnswerNow) {
+      return { error: "Host chưa mở câu hỏi/cửa cướp để nhận đáp án." };
+    }
+
+    const deadlineIso =
+      (session as unknown as { timer_deadline?: string | null }).timer_deadline ?? null;
+    if (deadlineIso) {
+      const remaining = Date.parse(deadlineIso) - Date.now();
+      if (Number.isFinite(remaining) && remaining <= 0) {
+        return { error: "Hết giờ." };
+      }
+    }
 
     const { data: playerRow, error: playerError } = await olympia
       .from("match_players")
@@ -2098,10 +2270,12 @@ export async function selectVeDichPackageAction(
     const { supabase } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
 
+    const rawValues = formData.getAll("values");
+
     const parsed = veDichPackageSchema.safeParse({
       matchId: formData.get("matchId"),
       playerId: formData.get("playerId"),
-      value: formData.get("value") ? Number(formData.get("value")) : NaN,
+      values: rawValues.map((v) => (typeof v === "string" ? Number(v) : NaN)),
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chọn gói Về đích." };
@@ -2143,13 +2317,118 @@ export async function selectVeDichPackageAction(
       return { error: `Không tìm thấy đủ 3 câu Về đích cho ghế ${seat} (VD-${seat}.1..3).` };
     }
 
-    const updates = mine.slice(0, 3).map((rq) => {
+    const slots = mine
+      .slice()
+      .sort((a, b) => ((a.order_index ?? 0) as number) - ((b.order_index ?? 0) as number))
+      .slice(0, 3);
+
+    const alreadyConfirmed = slots.some((rq) =>
+      Boolean((rq as unknown as { question_set_item_id?: unknown }).question_set_item_id)
+    );
+    if (alreadyConfirmed) {
+      return { error: `Ghế ${seat} đã chốt gói Về đích rồi.` };
+    }
+
+    const { data: matchSets, error: matchSetsErr } = await olympia
+      .from("match_question_sets")
+      .select("question_set_id")
+      .eq("match_id", parsed.data.matchId);
+    if (matchSetsErr) return { error: matchSetsErr.message };
+    const questionSetIds = (matchSets ?? [])
+      .map((r) => (r as unknown as { question_set_id?: string | null }).question_set_id ?? null)
+      .filter((id): id is string => Boolean(id));
+    if (questionSetIds.length === 0) {
+      return { error: "Trận chưa gắn bộ đề (match_question_sets)." };
+    }
+
+    type PoolItem = {
+      id: string;
+      code: string | null;
+      question_text: string;
+      answer_text: string;
+      note: string | null;
+    };
+
+    const [{ data: pool20, error: pool20Err }, { data: pool30, error: pool30Err }] =
+      await Promise.all([
+        olympia
+          .from("question_set_items")
+          .select("id, code, question_text, answer_text, note")
+          .in("question_set_id", questionSetIds)
+          .or("code.ilike.VD-20.%,code.ilike.VD20.%"),
+        olympia
+          .from("question_set_items")
+          .select("id, code, question_text, answer_text, note")
+          .in("question_set_id", questionSetIds)
+          .or("code.ilike.VD-30.%,code.ilike.VD30.%"),
+      ]);
+
+    if (pool20Err) return { error: pool20Err.message };
+    if (pool30Err) return { error: pool30Err.message };
+
+    const normalizedPool20 = (pool20 as unknown as PoolItem[] | null) ?? [];
+    const normalizedPool30 = (pool30 as unknown as PoolItem[] | null) ?? [];
+
+    if (normalizedPool20.length === 0 || normalizedPool30.length === 0) {
+      return {
+        error:
+          "Không tìm thấy pool câu Về đích (cần question_set_items.code bắt đầu bằng VD-20. và VD-30.).",
+      };
+    }
+
+    const { data: usedRows, error: usedErr } = await olympia
+      .from("round_questions")
+      .select("question_set_item_id")
+      .eq("match_round_id", session.current_round_id)
+      .not("question_set_item_id", "is", null);
+    if (usedErr) return { error: usedErr.message };
+
+    const used = new Set<string>();
+    for (const r of usedRows ?? []) {
+      const id =
+        (r as unknown as { question_set_item_id?: string | null }).question_set_item_id ?? null;
+      if (id) used.add(id);
+    }
+
+    const pickOne = (candidates: PoolItem[]): PoolItem | null => {
+      const eligible = candidates.filter((it) => !used.has(it.id));
+      if (eligible.length === 0) return null;
+      const chosen = eligible[Math.floor(Math.random() * eligible.length)] ?? null;
+      if (!chosen) return null;
+      used.add(chosen.id);
+      return chosen;
+    };
+
+    const values = parsed.data.values as VeDichPackageValue[];
+    const chosenItems: PoolItem[] = [];
+    for (const v of values) {
+      const item = pickOne(v === 20 ? normalizedPool20 : normalizedPool30);
+      if (!item) {
+        return {
+          error:
+            v === 20
+              ? "Hết câu trong pool VD-20 (hoặc đã bị trùng)."
+              : "Hết câu trong pool VD-30 (hoặc đã bị trùng).",
+        };
+      }
+      chosenItems.push(item);
+    }
+
+    const updates = slots.map((rq, idx) => {
       const meta = (rq as unknown as { meta?: unknown }).meta;
       const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
-      const nextMeta = { ...metaObj, ve_dich_value: parsed.data.value };
+      const nextMeta = { ...metaObj, ve_dich_value: values[idx] };
+      const item = chosenItems[idx];
       return olympia
         .from("round_questions")
-        .update({ target_player_id: player.id, meta: nextMeta })
+        .update({
+          target_player_id: player.id,
+          meta: nextMeta,
+          question_set_item_id: item.id,
+          question_text: item.question_text,
+          answer_text: item.answer_text,
+          note: item.note,
+        })
         .eq("id", (rq as unknown as { id: string }).id);
     });
 
@@ -2163,7 +2442,8 @@ export async function selectVeDichPackageAction(
       revalidatePath(`/olympia/client/game/${session.join_code}`);
       revalidatePath(`/olympia/client/guest/${session.join_code}`);
     }
-    return { success: `Đã chọn gói ${parsed.data.value} cho Ghế ${seat} (3 câu).` };
+    const summary = values.join("-");
+    return { success: `Đã chốt gói Về đích ${summary} cho Ghế ${seat} (3 câu).` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể chọn gói Về đích." };
   }
@@ -2710,6 +2990,9 @@ export async function setCurrentQuestionAction(
         question_state: "showing",
         // Không auto-start timer khi show câu; Host sẽ bấm Start riêng.
         timer_deadline: null,
+        // Auto về "Câu hỏi": tắt overlay bảng điểm/đáp án khi show câu.
+        show_scoreboard_overlay: false,
+        show_answers_overlay: false,
         // Khởi động thi chung + CNV: chuông bật sẵn. Các trường hợp khác: mặc định tắt.
         buzzer_enabled: isVcnv || (isKhoiDong && isKhoiDongCommon),
       })

@@ -896,7 +896,7 @@ export default async function OlympiaHostConsolePage({
                                 <p className="mt-2 text-sm font-semibold">{g.guess_text}</p>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <form action={confirmObstacleGuessFormAction}>
-                                    <input type="hidden" name="guessId" value={g.id} />
+                                    <input type="hidden" name="answerId" value={g.id} />
                                     <input type="hidden" name="decision" value="correct" />
                                     <Button type="submit" size="sm" disabled={g.is_correct} title="Xác nhận đúng" aria-label="Xác nhận đúng">
                                       <Check className="h-4 w-4 mr-1" />
@@ -904,7 +904,7 @@ export default async function OlympiaHostConsolePage({
                                     </Button>
                                   </form>
                                   <form action={confirmObstacleGuessFormAction}>
-                                    <input type="hidden" name="guessId" value={g.id} />
+                                    <input type="hidden" name="answerId" value={g.id} />
                                     <input type="hidden" name="decision" value="wrong" />
                                     <Button type="submit" size="sm" variant="outline" disabled={g.is_correct} title="Xác nhận sai (loại quyền CNV)" aria-label="Xác nhận sai (loại quyền CNV)">
                                       <X className="h-4 w-4 mr-1" />

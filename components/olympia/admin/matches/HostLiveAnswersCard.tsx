@@ -555,12 +555,16 @@ export function HostLiveAnswersCard({
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs text-muted-foreground">Đã lưu {batchDecisions.length} quyết định.</p>
                             <form
-                                action={(formData) =>
+                                action={(formData) => {
                                     startTransition(async () => {
                                         await confirmDecisionsBatchFormAction(formData)
                                         setBatchDecisions([])
+                                        // Refresh dữ liệu ngay sau khi submit batch để cập nhật UI
+                                        setTimeout(() => {
+                                            void refreshAnswers('batch submitted')
+                                        }, 100)
                                     })
-                                }
+                                }}
                                 className="flex items-center gap-2"
                             >
                                 <input type="hidden" name="sessionId" value={sessionId ?? ''} />

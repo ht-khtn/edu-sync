@@ -314,19 +314,33 @@ const veDichValueSchema = z.object({
 });
 
 const setRoundQuestionTargetSchema = z.object({
-  matchId: z.string().min(1, "Trận không hợp lệ."), // Allow any non-empty string (UUID, join_code, etc.)
-  roundQuestionId: z
-    .union([z.string().uuid("Câu hỏi không hợp lệ."), z.literal("")])
-    .transform((val) => (val ? val : null)),
+  // Lưu ý: FormData.get() trả về null nếu field không tồn tại.
+  // Cần preprocess để tránh Zod coi null là "Invalid input".
+  matchId: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z.string().min(1, "Trận không hợp lệ.") // Allow any non-empty string (UUID, join_code, etc.)
+  ),
+  roundQuestionId: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z
+      .union([z.string().uuid("Câu hỏi không hợp lệ."), z.literal("")])
+      .transform((val) => (val ? val : null))
+  ),
   // Cho phép bỏ chọn ("Thi chung") bằng cách gửi chuỗi rỗng.
-  playerId: z
-    .union([z.string().uuid("Thí sinh không hợp lệ."), z.literal("")])
-    .transform((val) => (val ? val : null)),
+  playerId: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z
+      .union([z.string().uuid("Thí sinh không hợp lệ."), z.literal("")])
+      .transform((val) => (val ? val : null))
+  ),
   // Phân biệt trường hợp chọn thí sinh trước khi chọn câu (chỉ dùng cho Về đích).
-  roundType: z
-    .union([z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]), z.literal(""), z.undefined()])
-    .optional()
-    .transform((val) => (val ? val : null)),
+  roundType: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z
+      .union([z.enum(["khoi_dong", "vcnv", "tang_toc", "ve_dich"]), z.literal("")])
+      .optional()
+      .transform((val) => (val ? val : null))
+  ),
 });
 
 // Helper để resolve matchId từ UUID, join_code, hoặc sessionId
@@ -2563,6 +2577,7 @@ export async function confirmDecisionAction(
 
     // Để chấm đúng luật theo vòng, cần biết target_player_id (thi riêng) và một số meta.
     let currentTargetPlayerId: string | null = null;
+    let isKhoiDongCommonRound: boolean = false;
     let currentVeDichValue: 20 | 30 | null = null;
     if (session.current_round_question_id) {
       const { data: rqRow, error: rqErr } = await olympia
@@ -2573,21 +2588,32 @@ export async function confirmDecisionAction(
       if (rqErr) return { error: rqErr.message };
       currentTargetPlayerId = (rqRow?.target_player_id as string | null) ?? null;
 
-      if (roundType === "khoi_dong" && !currentTargetPlayerId) {
-        const info = parseKhoiDongCodeInfoFromMeta((rqRow as unknown as { meta?: unknown })?.meta);
-        if (info?.kind === "personal") {
-          const { data: seatPlayer, error: seatErr } = await olympia
-            .from("match_players")
-            .select("id")
-            .eq("match_id", session.match_id)
-            .eq("seat_index", info.seat)
-            .maybeSingle();
-          if (seatErr) return { error: seatErr.message };
-          if (!seatPlayer?.id) {
-            return { error: `Không tìm thấy thí sinh ghế ${info.seat}.` };
-          }
-          currentTargetPlayerId = seatPlayer.id;
+      // Xác định loại câu Khởi động dựa trên code (DKA- = thi chung, KD{N}- = thi riêng)
+      let khoiDongCodeInfo: ReturnType<typeof parseKhoiDongCodeInfoFromMeta> | null = null;
+      if (roundType === "khoi_dong") {
+        khoiDongCodeInfo = parseKhoiDongCodeInfoFromMeta(
+          (rqRow as unknown as { meta?: unknown })?.meta
+        );
+      }
+
+      // Nếu code chỉ ra thi riêng (KD{N}-), lấy thí sinh theo ghế
+      if (roundType === "khoi_dong" && khoiDongCodeInfo?.kind === "personal") {
+        const { data: seatPlayer, error: seatErr } = await olympia
+          .from("match_players")
+          .select("id")
+          .eq("match_id", session.match_id)
+          .eq("seat_index", khoiDongCodeInfo.seat)
+          .maybeSingle();
+        if (seatErr) return { error: seatErr.message };
+        if (!seatPlayer?.id) {
+          return { error: `Không tìm thấy thí sinh ghế ${khoiDongCodeInfo.seat}.` };
         }
+        currentTargetPlayerId = seatPlayer.id;
+      }
+
+      // Xác định: nếu code là DKA- (thi chung) thì đánh dấu isKhoiDongCommonRound
+      if (roundType === "khoi_dong" && khoiDongCodeInfo?.kind === "common") {
+        isKhoiDongCommonRound = true;
       }
 
       if (roundType === "ve_dich") {
@@ -2600,8 +2626,7 @@ export async function confirmDecisionAction(
       }
 
       // Enforce: vòng Khởi động thi chung chỉ chấm cho người bấm chuông thắng.
-      // (Nếu suy luận ra thi riêng theo KD{seat}-, currentTargetPlayerId đã được gán ở trên.)
-      if (roundType === "khoi_dong" && !currentTargetPlayerId) {
+      if (isKhoiDongCommonRound) {
         const { data: buzzWinner, error: buzzErr } = await olympia
           .from("buzzer_events")
           .select("player_id, result")
@@ -2664,14 +2689,18 @@ export async function confirmDecisionAction(
     if (roundType === "khoi_dong") {
       // Khởi động:
       // - Thi riêng (có target_player_id hoặc suy luận theo KD{seat}-): đúng +10, sai/hết giờ 0.
-      // - Thi chung (target null): đúng +10, sai/hết giờ -5, clamp 0.
-      if (currentTargetPlayerId) {
-        delta = decision === "correct" ? 10 : 0;
-        nextPoints = currentPoints + delta;
-      } else {
+      // - Thi chung (target null, không phải code riêng): đúng +10, sai/hết giờ -5, clamp 0.
+      if (isKhoiDongCommonRound) {
         const computed = computeKhoiDongCommonScore(decision, currentPoints);
         delta = computed.delta;
         nextPoints = computed.nextPoints;
+      } else if (currentTargetPlayerId) {
+        delta = decision === "correct" ? 10 : 0;
+        nextPoints = currentPoints + delta;
+      } else {
+        // Fallback: nếu không phải thi chung và không có target, cũng không trừ điểm
+        delta = decision === "correct" ? 10 : 0;
+        nextPoints = currentPoints + delta;
       }
     } else if (roundType === "vcnv") {
       // Vượt chướng ngại vật:
@@ -4654,6 +4683,8 @@ export async function confirmDecisionsBatchAction(
         const res = await confirmDecisionAction({}, fd);
         if (res.error) return { error: res.error };
       }
+      // Revalidate để client cập nhật UI
+      revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
       return { success: `Đã chấm batch ${items.length} quyết định.` };
     }
 
@@ -4754,6 +4785,9 @@ export async function confirmDecisionsBatchAction(
       currentPointsByPlayerId.set(item.playerId, { id: prev.id, points: nextPoints });
     }
 
+    // Revalidate để client cập nhật UI
+    revalidatePath(`/olympia/admin/matches/${session.match_id}/host`);
+
     return { success: `Đã chấm Tăng tốc (batch) cho ${items.length} quyết định.` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể chấm batch." };
@@ -4761,7 +4795,13 @@ export async function confirmDecisionsBatchAction(
 }
 
 export async function confirmDecisionsBatchFormAction(formData: FormData): Promise<void> {
-  await confirmDecisionsBatchAction({}, formData);
+  const result = await confirmDecisionsBatchAction({}, formData);
+  // Log kết quả để debug nếu cần, nhưng formAction chỉ return void
+  if (result.error) {
+    console.error("[Olympia] confirmDecisionsBatchFormAction error:", result.error);
+  } else {
+    console.info("[Olympia] confirmDecisionsBatchFormAction success:", result.success);
+  }
 }
 
 export async function toggleStarUseAction(

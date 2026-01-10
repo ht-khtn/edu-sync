@@ -16,6 +16,7 @@ import { VeDichPackageFormComponent } from '@/components/olympia/admin/matches/V
 import { VeDichPackageListener } from '@/components/olympia/admin/matches/VeDichPackageListener'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
+import { unstable_cache } from 'next/cache'
 import {
   ArrowLeft,
   Check,
@@ -57,6 +58,81 @@ type PlayerSummary = {
 }
 
 const OLYMPIA_HOST_PERF_TRACE = process.env.OLYMPIA_PERF_TRACE === '1'
+const OLYMPIA_HOST_SLOW_LOG_MS = 2000
+
+type PerfEntry = { label: string; ms: number }
+
+function nowMs(): number {
+  const p = (globalThis as unknown as { performance?: { now: () => number } }).performance
+  return p ? p.now() : Date.now()
+}
+
+async function measure<T>(entries: PerfEntry[], label: string, fn: () => PromiseLike<T>): Promise<T> {
+  const start = nowMs()
+  try {
+    return await fn()
+  } finally {
+    entries.push({ label, ms: Math.round((nowMs() - start) * 10) / 10 })
+  }
+}
+
+function measureSync<T>(entries: PerfEntry[], label: string, fn: () => T): T {
+  const start = nowMs()
+  try {
+    return fn()
+  } finally {
+    entries.push({ label, ms: Math.round((nowMs() - start) * 10) / 10 })
+  }
+}
+
+type CachedRoundQuestionRow = {
+  id: string
+  match_round_id: string
+  order_index: number
+  question_id: string | null
+  question_set_item_id: string | null
+  target_player_id: string | null
+  meta: Record<string, unknown> | null
+  question_text: string | null
+  answer_text: string | null
+  note: string | null
+  questions:
+  | { image_url?: string | null; audio_url?: string | null }
+  | Array<{ image_url?: string | null; audio_url?: string | null }>
+  | null
+  question_set_items:
+  | { image_url?: string | null; audio_url?: string | null }
+  | Array<{ image_url?: string | null; audio_url?: string | null }>
+  | null
+}
+
+const getRoundQuestionsForMatchCached = unstable_cache(
+  async (matchId: string): Promise<CachedRoundQuestionRow[]> => {
+    const { supabase } = await getServerAuthContext()
+    const olympia = supabase.schema('olympia')
+    const { data: rounds, error: roundsError } = await olympia
+      .from('match_rounds')
+      .select('id')
+      .eq('match_id', matchId)
+    if (roundsError) throw roundsError
+    const roundIds = (rounds ?? []).map((r) => r.id)
+    if (roundIds.length === 0) return []
+
+    const { data: roundQuestions, error: rqError } = await olympia
+      .from('round_questions')
+      .select(
+        'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
+      )
+      .in('match_round_id', roundIds)
+      .order('match_round_id', { ascending: true })
+      .order('order_index', { ascending: true })
+      .order('id', { ascending: true })
+    if (rqError) throw rqError
+    return (roundQuestions as unknown as CachedRoundQuestionRow[] | null) ?? []
+  },
+  ['olympia', 'host', 'round-questions-by-match'],
+  { revalidate: 15 }
+)
 
 async function perfTime<T>(label: string, fn: () => PromiseLike<T>): Promise<T> {
   if (!OLYMPIA_HOST_PERF_TRACE) return await fn()
@@ -229,8 +305,22 @@ const roundLabelMap: Record<string, string> = {
 }
 
 async function fetchHostData(matchCode: string) {
-  const { supabase } = await perfTime('[perf][host] getServerAuthContext', () => getServerAuthContext())
+  const perf: PerfEntry[] = []
+  const startedAt = nowMs()
+
+  const { supabase, authUid, appUserId } = await perfTime('[perf][host] getServerAuthContext', () =>
+    measure(perf, 'getServerAuthContext', () => getServerAuthContext())
+  )
   const olympia = supabase.schema('olympia')
+
+  if (OLYMPIA_HOST_PERF_TRACE) {
+    console.info('[perf][host] request context', {
+      matchCode,
+      isUuid: isUuid(matchCode),
+      hasAuthUid: Boolean(authUid),
+      hasAppUserId: Boolean(appUserId),
+    })
+  }
 
   // Route param historically is match UUID, nhưng user cũng hay copy/paste join_code.
   // Hỗ trợ cả 2 để tránh 404.
@@ -251,6 +341,7 @@ async function fetchHostData(matchCode: string) {
     if (matchDirect) {
       realMatchId = matchDirect.id
       preloadedMatch = matchDirect
+      if (OLYMPIA_HOST_PERF_TRACE) console.info('[perf][host] resolved matchDirect', { realMatchId })
     } else {
       // Fallback: treat UUID as live_sessions.id (nhiều người copy nhầm), hoặc join_code (trường hợp join_code dạng UUID).
       const { data: sessionByIdOrJoin, error: sessionByIdOrJoinError } = await perfTime(
@@ -263,6 +354,7 @@ async function fetchHostData(matchCode: string) {
       )
       if (sessionByIdOrJoinError) throw sessionByIdOrJoinError
       realMatchId = sessionByIdOrJoin?.match_id ?? null
+      if (OLYMPIA_HOST_PERF_TRACE) console.info('[perf][host] resolved from session fallback', { realMatchId })
     }
   } else {
     // 2) Nếu không phải UUID: coi là join_code.
@@ -276,9 +368,13 @@ async function fetchHostData(matchCode: string) {
     )
     if (sessionByJoinError) throw sessionByJoinError
     realMatchId = sessionByJoin?.match_id ?? null
+    if (OLYMPIA_HOST_PERF_TRACE) console.info('[perf][host] resolved from join_code', { realMatchId })
   }
 
-  if (!realMatchId) return null
+  if (!realMatchId) {
+    if (OLYMPIA_HOST_PERF_TRACE) console.warn('[perf][host] no realMatchId resolved; returning null')
+    return null
+  }
 
   const match = await (async () => {
     if (preloadedMatch?.id === realMatchId) return preloadedMatch
@@ -293,7 +389,10 @@ async function fetchHostData(matchCode: string) {
     if (error) throw error
     return data
   })()
-  if (!match) return null
+  if (!match) {
+    if (OLYMPIA_HOST_PERF_TRACE) console.warn('[perf][host] match not found; returning null', { realMatchId })
+    return null
+  }
 
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
     perfTime(
@@ -358,20 +457,17 @@ async function fetchHostData(matchCode: string) {
   }
 
   const roundIds = (rounds ?? []).map((r) => r.id)
-  const { data: roundQuestions } = roundIds.length
-    ? await perfTime(
-      `[perf][host] supabase.round_questions.byRoundIds count=${roundIds.length}`,
-      () => olympia
-        .from('round_questions')
-        .select(
-          'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
-        )
-        .in('match_round_id', roundIds)
-        .order('match_round_id', { ascending: true })
-        .order('order_index', { ascending: true })
-        .order('id', { ascending: true })
+  const { data: roundQuestions } = await (async () => {
+    if (roundIds.length === 0) return { data: [] as CachedRoundQuestionRow[] }
+
+    // Dữ liệu round_questions gần như tĩnh; cache ngắn hạn để giảm re-render sau server action.
+    // Khi OLYMPIA_PERF_TRACE=1 vẫn đo được tổng thời gian qua measure/perfTime.
+    const cached = await perfTime(
+      `[perf][host] cache.round_questions.byMatchId ${realMatchId}`,
+      () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId))
     )
-    : { data: [] }
+    return { data: cached }
+  })()
 
   const currentQuestionId = liveSession?.current_round_question_id
 
@@ -520,6 +616,18 @@ async function fetchHostData(matchCode: string) {
     scoreChangesError = scoreChangesErr.message
   } else {
     scoreChanges = (scoreChangesData as unknown as ScoreChangeRow[] | null) ?? []
+  }
+
+  // Log chỉ khi chậm (hoặc khi bật trace).
+  const totalMs = Math.round((nowMs() - startedAt) * 10) / 10
+  if (OLYMPIA_HOST_PERF_TRACE || totalMs >= OLYMPIA_HOST_SLOW_LOG_MS) {
+    const top = [...perf].sort((a, b) => b.ms - a.ms).slice(0, 8)
+    console.info('[Olympia][Slow] host/fetchHostData', {
+      matchCode,
+      realMatchId,
+      totalMs,
+      top,
+    })
   }
 
   return {

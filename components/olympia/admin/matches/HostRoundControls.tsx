@@ -85,13 +85,38 @@ function CountdownControls({
   const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
     getAutoTimerDurationSeconds(currentRoundType)
   )
-  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+  const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
+  const [countdownTick, setCountdownTick] = useState<number>(0)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Countdown timer logic
+  const effectiveTimerDeadline = useMemo(() => {
+    return realtimeTimerDeadline ?? timerDeadline ?? null
+  }, [realtimeTimerDeadline, timerDeadline])
+
+  // Subscribe to realtime timer updates
   useEffect(() => {
-    if (countdownSeconds === null) return
-    if (countdownSeconds <= 0) {
+    return subscribeHostSessionUpdate((payload) => {
+      if (payload.timerDeadline !== undefined) {
+        setRealtimeTimerDeadline(payload.timerDeadline ?? null)
+      }
+    })
+  }, [])
+
+  // Calculate countdown based on effective timer deadline
+  const countdownSeconds = useMemo(() => {
+    void countdownTick
+    if (!effectiveTimerDeadline) return null
+
+    const now = new Date().getTime()
+    const deadline = new Date(effectiveTimerDeadline).getTime()
+    const diffMs = deadline - now
+    const seconds = Math.max(0, Math.ceil(diffMs / 1000))
+    return seconds
+  }, [effectiveTimerDeadline, countdownTick])
+
+  // Tick countdown (interval only updates tick; countdown itself is derived)
+  useEffect(() => {
+    if (!effectiveTimerDeadline) {
       if (countdownIntervalRef.current) {
         clearInterval(countdownIntervalRef.current)
         countdownIntervalRef.current = null
@@ -99,17 +124,23 @@ function CountdownControls({
       return
     }
 
+    // Set interval to update countdownTick
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+    }
+
     countdownIntervalRef.current = setInterval(() => {
-      setCountdownSeconds((prev) => {
-        if (prev === null || prev <= 1) {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-            countdownIntervalRef.current = null
-          }
-          return 0
-        }
-        return prev - 1
-      })
+      const now = new Date().getTime()
+      const deadline = new Date(effectiveTimerDeadline).getTime()
+      const diffMs = deadline - now
+      const remainingSeconds = Math.max(0, Math.ceil(diffMs / 1000))
+
+      setCountdownTick((t) => t + 1)
+
+      if (remainingSeconds <= 0 && countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
+      }
     }, 1000)
 
     return () => {
@@ -118,7 +149,7 @@ function CountdownControls({
         countdownIntervalRef.current = null
       }
     }
-  }, [countdownSeconds])
+  }, [effectiveTimerDeadline])
 
   const canStartTimer = Boolean(
     sessionId && currentRoundQuestionId && currentQuestionState === 'showing'
@@ -160,7 +191,6 @@ function CountdownControls({
           action={timerStartAction}
           onSubmit={(e) => {
             e.preventDefault()
-            setCountdownSeconds(timerDurationSeconds)
             const formData = new FormData(e.currentTarget)
             formData.set('durationMs', String(timerDurationSeconds * 1000))
             timerStartAction(formData)

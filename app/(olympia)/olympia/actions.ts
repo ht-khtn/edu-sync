@@ -2513,8 +2513,8 @@ export async function selectVeDichPackageAction(
         return {
           error:
             v === 20
-              ? "Hết câu trong pool VD-20 (hoặc đã bị trùng)."
-              : "Hết câu trong pool VD-30 (hoặc đã bị trùng).",
+              ? "Pool VD-20 hết câu hoặc tất cả đã được chọn."
+              : "Pool VD-30 hết câu hoặc tất cả đã được chọn.",
         };
       }
       chosenItems.push(item);

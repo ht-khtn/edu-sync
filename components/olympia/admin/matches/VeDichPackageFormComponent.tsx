@@ -28,6 +28,7 @@ export function VeDichPackageFormComponent({
     const [formValues, setFormValues] = useState<string[]>(
         values.map((v) => (v === 20 || v === 30 ? String(v) : ''))
     )
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const [state, formAction, isPending] = useActionState(selectVeDichPackageClientAction, initialState)
 
@@ -39,6 +40,7 @@ export function VeDichPackageFormComponent({
 
     // Build form on submission to include dynamic form values
     const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
         const formData = new FormData(e.currentTarget)
         formData.set('matchId', matchId)
         formData.set('playerId', selectedPlayer.id)
@@ -47,18 +49,25 @@ export function VeDichPackageFormComponent({
         for (const v of formValues) {
             formData.append('values', v)
         }
+        // Immediately disable UI while submitting
+        setIsSubmitting(true)
         // Dispatch the form action
         formAction(formData)
     }
 
-    // Show toast when state changes
+    // Show toast when state changes, and dispatch event on success
     useEffect(() => {
+        setIsSubmitting(false)
         if (state?.error) {
             toast.error(state.error)
         } else if (state?.success) {
             toast.success(state.success)
+            // Dispatch event so parent doesn't reload page
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('olympia:package-confirmed', { detail: { selectedPlayer, values: formValues } }))
+            }
         }
-    }, [state?.error, state?.success])
+    }, [state?.error, state?.success, formValues, selectedPlayer])
 
     const seatIndex = selectedPlayer.seat_index ?? 'N/A'
 
@@ -78,7 +87,7 @@ export function VeDichPackageFormComponent({
                             value={v}
                             onChange={(e) => handleSelectChange(idx, e.target.value)}
                             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                            disabled={confirmed || isPending}
+                            disabled={confirmed || isPending || isSubmitting}
                             aria-label={`Giá trị câu ${idx + 1}`}
                         >
                             {!v ? <option value="">— Chọn —</option> : null}
@@ -94,14 +103,19 @@ export function VeDichPackageFormComponent({
                         size="sm"
                         variant="outline"
                         className="h-8"
-                        disabled={confirmed || isPending}
-                        aria-label="Xác nhận gói Về đích"
-                        title="Xác nhận gói Về đích"
+                        disabled={confirmed || isPending || isSubmitting}
+                        aria-label={confirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
+                        title={confirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
                     >
-                        {isPending ? (
+                        {isSubmitting || isPending ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                Đang xác nhận
+                                Đang chọn gói
+                            </>
+                        ) : confirmed ? (
+                            <>
+                                <Check className="h-4 w-4 mr-1" />
+                                Đã chốt gói
                             </>
                         ) : (
                             <>

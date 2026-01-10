@@ -13,6 +13,7 @@ import { HostQuestionPreviewCard } from '@/components/olympia/admin/matches/Host
 import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQuickScoreSection'
 import { HostAnswersTabs } from '@/components/olympia/admin/matches/HostAnswersTabs'
 import { VeDichPackageFormComponent } from '@/components/olympia/admin/matches/VeDichPackageFormComponent'
+import { VeDichPackageListener } from '@/components/olympia/admin/matches/VeDichPackageListener'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
 import {
@@ -646,6 +647,7 @@ export default async function OlympiaHostConsolePage({
 
   return (
     <section className="space-y-4">
+      <VeDichPackageListener />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">Host console</p>

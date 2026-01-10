@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 import { Timer } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 
@@ -101,6 +102,9 @@ export function HostRoundControls({
   const [effectiveShowScoreboardOverlay, setEffectiveShowScoreboardOverlay] = useState<boolean | null>(() => showScoreboardOverlay ?? null)
   const [effectiveShowAnswersOverlay, setEffectiveShowAnswersOverlay] = useState<boolean | null>(() => showAnswersOverlay ?? null)
   const [effectiveCurrentRoundType, setEffectiveCurrentRoundType] = useState<string | null>(() => currentRoundType ?? null)
+  const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(5)
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     // Đồng bộ realtime/optimistic updates để giảm phụ thuộc router.refresh().
@@ -114,6 +118,64 @@ export function HostRoundControls({
       if (payload.currentRoundType !== undefined) setEffectiveCurrentRoundType(payload.currentRoundType)
     })
   }, [])
+
+  // Auto-populate duration based on round type
+  useEffect(() => {
+    if (effectiveCurrentRoundType === 've_dich') {
+      setTimerDurationSeconds(20) // Default 20 seconds for Về đích
+    } else if (effectiveCurrentRoundType === 'khoi_dong') {
+      setTimerDurationSeconds(5)
+    } else {
+      setTimerDurationSeconds(5)
+    }
+    // Reset countdown khi chuyển vòng
+    setCountdownSeconds(null)
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+  }, [effectiveCurrentRoundType])
+
+  // Reset countdown khi chuyển câu
+  useEffect(() => {
+    setCountdownSeconds(null)
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+  }, [effectiveCurrentRoundQuestionId])
+
+  // Countdown timer logic
+  useEffect(() => {
+    if (countdownSeconds === null) return
+    if (countdownSeconds <= 0) {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
+      }
+      return
+    }
+
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdownSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current)
+            countdownIntervalRef.current = null
+          }
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
+      }
+    }
+  }, [countdownSeconds])
 
   const isVeDich = effectiveCurrentRoundType === 've_dich'
 
@@ -172,7 +234,7 @@ export function HostRoundControls({
     const selected = players?.find((p) => p.seat_index === seat) ?? null
     if (!selected?.id) return
     if (targetPlayerId !== selected.id) setTargetPlayerId(selected.id)
-  }, [isVeDich, players, searchParams, targetPlayerId])
+  }, [isVeDich, players, searchParams])
 
   type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
   const serverViewMode: HostViewMode = effectiveShowAnswersOverlay
@@ -408,37 +470,67 @@ export function HostRoundControls({
 
   return (
     <div className="grid gap-3">
-      <div className="flex items-center justify-end gap-2">
-        <form ref={timerStartFormRef} action={timerStartAction}>
-          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-          <Button
-            type="submit"
-            size="sm"
-            variant="outline"
-            className="h-8"
-            disabled={!canStartTimer || timerStartPending}
-            title="Bấm giờ (theo luật vòng hiện tại)"
-            aria-label="Bấm giờ"
-          >
-            <Timer className="h-4 w-4 mr-1" />
-            Bấm giờ
-          </Button>
-        </form>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs whitespace-nowrap">Thời gian countdown (giây):</Label>
+          <Input
+            type="number"
+            min="1"
+            max="120"
+            value={timerDurationSeconds}
+            onChange={(e) => {
+              const val = Math.max(1, Math.min(120, Number(e.target.value) || 5))
+              setTimerDurationSeconds(val)
+            }}
+            disabled={countdownSeconds !== null}
+            className="h-8 w-20"
+            aria-label="Thời gian countdown"
+          />
+        </div>
 
-        <form ref={timerExpireFormRef} action={timerExpireAction}>
-          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-          <Button
-            type="submit"
-            size="sm"
-            variant="outline"
-            className="h-8"
-            disabled={!canExpireTimer || timerExpirePending}
-            title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
-            aria-label="Hết giờ"
+        <div className="flex items-center justify-end gap-2">
+          <form
+            ref={timerStartFormRef}
+            action={timerStartAction}
+            onSubmit={(e) => {
+              e.preventDefault()
+              setCountdownSeconds(timerDurationSeconds)
+              const formData = new FormData(timerStartFormRef.current!)
+              formData.set('durationMs', String(timerDurationSeconds * 1000))
+              timerStartAction(formData)
+            }}
           >
-            Hết giờ
-          </Button>
-        </form>
+            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+            <input type="hidden" name="durationMs" value={String(timerDurationSeconds * 1000)} />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={!canStartTimer || timerStartPending || countdownSeconds !== null}
+              title="Bấm giờ (theo luật vòng hiện tại)"
+              aria-label="Bấm giờ"
+            >
+              <Timer className="h-4 w-4 mr-1" />
+              {countdownSeconds !== null ? `${countdownSeconds}s` : 'Bấm giờ'}
+            </Button>
+          </form>
+
+          <form ref={timerExpireFormRef} action={timerExpireAction}>
+            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={!canExpireTimer || timerExpirePending || countdownSeconds === null}
+              title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
+              aria-label="Hết giờ"
+            >
+              Hết giờ
+            </Button>
+          </form>
+        </div>
       </div>
 
       <form

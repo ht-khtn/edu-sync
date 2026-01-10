@@ -2605,7 +2605,6 @@ export async function selectVeDichPackageAction(
     const firstError = results.find((r) => r.error)?.error;
     if (firstError) return { error: firstError.message };
 
-    revalidatePath(`/olympia/admin/matches/${parsed.data.matchId}/host`);
     revalidatePath("/olympia/client");
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);

@@ -71,6 +71,8 @@ type Props = {
         currentRoundType: string | null
         currentRoundId: string | null
         byRoundType: Array<{ roundType: string; codes: string[] }>
+        selectedByRoundType?: Array<{ roundType: string; codes: string[] }>
+        unselectedByRoundType?: Array<{ roundType: string; codes: string[] }>
     }
     winnerBuzz: WinnerBuzzRow | null
     setCurrentQuestionFormAction: (formData: FormData) => Promise<void>
@@ -482,6 +484,35 @@ export function HostQuestionPreviewCard(props: Props) {
                                 <div className="space-y-1">
                                     {questionsDebug.byRoundType.map((entry) => (
                                         <p key={entry.roundType}>
+                                            <span className="font-mono">{entry.roundType}</span>
+                                            {': '}
+                                            {entry.codes.join(', ')}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                            <hr className="my-2 border-muted" />
+                            <p className="text-xs font-semibold text-foreground">Câu đã chọn:</p>
+                            {questionsDebug.selectedByRoundType && questionsDebug.selectedByRoundType.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">(Không có)</p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {questionsDebug.selectedByRoundType?.map((entry) => (
+                                        <p key={`sel-${entry.roundType}`} className="text-xs text-green-700 font-mono">
+                                            <span className="font-mono">{entry.roundType}</span>
+                                            {': '}
+                                            {entry.codes.join(', ')}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="mt-1 text-xs font-semibold text-foreground">Câu chưa chọn:</p>
+                            {questionsDebug.unselectedByRoundType && questionsDebug.unselectedByRoundType.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">(Không có)</p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {questionsDebug.unselectedByRoundType?.map((entry) => (
+                                        <p key={`unsel-${entry.roundType}`} className="text-xs text-red-700 font-mono">
                                             <span className="font-mono">{entry.roundType}</span>
                                             {': '}
                                             {entry.codes.join(', ')}

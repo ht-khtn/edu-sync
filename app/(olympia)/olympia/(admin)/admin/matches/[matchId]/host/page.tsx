@@ -723,15 +723,36 @@ export default async function OlympiaHostConsolePage({
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
 
   const questionsByRoundType = new Map<string, string[]>()
+  const selectedQuestionsByRoundType = new Map<string, string[]>()
+  const unselectedQuestionsByRoundType = new Map<string, string[]>()
   for (const q of roundQuestions) {
     const roundType = roundTypeByRoundId.get((q as unknown as RoundQuestionRow).match_round_id) ?? null
     const key = roundType ?? 'unknown'
     const label = getRoundQuestionLabel(q as unknown as RoundQuestionRow)
+    const rqRow = q as unknown as RoundQuestionRow
+    const hasSelection = Boolean(rqRow.question_set_item_id)
+
     const list = questionsByRoundType.get(key) ?? []
     list.push(label)
     questionsByRoundType.set(key, list)
+
+    if (hasSelection) {
+      const selectedList = selectedQuestionsByRoundType.get(key) ?? []
+      selectedList.push(label)
+      selectedQuestionsByRoundType.set(key, selectedList)
+    } else {
+      const unselectedList = unselectedQuestionsByRoundType.get(key) ?? []
+      unselectedList.push(label)
+      unselectedQuestionsByRoundType.set(key, unselectedList)
+    }
   }
   const questionsByRoundTypeEntries = Array.from(questionsByRoundType.entries())
+    .map(([roundType, codes]) => ({ roundType, codes }))
+    .sort((a, b) => a.roundType.localeCompare(b.roundType))
+  const selectedQuestionsByRoundTypeEntries = Array.from(selectedQuestionsByRoundType.entries())
+    .map(([roundType, codes]) => ({ roundType, codes }))
+    .sort((a, b) => a.roundType.localeCompare(b.roundType))
+  const unselectedQuestionsByRoundTypeEntries = Array.from(unselectedQuestionsByRoundType.entries())
     .map(([roundType, codes]) => ({ roundType, codes }))
     .sort((a, b) => a.roundType.localeCompare(b.roundType))
 
@@ -911,6 +932,8 @@ export default async function OlympiaHostConsolePage({
               currentRoundType: liveSession?.current_round_type ?? null,
               currentRoundId: liveSession?.current_round_id ?? null,
               byRoundType: questionsByRoundTypeEntries,
+              selectedByRoundType: selectedQuestionsByRoundTypeEntries,
+              unselectedByRoundType: unselectedQuestionsByRoundTypeEntries,
             }}
             winnerBuzz={winnerBuzz}
             setCurrentQuestionFormAction={setCurrentQuestionFormAction}

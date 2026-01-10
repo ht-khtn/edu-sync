@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
 import { useActionState } from 'react'
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -308,6 +308,9 @@ export function HostRoundControls({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const baseParams = useMemo(() => new URLSearchParams(searchParams?.toString()), [searchParams])
+  const [, startTargetTransition] = useTransition()
+  const [, startRoundTransition] = useTransition()
+  const [, startBuzzerTransition] = useTransition()
 
   const [effectiveCurrentRoundQuestionId, setEffectiveCurrentRoundQuestionId] = useState<string | null>(() => currentRoundQuestionId ?? null)
   const [effectiveCurrentQuestionState, setEffectiveCurrentQuestionState] = useState<string | null>(() => currentQuestionState ?? null)
@@ -643,7 +646,7 @@ export function HostRoundControls({
           setEffectiveCurrentRoundType(selectedRoundType || null)
 
           const formData = new FormData(e.currentTarget)
-          roundAction(formData)
+          startRoundTransition(() => roundAction(formData))
         }}
       >
         <input type="hidden" name="matchId" value={matchId} />
@@ -702,7 +705,7 @@ export function HostRoundControls({
               replaceQueryParams(params)
 
               const formData = new FormData(e.currentTarget)
-              targetAction(formData)
+              startTargetTransition(() => targetAction(formData))
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -766,7 +769,7 @@ export function HostRoundControls({
               }
 
               const formData = new FormData(e.currentTarget)
-              targetAction(formData)
+              startTargetTransition(() => targetAction(formData))
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -879,7 +882,7 @@ export function HostRoundControls({
         onSubmit={(e) => {
           e.preventDefault()
           const formData = new FormData(e.currentTarget)
-          buzzerAction(formData)
+          startBuzzerTransition(() => buzzerAction(formData))
         }}
       >
         <input type="hidden" name="matchId" value={matchId} />

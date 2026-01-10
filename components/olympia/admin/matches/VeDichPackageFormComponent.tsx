@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useActionState, useState, useEffect, useMemo } from 'react'
+import React, { useActionState, useState, useEffect, useMemo, useCallback } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -25,39 +25,45 @@ export function VeDichPackageFormComponent({
     values,
     confirmed,
 }: VeDichPackageFormComponentProps) {
-    const [localConfirmed, setLocalConfirmed] = useState<boolean>(confirmed)
-    const [formValues, setFormValues] = useState<string[]>(
+    const [localFormValues, setLocalFormValues] = useState<string[]>(() =>
         values.map((v) => (v === 20 || v === 30 ? String(v) : ''))
     )
     const [state, formAction, isPending] = useActionState(selectVeDichPackageClientAction, initialState)
 
-    const handleSelectChange = (index: number, value: string) => {
-        const newValues = [...formValues]
-        newValues[index] = value
-        setFormValues(newValues)
-    }
-
-    // Show toast when state changes, and dispatch event on success
+    // Sync formValues when selectedPlayer changes (dependency on selectedPlayer.id)
     useEffect(() => {
-        // Sync từ server (trường hợp người dùng refresh trang / data thay đổi từ nơi khác)
-        setLocalConfirmed(confirmed)
-    }, [confirmed])
+        queueMicrotask(() => {
+            setLocalFormValues(values.map((v) => (v === 20 || v === 30 ? String(v) : '')))
+        })
+    }, [selectedPlayer.id, values])
 
+    const handleSelectChange = useCallback((index: number, value: string) => {
+        setLocalFormValues((prev) => {
+            const newValues = [...prev]
+            newValues[index] = value
+            return newValues
+        })
+    }, [])
+
+    // Show toast when state changes
     useEffect(() => {
         if (state?.error) {
             toast.error(state.error)
         } else if (state?.success) {
             toast.success(state.success)
-            // Khóa UI ngay sau khi chốt, không cần router.refresh()
-            setLocalConfirmed(true)
         }
     }, [state?.error, state?.success])
+
+    // localConfirmed là giá trị dẫn xuất: từ confirmed prop hoặc action success
+    const localConfirmed = useMemo(() => {
+        return confirmed || (state?.success ? true : false)
+    }, [confirmed, state?.success])
 
     const canSubmit = useMemo(() => {
         if (localConfirmed) return false
         if (isPending) return false
-        return formValues.every((v) => v === '20' || v === '30')
-    }, [formValues, isPending, localConfirmed])
+        return localFormValues.every((v) => v === '20' || v === '30')
+    }, [localFormValues, isPending, localConfirmed])
 
     const seatIndex = selectedPlayer.seat_index ?? 'N/A'
 
@@ -73,7 +79,7 @@ export function VeDichPackageFormComponent({
                 <input type="hidden" name="matchId" value={matchId} />
                 <input type="hidden" name="playerId" value={selectedPlayer.id} />
                 <div className="grid grid-cols-3 gap-2">
-                    {formValues.map((v, idx) => (
+                    {localFormValues.map((v, idx) => (
                         <select
                             key={idx}
                             name="values"

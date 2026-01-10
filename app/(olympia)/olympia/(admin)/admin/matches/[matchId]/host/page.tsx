@@ -1326,6 +1326,7 @@ export default async function OlympiaHostConsolePage({
                 buzzerEnabled={liveSession?.buzzer_enabled ?? null}
                 showScoreboardOverlay={liveSession?.show_scoreboard_overlay ?? null}
                 showAnswersOverlay={liveSession?.show_answers_overlay ?? null}
+                currentQuestionMeta={currentRoundQuestion?.meta ?? null}
               />
 
               {allowTargetSelection ? (

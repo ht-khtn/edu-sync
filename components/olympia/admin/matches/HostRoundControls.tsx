@@ -52,20 +52,33 @@ type CountdownControlsProps = {
   timerExpireAction: FormActionDispatch
   timerStartPending: boolean
   timerExpirePending: boolean
+  currentQuestionMeta?: Record<string, unknown> | null
 }
 
-function getAutoTimerDurationSeconds(roundType: string | null): number {
+function getAutoTimerDurationSeconds(
+  roundType: string | null,
+  questionMeta?: Record<string, unknown> | null
+): number {
   const constraints = getDurationInputConstraints()
   let newDuration = constraints.defaultSeconds
 
   if (roundType === 've_dich') {
-    newDuration = 20
+    // Lấy ve_dich_value từ meta hoặc default 20
+    const veDichValue = (questionMeta?.ve_dich_value as number) || 20
+    newDuration = veDichValue === 30 ? 20 : 15 // 30 điểm = 20s, 20 điểm = 15s
+  } else if (roundType === 'tang_toc') {
+    // Lấy order_index từ meta để xác định duration
+    const orderIndex = (questionMeta?.order_index as number) ?? -1
+    if (orderIndex >= 0 && orderIndex < 4) {
+      // Câu 1-2: 20s, Câu 3-4: 30s
+      newDuration = orderIndex < 2 ? 20 : 30
+    } else {
+      newDuration = 20 // Default câu 1
+    }
   } else if (roundType === 'khoi_dong') {
     newDuration = Math.round(getCountdownMs('khoi_dong') / 1000)
   } else if (roundType === 'vcnv') {
     newDuration = Math.round(getCountdownMs('vcnv') / 1000)
-  } else if (roundType === 'tang_toc') {
-    newDuration = Math.round(getCountdownMs('tang_toc') / 1000)
   }
 
   return newDuration
@@ -81,9 +94,10 @@ function CountdownControls({
   timerExpireAction,
   timerStartPending,
   timerExpirePending,
+  currentQuestionMeta,
 }: CountdownControlsProps) {
   const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
-    getAutoTimerDurationSeconds(currentRoundType)
+    getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta)
   )
   const [hasUserEditedDuration, setHasUserEditedDuration] = useState<boolean>(false)
   const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
@@ -96,8 +110,8 @@ function CountdownControls({
   }, [realtimeTimerDeadline, timerDeadline])
 
   const autoTimerDurationSeconds = useMemo(() => {
-    return getAutoTimerDurationSeconds(currentRoundType)
-  }, [currentRoundType])
+    return getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta)
+  }, [currentRoundType, currentQuestionMeta])
 
   // Subscribe to realtime timer updates
   useEffect(() => {
@@ -277,6 +291,7 @@ type Props = {
   currentRoundQuestionId?: string | null
   currentTargetPlayerId?: string | null
   isKhoiDong?: boolean
+  currentQuestionMeta?: Record<string, unknown> | null
 
   setLiveSessionRoundAction: HostControlAction
   setWaitingScreenAction: HostControlAction
@@ -304,6 +319,7 @@ export function HostRoundControls({
   currentRoundQuestionId,
   currentTargetPlayerId,
   isKhoiDong,
+  currentQuestionMeta,
   setLiveSessionRoundAction,
   setWaitingScreenAction,
   setScoreboardOverlayAction,
@@ -636,6 +652,7 @@ export function HostRoundControls({
         timerExpireAction={timerExpireAction}
         timerStartPending={timerStartPending}
         timerExpirePending={timerExpirePending}
+        currentQuestionMeta={currentQuestionMeta}
       />
 
       <form

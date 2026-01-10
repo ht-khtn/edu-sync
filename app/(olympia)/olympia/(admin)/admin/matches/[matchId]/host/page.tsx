@@ -76,15 +76,6 @@ async function measure<T>(entries: PerfEntry[], label: string, fn: () => Promise
   }
 }
 
-function measureSync<T>(entries: PerfEntry[], label: string, fn: () => T): T {
-  const start = nowMs()
-  try {
-    return fn()
-  } finally {
-    entries.push({ label, ms: Math.round((nowMs() - start) * 10) / 10 })
-  }
-}
-
 type CachedRoundQuestionRow = {
   id: string
   match_round_id: string
@@ -107,7 +98,8 @@ type CachedRoundQuestionRow = {
 }
 
 const getRoundQuestionsForMatchCached = unstable_cache(
-  async (matchId: string): Promise<CachedRoundQuestionRow[]> => {
+  async (matchId: string, cacheUserKey: string): Promise<CachedRoundQuestionRow[]> => {
+    void cacheUserKey
     const { supabase } = await getServerAuthContext()
     const olympia = supabase.schema('olympia')
     const { data: rounds, error: roundsError } = await olympia
@@ -462,9 +454,10 @@ async function fetchHostData(matchCode: string) {
 
     // Dữ liệu round_questions gần như tĩnh; cache ngắn hạn để giảm re-render sau server action.
     // Khi OLYMPIA_PERF_TRACE=1 vẫn đo được tổng thời gian qua measure/perfTime.
+    const cacheUserKey = appUserId ?? authUid ?? 'anon'
     const cached = await perfTime(
       `[perf][host] cache.round_questions.byMatchId ${realMatchId}`,
-      () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId))
+      () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId, cacheUserKey))
     )
     return { data: cached }
   })()

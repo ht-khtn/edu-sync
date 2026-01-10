@@ -2406,7 +2406,7 @@ export async function selectVeDichPackageAction(
 
     const { data: rqRows, error: rqErr } = await olympia
       .from("round_questions")
-      .select("id, meta, target_player_id, order_index")
+      .select("id, meta, target_player_id, order_index, question_set_item_id")
       .eq("match_round_id", session.current_round_id)
       .order("order_index", { ascending: true });
     if (rqErr) return { error: rqErr.message };
@@ -2428,9 +2428,10 @@ export async function selectVeDichPackageAction(
       .sort((a, b) => ((a.order_index ?? 0) as number) - ((b.order_index ?? 0) as number))
       .slice(0, 3);
 
-    const alreadyConfirmed = slots.some((rq) =>
-      Boolean((rq as unknown as { question_set_item_id?: unknown }).question_set_item_id)
-    );
+    const alreadyConfirmed = slots.some((rq) => {
+      const qsi = (rq as unknown as { question_set_item_id?: string | null }).question_set_item_id;
+      return Boolean(qsi);
+    });
     if (alreadyConfirmed) {
       return { error: `Ghế ${seat} đã chốt gói Về đích rồi.` };
     }
@@ -2490,18 +2491,48 @@ export async function selectVeDichPackageAction(
     if (usedErr) return { error: usedErr.message };
 
     const used = new Set<string>();
+    const usedIds: string[] = [];
     for (const r of usedRows ?? []) {
       const id =
         (r as unknown as { question_set_item_id?: string | null }).question_set_item_id ?? null;
-      if (id) used.add(id);
+      if (id) {
+        used.add(id);
+        usedIds.push(id);
+      }
+    }
+
+    const normalizeVeDichKey = (item: { question_text: string; answer_text: string }): string => {
+      const q = item.question_text.trim().toLowerCase();
+      const a = item.answer_text.trim().toLowerCase();
+      return `${q}||${a}`;
+    };
+
+    const usedKeys = new Set<string>();
+    if (usedIds.length) {
+      const { data: usedItems, error: usedItemsErr } = await olympia
+        .from("question_set_items")
+        .select("id, question_text, answer_text")
+        .in("id", usedIds);
+      if (usedItemsErr) return { error: usedItemsErr.message };
+      for (const row of (usedItems as unknown as Array<{
+        question_text?: string;
+        answer_text?: string;
+      }> | null) ?? []) {
+        const qt = typeof row.question_text === "string" ? row.question_text : "";
+        const at = typeof row.answer_text === "string" ? row.answer_text : "";
+        if (qt || at) usedKeys.add(normalizeVeDichKey({ question_text: qt, answer_text: at }));
+      }
     }
 
     const pickOne = (candidates: PoolItem[]): PoolItem | null => {
-      const eligible = candidates.filter((it) => !used.has(it.id));
+      const eligible = candidates.filter(
+        (it) => !used.has(it.id) && !usedKeys.has(normalizeVeDichKey(it))
+      );
       if (eligible.length === 0) return null;
       const chosen = eligible[Math.floor(Math.random() * eligible.length)] ?? null;
       if (!chosen) return null;
       used.add(chosen.id);
+      usedKeys.add(normalizeVeDichKey(chosen));
       return chosen;
     };
 
@@ -4583,7 +4614,7 @@ export async function setRoundQuestionTargetPlayerAction(
 
       const { data: rqRows, error: rqErr } = await olympia
         .from("round_questions")
-        .select("id, order_index")
+        .select("id, order_index, question_set_item_id")
         .eq("match_round_id", veDichRound.id);
       if (rqErr) return { error: rqErr.message };
 
@@ -4598,6 +4629,15 @@ export async function setRoundQuestionTargetPlayerAction(
         };
       }
 
+      const alreadyConfirmed = mine.some((rq) => {
+        const qsi =
+          (rq as unknown as { question_set_item_id?: string | null }).question_set_item_id ?? null;
+        return Boolean(qsi);
+      });
+      if (alreadyConfirmed) {
+        return { error: `Ghế ${seat} đã chốt gói Về đích rồi, không thể đổi thí sinh.` };
+      }
+
       const updates = mine
         .slice()
         .sort((a, b) => ((a.order_index ?? 0) as number) - ((b.order_index ?? 0) as number))
@@ -4605,7 +4645,7 @@ export async function setRoundQuestionTargetPlayerAction(
         .map((rq) =>
           olympia
             .from("round_questions")
-            .update({ target_player_id: parsed.data.playerId, question_set_item_id: null })
+            .update({ target_player_id: parsed.data.playerId })
             .eq("id", (rq as unknown as { id: string }).id)
         );
       const results = await Promise.all(updates);

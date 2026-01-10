@@ -161,6 +161,19 @@ export function HostRoundControls({
 
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
 
+  // Về đích: persist lựa chọn thí sinh bằng query param `vdSeat`.
+  // Mục tiêu: reload/refresh không làm mất chọn, và dropdown luôn hiển thị đúng.
+  useEffect(() => {
+    if (!isVeDich) return
+    const raw = searchParams?.get('vdSeat') ?? null
+    if (!raw) return
+    const seat = Number.parseInt(raw, 10)
+    if (!Number.isFinite(seat)) return
+    const selected = players?.find((p) => p.seat_index === seat) ?? null
+    if (!selected?.id) return
+    if (targetPlayerId !== selected.id) setTargetPlayerId(selected.id)
+  }, [isVeDich, players, searchParams, targetPlayerId])
+
   type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
   const serverViewMode: HostViewMode = effectiveShowAnswersOverlay
     ? 'answers'
@@ -345,6 +358,12 @@ export function HostRoundControls({
 
     // Reset local state sau khi URL được update thành công
     queueMicrotask(() => {
+      // Về đích: giữ dropdown ở trạng thái đã chọn để không gây hiểu nhầm “mất chọn”.
+      if (isVeDich) {
+        const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
+        if (submittedTargetId) setTargetPlayerId(submittedTargetId)
+        return
+      }
       setTargetPlayerId('')
     })
   }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])

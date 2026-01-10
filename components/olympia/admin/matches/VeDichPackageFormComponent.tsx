@@ -25,6 +25,7 @@ export function VeDichPackageFormComponent({
     values,
     confirmed,
 }: VeDichPackageFormComponentProps) {
+    const [localConfirmed, setLocalConfirmed] = useState<boolean>(confirmed)
     const [formValues, setFormValues] = useState<string[]>(
         values.map((v) => (v === 20 || v === 30 ? String(v) : ''))
     )
@@ -57,17 +58,20 @@ export function VeDichPackageFormComponent({
 
     // Show toast when state changes, and dispatch event on success
     useEffect(() => {
+        // Sync từ server (trường hợp người dùng refresh trang / data thay đổi từ nơi khác)
+        setLocalConfirmed(confirmed)
+    }, [confirmed])
+
+    useEffect(() => {
         setIsSubmitting(false)
         if (state?.error) {
             toast.error(state.error)
         } else if (state?.success) {
             toast.success(state.success)
-            // Dispatch event so parent doesn't reload page
-            if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('olympia:package-confirmed', { detail: { selectedPlayer, values: formValues } }))
-            }
+            // Khóa UI ngay sau khi chốt, không cần router.refresh()
+            setLocalConfirmed(true)
         }
-    }, [state?.error, state?.success, formValues, selectedPlayer])
+    }, [state?.error, state?.success])
 
     const seatIndex = selectedPlayer.seat_index ?? 'N/A'
 
@@ -77,7 +81,7 @@ export function VeDichPackageFormComponent({
                 Ghế {seatIndex} · {selectedPlayer.display_name ?? 'Thí sinh'}
             </p>
             <p className="text-[11px] text-muted-foreground">
-                {confirmed ? 'Đã chốt gói' : 'Chưa chốt gói'}
+                {localConfirmed ? 'Đã chốt gói' : 'Chưa chốt gói'}
             </p>
             <form onSubmit={handleFormSubmit} className="mt-2 grid gap-2">
                 <div className="grid grid-cols-3 gap-2">
@@ -87,7 +91,7 @@ export function VeDichPackageFormComponent({
                             value={v}
                             onChange={(e) => handleSelectChange(idx, e.target.value)}
                             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                            disabled={confirmed || isPending || isSubmitting}
+                            disabled={localConfirmed || isPending || isSubmitting}
                             aria-label={`Giá trị câu ${idx + 1}`}
                         >
                             {!v ? <option value="">— Chọn —</option> : null}
@@ -103,16 +107,16 @@ export function VeDichPackageFormComponent({
                         size="sm"
                         variant="outline"
                         className="h-8"
-                        disabled={confirmed || isPending || isSubmitting}
-                        aria-label={confirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
-                        title={confirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
+                        disabled={localConfirmed || isPending || isSubmitting}
+                        aria-label={localConfirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
+                        title={localConfirmed ? 'Đã chốt gói' : 'Xác nhận gói Về đích'}
                     >
                         {isSubmitting || isPending ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                                 Đang chọn gói
                             </>
-                        ) : confirmed ? (
+                        ) : localConfirmed ? (
                             <>
                                 <Check className="h-4 w-4 mr-1" />
                                 Đã chốt gói

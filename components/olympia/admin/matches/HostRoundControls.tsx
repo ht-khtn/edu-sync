@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useActionState } from 'react'
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -85,6 +85,7 @@ function CountdownControls({
   const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
     getAutoTimerDurationSeconds(currentRoundType)
   )
+  const [hasUserEditedDuration, setHasUserEditedDuration] = useState<boolean>(false)
   const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
   const [countdownTick, setCountdownTick] = useState<number>(0)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -92,6 +93,10 @@ function CountdownControls({
   const effectiveTimerDeadline = useMemo(() => {
     return realtimeTimerDeadline ?? timerDeadline ?? null
   }, [realtimeTimerDeadline, timerDeadline])
+
+  const autoTimerDurationSeconds = useMemo(() => {
+    return getAutoTimerDurationSeconds(currentRoundType)
+  }, [currentRoundType])
 
   // Subscribe to realtime timer updates
   useEffect(() => {
@@ -113,6 +118,11 @@ function CountdownControls({
     const seconds = Math.max(0, Math.ceil(diffMs / 1000))
     return seconds
   }, [effectiveTimerDeadline, countdownTick])
+
+  const durationSecondsValue = useMemo(() => {
+    if (countdownSeconds !== null) return timerDurationSeconds
+    return hasUserEditedDuration ? timerDurationSeconds : autoTimerDurationSeconds
+  }, [autoTimerDurationSeconds, countdownSeconds, hasUserEditedDuration, timerDurationSeconds])
 
   // Tick countdown (interval only updates tick; countdown itself is derived)
   useEffect(() => {
@@ -159,7 +169,7 @@ function CountdownControls({
     sessionId &&
     currentRoundQuestionId &&
     currentQuestionState === 'showing' &&
-    Boolean(timerDeadline) &&
+    Boolean(effectiveTimerDeadline) &&
     (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc')
   )
 
@@ -171,13 +181,14 @@ function CountdownControls({
           type="number"
           min={getDurationInputConstraints().minSeconds}
           max={getDurationInputConstraints().maxSeconds}
-          value={timerDurationSeconds}
+          value={durationSecondsValue}
           onChange={(e) => {
             const constraints = getDurationInputConstraints()
             const val = Math.max(
               constraints.minSeconds,
               Math.min(constraints.maxSeconds, Number(e.target.value) || constraints.defaultSeconds)
             )
+            setHasUserEditedDuration(true)
             setTimerDurationSeconds(val)
           }}
           disabled={countdownSeconds !== null}
@@ -188,16 +199,20 @@ function CountdownControls({
 
       <div className="flex items-center justify-end gap-2">
         <form
-          action={timerStartAction}
           onSubmit={(e) => {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
-            formData.set('durationMs', String(timerDurationSeconds * 1000))
+            const durationMs = durationSecondsValue * 1000
+            formData.set('durationMs', String(durationMs))
+
+            const nextDeadlineIso = new Date(Date.now() + durationMs).toISOString()
+            setRealtimeTimerDeadline(nextDeadlineIso)
+
             timerStartAction(formData)
           }}
         >
           <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-          <input type="hidden" name="durationMs" value={String(timerDurationSeconds * 1000)} />
+          <input type="hidden" name="durationMs" value={String(durationSecondsValue * 1000)} />
           <Button
             type="submit"
             size="sm"
@@ -212,7 +227,14 @@ function CountdownControls({
           </Button>
         </form>
 
-        <form action={timerExpireAction}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const formData = new FormData(e.currentTarget)
+            setRealtimeTimerDeadline(null)
+            timerExpireAction(formData)
+          }}
+        >
           <input type="hidden" name="sessionId" value={sessionId ?? ''} />
           <Button
             type="submit"
@@ -328,9 +350,6 @@ export function HostRoundControls({
   const lastTimerExpireToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
-  const waitingFormRef = useRef<HTMLFormElement | null>(null)
-  const scoreboardFormRef = useRef<HTMLFormElement | null>(null)
-  const answersFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
 
@@ -350,8 +369,18 @@ export function HostRoundControls({
   const lastSubmittedTargetPlayerIdRef = useRef<string | null>(null)
   const lastAppliedUrlRef = useRef<string | null>(null)
 
-  const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
+  const [targetPlayerId, setTargetPlayerId] = useState<string>('')
   const [hasUserPickedTarget, setHasUserPickedTarget] = useState<boolean>(false)
+
+  const khoiDongTargetPlayerIdFromUrl = useMemo<string | null>(() => {
+    if (!isKhoiDong) return null
+    const raw = searchParams?.get('kdSeat') ?? null
+    if (!raw) return null
+    const seat = Number.parseInt(raw, 10)
+    if (!Number.isFinite(seat)) return null
+    const selected = players?.find((p) => p.seat_index === seat) ?? null
+    return selected?.id ?? null
+  }, [isKhoiDong, players, searchParams])
   const veDichTargetPlayerIdFromUrl = useMemo<string | null>(() => {
     if (!isVeDich) return null
     const raw = searchParams?.get('vdSeat') ?? null
@@ -362,9 +391,10 @@ export function HostRoundControls({
     return selected?.id ?? null
   }, [isVeDich, players, searchParams])
 
+  const serverTargetPlayerId = currentTargetPlayerId ?? ''
   const resolvedTargetPlayerId = hasUserPickedTarget
     ? targetPlayerId
-    : (veDichTargetPlayerIdFromUrl ?? targetPlayerId)
+    : (khoiDongTargetPlayerIdFromUrl ?? veDichTargetPlayerIdFromUrl ?? serverTargetPlayerId)
 
   type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
   const serverViewMode: HostViewMode = effectiveShowAnswersOverlay
@@ -375,13 +405,27 @@ export function HostRoundControls({
         ? 'waiting'
         : 'question'
 
-  const isViewPending = waitingPending || scoreboardPending || answersPending
-  const [optimisticViewMode, setOptimisticViewMode] = useState<HostViewMode>(() => serverViewMode)
-  const viewMode: HostViewMode = isViewPending ? optimisticViewMode : serverViewMode
+  const [viewModeOverride, setViewModeOverride] = useState<HostViewMode | null>(null)
+  const viewMode: HostViewMode = viewModeOverride ?? serverViewMode
 
   const serverBuzzerChecked = effectiveBuzzerEnabled ?? true
   const [optimisticBuzzerChecked, setOptimisticBuzzerChecked] = useState<boolean>(() => serverBuzzerChecked)
   const buzzerChecked = buzzerPending ? optimisticBuzzerChecked : serverBuzzerChecked
+
+  const submitToggleAction = (dispatch: FormActionDispatch, enabled: boolean) => {
+    const fd = new FormData()
+    fd.set('matchId', matchId)
+    fd.set('enabled', enabled ? '1' : '0')
+    dispatch(fd)
+  }
+
+  const replaceQueryParams = useCallback((params: URLSearchParams) => {
+    const qs = params.toString()
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname
+    if (lastAppliedUrlRef.current === nextUrl) return
+    lastAppliedUrlRef.current = nextUrl
+    router.replace(nextUrl)
+  }, [pathname, router])
 
   const roundMessage = roundState.error ?? roundState.success
   const waitingMessage = waitingState.error ?? waitingState.success
@@ -542,49 +586,29 @@ export function HostRoundControls({
       else params.delete('vdSeat')
     }
 
-    const qs = params.toString()
-    const nextUrl = qs ? `${pathname}?${qs}` : pathname
-    if (lastAppliedUrlRef.current === nextUrl) return
-    lastAppliedUrlRef.current = nextUrl
-    router.replace(nextUrl)
+    replaceQueryParams(params)
 
-    // Reset local state sau khi URL được update thành công
+    // Giữ nguyên selection sau khi xác nhận (không reset về mặc định)
     queueMicrotask(() => {
-      // Về đích: giữ dropdown ở trạng thái đã chọn để không gây hiểu nhầm “mất chọn”.
-      if (isVeDich) {
-        const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
-        if (submittedTargetId) {
-          setHasUserPickedTarget(true)
-          setTargetPlayerId(submittedTargetId)
-        }
-        return
+      const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
+      if (submittedTargetId != null) {
+        setHasUserPickedTarget(true)
+        setTargetPlayerId(submittedTargetId)
       }
-      setHasUserPickedTarget(false)
-      setTargetPlayerId('')
     })
-  }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])
-
-  const setHiddenEnabledAndSubmit = (form: HTMLFormElement | null, enabled: boolean) => {
-    if (!form) return
-    const input = form.querySelector('input[name="enabled"]')
-    if (input instanceof HTMLInputElement) {
-      input.value = enabled ? '1' : '0'
-    }
-    form.requestSubmit()
-  }
+  }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players, replaceQueryParams])
 
   const setViewMode = (next: HostViewMode) => {
     const nextWaiting = next === 'waiting'
     const nextScoreboard = next === 'scoreboard'
     const nextAnswers = next === 'answers'
 
-    setOptimisticViewMode(next)
+    setViewModeOverride(next)
 
-    queueMicrotask(() => {
-      setHiddenEnabledAndSubmit(waitingFormRef.current, nextWaiting)
-      setHiddenEnabledAndSubmit(scoreboardFormRef.current, nextScoreboard)
-      setHiddenEnabledAndSubmit(answersFormRef.current, nextAnswers)
-    })
+    // Dispatch trực tiếp để tránh submit form gây navigation/refresh
+    submitToggleAction(waitingAction, nextWaiting)
+    submitToggleAction(scoreboardAction, nextScoreboard)
+    submitToggleAction(answersAction, nextAnswers)
   }
 
   return (
@@ -604,12 +628,22 @@ export function HostRoundControls({
 
       <form
         ref={roundFormRef}
-        action={roundAction}
         className="grid gap-2"
-        onSubmit={() => {
+        onSubmit={(e) => {
+          e.preventDefault()
           lastSubmittedRoundIdRef.current = roundId
           lastSubmittedRoundTypeRef.current = selectedRoundType
           lastAppliedUrlRef.current = null
+
+          // Reset chọn thí sinh local khi chuyển vòng để tránh “kẹt” selection cũ
+          setHasUserPickedTarget(false)
+          setTargetPlayerId('')
+
+          // Optimistic: update vòng hiện tại để UI (countdown/defaults) cập nhật ngay
+          setEffectiveCurrentRoundType(selectedRoundType || null)
+
+          const formData = new FormData(e.currentTarget)
+          roundAction(formData)
         }}
       >
         <input type="hidden" name="matchId" value={matchId} />
@@ -650,11 +684,25 @@ export function HostRoundControls({
         isKhoiDong ? (
           <form
             ref={targetFormRef}
-            action={targetAction}
             className="grid gap-2"
-            onSubmit={() => {
+            onSubmit={(e) => {
+              e.preventDefault()
               lastSubmittedTargetPlayerIdRef.current = resolvedTargetPlayerId
               lastAppliedUrlRef.current = null
+
+              // Optimistic URL update để không cần reload (cả khi server trả message idempotent)
+              const params = new URLSearchParams(baseParams)
+              params.delete('preview')
+              const selected = resolvedTargetPlayerId
+                ? players?.find((p) => p.id === resolvedTargetPlayerId) ?? null
+                : null
+              const nextSeat = selected?.seat_index
+              if (nextSeat != null) params.set('kdSeat', String(nextSeat))
+              else params.delete('kdSeat')
+              replaceQueryParams(params)
+
+              const formData = new FormData(e.currentTarget)
+              targetAction(formData)
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -698,11 +746,27 @@ export function HostRoundControls({
         ) : (
           <form
             ref={targetFormRef}
-            action={targetAction}
             className="grid gap-2"
-            onSubmit={() => {
+            onSubmit={(e) => {
+              e.preventDefault()
               lastSubmittedTargetPlayerIdRef.current = resolvedTargetPlayerId
               lastAppliedUrlRef.current = null
+
+              // Optimistic URL update cho Về đích để không cần reload
+              if (isVeDichLike) {
+                const params = new URLSearchParams(baseParams)
+                params.delete('preview')
+                const selected = resolvedTargetPlayerId
+                  ? players?.find((p) => p.id === resolvedTargetPlayerId) ?? null
+                  : null
+                const nextSeat = selected?.seat_index
+                if (nextSeat != null) params.set('vdSeat', String(nextSeat))
+                else params.delete('vdSeat')
+                replaceQueryParams(params)
+              }
+
+              const formData = new FormData(e.currentTarget)
+              targetAction(formData)
             }}
           >
             <input type="hidden" name="matchId" value={matchId} />
@@ -762,7 +826,7 @@ export function HostRoundControls({
               value="question"
               checked={viewMode === 'question'}
               onChange={() => setViewMode('question')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
+              disabled={!effectiveCurrentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Câu hỏi"
             />
             Câu hỏi
@@ -774,7 +838,7 @@ export function HostRoundControls({
               value="waiting"
               checked={viewMode === 'waiting'}
               onChange={() => setViewMode('waiting')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
+              disabled={!effectiveCurrentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Màn chờ"
             />
             Màn chờ
@@ -786,7 +850,7 @@ export function HostRoundControls({
               value="scoreboard"
               checked={viewMode === 'scoreboard'}
               onChange={() => setViewMode('scoreboard')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
+              disabled={!effectiveCurrentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Bảng điểm"
             />
             Bảng điểm
@@ -798,7 +862,7 @@ export function HostRoundControls({
               value="answers"
               checked={viewMode === 'answers'}
               onChange={() => setViewMode('answers')}
-              disabled={!currentRoundType || waitingPending || scoreboardPending || answersPending}
+              disabled={!effectiveCurrentRoundType || waitingPending || scoreboardPending || answersPending}
               aria-label="Đáp án"
             />
             Đáp án
@@ -809,22 +873,15 @@ export function HostRoundControls({
         {answersMessage && !answersState.error ? <p className="text-xs text-green-600">{answersMessage}</p> : null}
       </div>
 
-      <form ref={waitingFormRef} action={waitingAction} className="hidden" aria-hidden="true">
-        <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={viewMode === 'waiting' ? '1' : '0'} />
-      </form>
-
-      <form ref={scoreboardFormRef} action={scoreboardAction} className="hidden" aria-hidden="true">
-        <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={viewMode === 'scoreboard' ? '1' : '0'} />
-      </form>
-
-      <form ref={answersFormRef} action={answersAction} className="hidden" aria-hidden="true">
-        <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="enabled" value={viewMode === 'answers' ? '1' : '0'} />
-      </form>
-
-      <form ref={buzzerFormRef} action={buzzerAction} className="grid gap-2">
+      <form
+        ref={buzzerFormRef}
+        className="grid gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const formData = new FormData(e.currentTarget)
+          buzzerAction(formData)
+        }}
+      >
         <input type="hidden" name="matchId" value={matchId} />
         <input type="hidden" name="enabled" value={buzzerChecked ? '1' : '0'} />
         <div className="flex items-center justify-between">
@@ -834,9 +891,11 @@ export function HostRoundControls({
             onCheckedChange={(v) => {
               const next = Boolean(v)
               setOptimisticBuzzerChecked(next)
-              queueMicrotask(() => buzzerFormRef.current?.requestSubmit())
+              queueMicrotask(() => {
+                submitToggleAction(buzzerAction, next)
+              })
             }}
-            disabled={!currentRoundType || buzzerPending}
+            disabled={!effectiveCurrentRoundType || buzzerPending}
             aria-label="Bấm chuông"
           />
         </div>

@@ -756,6 +756,42 @@ export default async function OlympiaHostConsolePage({
     .map(([roundType, codes]) => ({ roundType, codes }))
     .sort((a, b) => a.roundType.localeCompare(b.roundType))
 
+  // Debug: Câu đã chọn theo thí sinh ở vòng Về đích
+  const selectedQuestionsByPlayerInVeDich = perfTimeSync('[perf][host] derive selectedQuestionsByPlayerInVeDich', () => {
+    if (!liveSession?.current_round_id) {
+      return new Map<string, { full_name: string | null; selectedCodes: string[] }>()
+    }
+    const veDichRound = rounds.find((r) => r.round_type === 've_dich')
+    if (!veDichRound?.id) {
+      return new Map<string, { full_name: string | null; selectedCodes: string[] }>()
+    }
+
+    const rqInVeDich = roundQuestions.filter((q) => q.match_round_id === veDichRound.id)
+    const bySeat = new Map<number, Array<RoundQuestionRow>>()
+    for (const q of rqInVeDich) {
+      const oi = (q as unknown as RoundQuestionRow).order_index
+      const seat = getVeDichSeatFromOrderIndex(oi)
+      if (!seat) continue
+      const list = bySeat.get(seat) ?? []
+      list.push(q as unknown as RoundQuestionRow)
+      bySeat.set(seat, list)
+    }
+
+    const out = new Map<string, { full_name: string | null; selectedCodes: string[] }>()
+    for (const p of players) {
+      if (typeof p.seat_index !== 'number') {
+        out.set(p.id, { full_name: p.display_name ?? null, selectedCodes: [] })
+        continue
+      }
+      const list = (bySeat.get(p.seat_index) ?? []).slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+      const selectedCodes = list.slice(0, 3)
+        .filter((rq) => Boolean(rq.question_set_item_id))
+        .map((rq) => getRoundQuestionLabel(rq))
+      out.set(p.id, { full_name: p.display_name ?? null, selectedCodes })
+    }
+    return out
+  })
+
   const selectedTargetPlayerId = currentRoundQuestion?.target_player_id ?? null
 
   const isKhoiDong = liveSession?.current_round_type === 'khoi_dong'
@@ -934,6 +970,11 @@ export default async function OlympiaHostConsolePage({
               byRoundType: questionsByRoundTypeEntries,
               selectedByRoundType: selectedQuestionsByRoundTypeEntries,
               unselectedByRoundType: unselectedQuestionsByRoundTypeEntries,
+              selectedByPlayerInVeDich: Array.from(selectedQuestionsByPlayerInVeDich.entries()).map(([playerId, data]) => ({
+                playerId,
+                fullName: data.full_name,
+                selectedCodes: data.selectedCodes,
+              })),
             }}
             winnerBuzz={winnerBuzz}
             setCurrentQuestionFormAction={setCurrentQuestionFormAction}

@@ -73,6 +73,7 @@ type Props = {
         byRoundType: Array<{ roundType: string; codes: string[] }>
         selectedByRoundType?: Array<{ roundType: string; codes: string[] }>
         unselectedByRoundType?: Array<{ roundType: string; codes: string[] }>
+        selectedByPlayerInVeDich?: Array<{ playerId: string; fullName: string | null; selectedCodes: string[] }>
     }
     winnerBuzz: WinnerBuzzRow | null
     setCurrentQuestionFormAction: (formData: FormData) => Promise<void>
@@ -516,6 +517,21 @@ export function HostQuestionPreviewCard(props: Props) {
                                             <span className="font-mono">{entry.roundType}</span>
                                             {': '}
                                             {entry.codes.join(', ')}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                            <hr className="my-2 border-muted" />
+                            <p className="text-xs font-semibold text-foreground">Câu đã chọn theo thí sinh (Về đích):</p>
+                            {questionsDebug.selectedByPlayerInVeDich && questionsDebug.selectedByPlayerInVeDich.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">(Không có)</p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {questionsDebug.selectedByPlayerInVeDich?.map((entry) => (
+                                        <p key={`sel-player-${entry.playerId}`} className="text-xs text-blue-700 font-mono">
+                                            <span className="font-semibold">{entry.fullName ?? 'Thí sinh'}</span>
+                                            {': '}
+                                            {entry.selectedCodes.length > 0 ? entry.selectedCodes.join(', ') : '(chưa chọn)'}
                                         </p>
                                     ))}
                                 </div>

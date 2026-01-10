@@ -1,0 +1,82 @@
+{
+  "version": "1.0.0",
+  "description": "Olympia Countdown Configuration - All timer durations for each round and question type",
+  "rounds": {
+    "khoi_dong": {
+      "name": "Khởi động",
+      "personalRound": {
+        "answerTimeSeconds": 5,
+        "note": "Thí sinh cá nhân có tối đa 5 giây để trả lời sau khi đọc câu xong"
+      },
+      "commonRound": {
+        "buzzTimeSeconds": 5,
+        "answerTimeSeconds": 5,
+        "note": "5 giây bấm chuông từ khi đọc xong câu, sau đó 5 giây để trả lời"
+      }
+    },
+    "vcnv": {
+      "name": "Vượt chướng ngại vật",
+      "horizontalAnswerTimeSeconds": 15,
+      "centralQuestionTimeSeconds": 15,
+      "finalAttemptTimeSeconds": 15,
+      "note": "Mỗi câu 15 giây trả lời trên máy tính"
+    },
+    "tang_toc": {
+      "name": "Tăng tốc",
+      "questions": [
+        {
+          "order": 1,
+          "type": "Nhìn - Đáp",
+          "durationSeconds": 20
+        },
+        {
+          "order": 2,
+          "type": "Sắp xếp - Lựa chọn",
+          "durationSeconds": 20
+        },
+        {
+          "order": 3,
+          "type": "IQ",
+          "durationSeconds": 30
+        },
+        {
+          "order": 4,
+          "type": "Dữ kiện",
+          "durationSeconds": 30
+        }
+      ]
+    },
+    "ve_dich": {
+      "name": "Về đích",
+      "packages": [
+        {
+          "value": 20,
+          "thinkingTimeSeconds": 15,
+          "practiceTimeSeconds": 30,
+          "note": "Câu 20 điểm: 15 giây suy nghĩ + 30 giây thực hành (nếu là câu thực hành)"
+        },
+        {
+          "value": 30,
+          "thinkingTimeSeconds": 20,
+          "practiceTimeSeconds": 60,
+          "note": "Câu 30 điểm: 20 giây suy nghĩ + 60 giây thực hành (nếu là câu thực hành)"
+        }
+      ],
+      "stealBuzzTimeSeconds": 5,
+      "stealAnswerTimeSeconds": 3,
+      "note": "Khi thí sinh chính sai: 5 giây bấm chuông, người nhanh nhất được 3 giây trả lời"
+    }
+  },
+  "tieBreaker": {
+    "name": "Câu hỏi phụ",
+    "buzzTimeSeconds": 15,
+    "maxAttempts": 3,
+    "note": "15 giây bấm chuông mỗi lượt, tối đa 3 câu"
+  },
+  "defaults": {
+    "minDurationSeconds": 1,
+    "maxDurationSeconds": 120,
+    "defaultDurationSeconds": 5,
+    "note": "Giới hạn cho input thời gian countdown trên host panel"
+  }
+}

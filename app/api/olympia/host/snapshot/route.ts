@@ -11,7 +11,11 @@ function nowMs(): number {
   return p ? p.now() : Date.now();
 }
 
-async function measure<T>(entries: PerfEntry[], label: string, fn: () => Promise<T>): Promise<T> {
+async function measure<T>(
+  entries: PerfEntry[],
+  label: string,
+  fn: () => PromiseLike<T>
+): Promise<T> {
   const start = nowMs();
   try {
     return await fn();

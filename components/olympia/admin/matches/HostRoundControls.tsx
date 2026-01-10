@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Timer } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
 
 export type ActionState = {
   error?: string | null
@@ -19,6 +20,8 @@ export type ActionState = {
 }
 
 type HostControlAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
+
+type FormActionDispatch = (formData: FormData) => void
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -37,6 +40,165 @@ type MatchRound = {
   id: string
   round_type: string
   order_index: number
+}
+
+type CountdownControlsProps = {
+  sessionId?: string | null
+  currentRoundType: string | null
+  currentRoundQuestionId: string | null
+  currentQuestionState: string | null
+  timerDeadline: string | null
+  timerStartAction: FormActionDispatch
+  timerExpireAction: FormActionDispatch
+  timerStartPending: boolean
+  timerExpirePending: boolean
+}
+
+function getAutoTimerDurationSeconds(roundType: string | null): number {
+  const constraints = getDurationInputConstraints()
+  let newDuration = constraints.defaultSeconds
+
+  if (roundType === 've_dich') {
+    newDuration = 20
+  } else if (roundType === 'khoi_dong') {
+    newDuration = Math.round(getCountdownMs('khoi_dong') / 1000)
+  } else if (roundType === 'vcnv') {
+    newDuration = Math.round(getCountdownMs('vcnv') / 1000)
+  } else if (roundType === 'tang_toc') {
+    newDuration = Math.round(getCountdownMs('tang_toc') / 1000)
+  }
+
+  return newDuration
+}
+
+function CountdownControls({
+  sessionId,
+  currentRoundType,
+  currentRoundQuestionId,
+  currentQuestionState,
+  timerDeadline,
+  timerStartAction,
+  timerExpireAction,
+  timerStartPending,
+  timerExpirePending,
+}: CountdownControlsProps) {
+  const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
+    getAutoTimerDurationSeconds(currentRoundType)
+  )
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Countdown timer logic
+  useEffect(() => {
+    if (countdownSeconds === null) return
+    if (countdownSeconds <= 0) {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
+      }
+      return
+    }
+
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdownSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current)
+            countdownIntervalRef.current = null
+          }
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
+      }
+    }
+  }, [countdownSeconds])
+
+  const canStartTimer = Boolean(
+    sessionId && currentRoundQuestionId && currentQuestionState === 'showing'
+  )
+
+  const canExpireTimer = Boolean(
+    sessionId &&
+    currentRoundQuestionId &&
+    currentQuestionState === 'showing' &&
+    Boolean(timerDeadline) &&
+    (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc')
+  )
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label className="text-xs whitespace-nowrap">Countdown:</Label>
+        <Input
+          type="number"
+          min={getDurationInputConstraints().minSeconds}
+          max={getDurationInputConstraints().maxSeconds}
+          value={timerDurationSeconds}
+          onChange={(e) => {
+            const constraints = getDurationInputConstraints()
+            const val = Math.max(
+              constraints.minSeconds,
+              Math.min(constraints.maxSeconds, Number(e.target.value) || constraints.defaultSeconds)
+            )
+            setTimerDurationSeconds(val)
+          }}
+          disabled={countdownSeconds !== null}
+          className="h-8 w-20"
+          aria-label="Thời gian countdown"
+        />
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <form
+          action={timerStartAction}
+          onSubmit={(e) => {
+            e.preventDefault()
+            setCountdownSeconds(timerDurationSeconds)
+            const formData = new FormData(e.currentTarget)
+            formData.set('durationMs', String(timerDurationSeconds * 1000))
+            timerStartAction(formData)
+          }}
+        >
+          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+          <input type="hidden" name="durationMs" value={String(timerDurationSeconds * 1000)} />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!canStartTimer || timerStartPending || countdownSeconds !== null}
+            title="Bấm giờ (theo luật vòng hiện tại)"
+            aria-label="Bấm giờ"
+          >
+            <Timer className="h-4 w-4 mr-1" />
+            {countdownSeconds !== null ? `${countdownSeconds}s` : 'Bấm giờ'}
+          </Button>
+        </form>
+
+        <form action={timerExpireAction}>
+          <input type="hidden" name="sessionId" value={sessionId ?? ''} />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!canExpireTimer || timerExpirePending || countdownSeconds === null}
+            title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
+            aria-label="Hết giờ"
+          >
+            Hết giờ
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
 }
 
 type Props = {
@@ -102,9 +264,6 @@ export function HostRoundControls({
   const [effectiveShowScoreboardOverlay, setEffectiveShowScoreboardOverlay] = useState<boolean | null>(() => showScoreboardOverlay ?? null)
   const [effectiveShowAnswersOverlay, setEffectiveShowAnswersOverlay] = useState<boolean | null>(() => showAnswersOverlay ?? null)
   const [effectiveCurrentRoundType, setEffectiveCurrentRoundType] = useState<string | null>(() => currentRoundType ?? null)
-  const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(5)
-  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     // Đồng bộ realtime/optimistic updates để giảm phụ thuộc router.refresh().
@@ -118,64 +277,6 @@ export function HostRoundControls({
       if (payload.currentRoundType !== undefined) setEffectiveCurrentRoundType(payload.currentRoundType)
     })
   }, [])
-
-  // Auto-populate duration based on round type
-  useEffect(() => {
-    if (effectiveCurrentRoundType === 've_dich') {
-      setTimerDurationSeconds(20) // Default 20 seconds for Về đích
-    } else if (effectiveCurrentRoundType === 'khoi_dong') {
-      setTimerDurationSeconds(5)
-    } else {
-      setTimerDurationSeconds(5)
-    }
-    // Reset countdown khi chuyển vòng
-    setCountdownSeconds(null)
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current)
-      countdownIntervalRef.current = null
-    }
-  }, [effectiveCurrentRoundType])
-
-  // Reset countdown khi chuyển câu
-  useEffect(() => {
-    setCountdownSeconds(null)
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current)
-      countdownIntervalRef.current = null
-    }
-  }, [effectiveCurrentRoundQuestionId])
-
-  // Countdown timer logic
-  useEffect(() => {
-    if (countdownSeconds === null) return
-    if (countdownSeconds <= 0) {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-        countdownIntervalRef.current = null
-      }
-      return
-    }
-
-    countdownIntervalRef.current = setInterval(() => {
-      setCountdownSeconds((prev) => {
-        if (prev === null || prev <= 1) {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-            countdownIntervalRef.current = null
-          }
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-        countdownIntervalRef.current = null
-      }
-    }
-  }, [countdownSeconds])
 
   const isVeDich = effectiveCurrentRoundType === 've_dich'
 
@@ -202,8 +303,6 @@ export function HostRoundControls({
   const answersFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
-  const timerStartFormRef = useRef<HTMLFormElement | null>(null)
-  const timerExpireFormRef = useRef<HTMLFormElement | null>(null)
 
   const roundById = useMemo(() => {
     const map = new Map<string, MatchRound>()
@@ -222,19 +321,20 @@ export function HostRoundControls({
   const lastAppliedUrlRef = useRef<string | null>(null)
 
   const [targetPlayerId, setTargetPlayerId] = useState<string>(() => currentTargetPlayerId ?? '')
-
-  // Về đích: persist lựa chọn thí sinh bằng query param `vdSeat`.
-  // Mục tiêu: reload/refresh không làm mất chọn, và dropdown luôn hiển thị đúng.
-  useEffect(() => {
-    if (!isVeDich) return
+  const [hasUserPickedTarget, setHasUserPickedTarget] = useState<boolean>(false)
+  const veDichTargetPlayerIdFromUrl = useMemo<string | null>(() => {
+    if (!isVeDich) return null
     const raw = searchParams?.get('vdSeat') ?? null
-    if (!raw) return
+    if (!raw) return null
     const seat = Number.parseInt(raw, 10)
-    if (!Number.isFinite(seat)) return
+    if (!Number.isFinite(seat)) return null
     const selected = players?.find((p) => p.seat_index === seat) ?? null
-    if (!selected?.id) return
-    if (targetPlayerId !== selected.id) setTargetPlayerId(selected.id)
+    return selected?.id ?? null
   }, [isVeDich, players, searchParams])
+
+  const resolvedTargetPlayerId = hasUserPickedTarget
+    ? targetPlayerId
+    : (veDichTargetPlayerIdFromUrl ?? targetPlayerId)
 
   type HostViewMode = 'question' | 'waiting' | 'scoreboard' | 'answers'
   const serverViewMode: HostViewMode = effectiveShowAnswersOverlay
@@ -423,27 +523,16 @@ export function HostRoundControls({
       // Về đích: giữ dropdown ở trạng thái đã chọn để không gây hiểu nhầm “mất chọn”.
       if (isVeDich) {
         const submittedTargetId = lastSubmittedTargetPlayerIdRef.current
-        if (submittedTargetId) setTargetPlayerId(submittedTargetId)
+        if (submittedTargetId) {
+          setHasUserPickedTarget(true)
+          setTargetPlayerId(submittedTargetId)
+        }
         return
       }
+      setHasUserPickedTarget(false)
       setTargetPlayerId('')
     })
   }, [targetState, baseParams, pathname, router, isKhoiDong, isVeDich, players])
-
-  const canStartTimer = Boolean(
-    sessionId &&
-    effectiveCurrentRoundQuestionId &&
-    effectiveCurrentQuestionState === 'showing' &&
-    true
-  )
-
-  const canExpireTimer = Boolean(
-    sessionId &&
-    effectiveCurrentRoundQuestionId &&
-    effectiveCurrentQuestionState === 'showing' &&
-    Boolean(effectiveTimerDeadline) &&
-    (effectiveCurrentRoundType === 'vcnv' || effectiveCurrentRoundType === 'tang_toc')
-  )
 
   const setHiddenEnabledAndSubmit = (form: HTMLFormElement | null, enabled: boolean) => {
     if (!form) return
@@ -470,68 +559,18 @@ export function HostRoundControls({
 
   return (
     <div className="grid gap-3">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Label className="text-xs whitespace-nowrap">Thời gian countdown (giây):</Label>
-          <Input
-            type="number"
-            min="1"
-            max="120"
-            value={timerDurationSeconds}
-            onChange={(e) => {
-              const val = Math.max(1, Math.min(120, Number(e.target.value) || 5))
-              setTimerDurationSeconds(val)
-            }}
-            disabled={countdownSeconds !== null}
-            className="h-8 w-20"
-            aria-label="Thời gian countdown"
-          />
-        </div>
-
-        <div className="flex items-center justify-end gap-2">
-          <form
-            ref={timerStartFormRef}
-            action={timerStartAction}
-            onSubmit={(e) => {
-              e.preventDefault()
-              setCountdownSeconds(timerDurationSeconds)
-              const formData = new FormData(timerStartFormRef.current!)
-              formData.set('durationMs', String(timerDurationSeconds * 1000))
-              timerStartAction(formData)
-            }}
-          >
-            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-            <input type="hidden" name="durationMs" value={String(timerDurationSeconds * 1000)} />
-            <Button
-              type="submit"
-              size="sm"
-              variant="outline"
-              className="h-8"
-              disabled={!canStartTimer || timerStartPending || countdownSeconds !== null}
-              title="Bấm giờ (theo luật vòng hiện tại)"
-              aria-label="Bấm giờ"
-            >
-              <Timer className="h-4 w-4 mr-1" />
-              {countdownSeconds !== null ? `${countdownSeconds}s` : 'Bấm giờ'}
-            </Button>
-          </form>
-
-          <form ref={timerExpireFormRef} action={timerExpireAction}>
-            <input type="hidden" name="sessionId" value={sessionId ?? ''} />
-            <Button
-              type="submit"
-              size="sm"
-              variant="outline"
-              className="h-8"
-              disabled={!canExpireTimer || timerExpirePending || countdownSeconds === null}
-              title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
-              aria-label="Hết giờ"
-            >
-              Hết giờ
-            </Button>
-          </form>
-        </div>
-      </div>
+      <CountdownControls
+        key={`${effectiveCurrentRoundType ?? 'none'}:${effectiveCurrentRoundQuestionId ?? 'none'}`}
+        sessionId={sessionId}
+        currentRoundType={effectiveCurrentRoundType}
+        currentRoundQuestionId={effectiveCurrentRoundQuestionId}
+        currentQuestionState={effectiveCurrentQuestionState}
+        timerDeadline={effectiveTimerDeadline}
+        timerStartAction={timerStartAction}
+        timerExpireAction={timerExpireAction}
+        timerStartPending={timerStartPending}
+        timerExpirePending={timerExpirePending}
+      />
 
       <form
         ref={roundFormRef}
@@ -584,7 +623,7 @@ export function HostRoundControls({
             action={targetAction}
             className="grid gap-2"
             onSubmit={() => {
-              lastSubmittedTargetPlayerIdRef.current = targetPlayerId
+              lastSubmittedTargetPlayerIdRef.current = resolvedTargetPlayerId
               lastAppliedUrlRef.current = null
             }}
           >
@@ -594,9 +633,10 @@ export function HostRoundControls({
             <div className="flex items-center gap-2">
               <select
                 name="playerId"
-                value={targetPlayerId}
+                value={resolvedTargetPlayerId}
                 onChange={(e) => {
                   const selectedPlayerId = e.target.value
+                  setHasUserPickedTarget(true)
                   setTargetPlayerId(selectedPlayerId)
                 }}
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
@@ -631,7 +671,7 @@ export function HostRoundControls({
             action={targetAction}
             className="grid gap-2"
             onSubmit={() => {
-              lastSubmittedTargetPlayerIdRef.current = targetPlayerId
+              lastSubmittedTargetPlayerIdRef.current = resolvedTargetPlayerId
               lastAppliedUrlRef.current = null
             }}
           >
@@ -642,16 +682,17 @@ export function HostRoundControls({
             <div className="flex items-center gap-2">
               <select
                 name="playerId"
-                value={targetPlayerId}
+                value={resolvedTargetPlayerId}
                 onChange={(e) => {
                   const next = e.target.value
+                  setHasUserPickedTarget(true)
                   setTargetPlayerId(next)
                 }}
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                 aria-label="Chọn thí sinh"
                 disabled={!allowTargetSelection || targetPending}
               >
-                {!targetPlayerId ? (
+                {!resolvedTargetPlayerId ? (
                   <option value="">
                     {!allowTargetSelection
                       ? 'Chọn thí sinh (chỉ dùng cho Về đích)'

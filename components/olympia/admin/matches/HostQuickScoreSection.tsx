@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuickScorePanel'
 import { subscribeHostBuzzerUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { getCountdownMs, getVeDichCountdownMs } from '@/lib/olympia/olympia-config'
 
 type HostSnapshotResponse = {
     currentRoundQuestionId: string | null
@@ -265,12 +266,15 @@ export function HostQuickScoreSection(props: Props) {
     }, [enabledScoringPlayerId, players])
 
     const durationMs = useMemo(() => {
-        if (isKhoiDong) return 5000
         if (isVeDich) {
             const v = getVeDichValue(effectiveRoundQuestion?.meta)
-            return v === 30 ? 20000 : 15000
+            return getVeDichCountdownMs(v === 30 ? 30 : 20)
         }
-        return 5000
+        // Inference round type từ boolean flags
+        let inferredRoundType = 'khoi_dong'
+        if (isKhoiDong) inferredRoundType = 'khoi_dong'
+        // Note: vcnv, tang_toc không được truyền vào component này
+        return getCountdownMs(inferredRoundType)
     }, [effectiveRoundQuestion?.meta, isKhoiDong, isVeDich])
 
     const khoiDongPersonalSeat = useMemo(() => {

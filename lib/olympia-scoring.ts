@@ -1,3 +1,5 @@
+import { getKhoiDongPoints, getVeDichPoints, getTangTocPoints } from "@/lib/olympia/olympia-config";
+
 export type KhoiDongDecision = "correct" | "wrong" | "timeout";
 export type VeDichDecision = "correct" | "wrong" | "timeout";
 
@@ -10,14 +12,16 @@ export function computeVcnvFinalScore(openedTilesCount: number): number {
 
 /**
  * Tính delta và điểm mới cho vòng Khởi động (lượt chung).
- * - Đúng: +10
- * - Sai/Hết giờ: -5 nhưng không để điểm âm (clamp 0).
+ * - Đúng: +config.commonPointsCorrect
+ * - Sai/Hết giờ: -config.commonPointsIncorrect nhưng không để điểm âm (clamp 0).
  */
 export function computeKhoiDongCommonScore(
   decision: KhoiDongDecision,
   currentPoints: number
 ): { delta: number; nextPoints: number } {
-  const rawDelta = decision === "correct" ? 10 : -5;
+  const config = getKhoiDongPoints();
+  const rawDelta =
+    decision === "correct" ? config.commonPointsCorrect : -config.commonPointsIncorrect;
   const nextPoints = Math.max(0, currentPoints + rawDelta);
   return { delta: rawDelta, nextPoints };
 }
@@ -29,7 +33,8 @@ export function computeVeDichMainDelta(params: {
 }): number {
   const safeValue = params.value === 30 ? 30 : 20;
   if (params.decision !== "correct") return 0;
-  return safeValue * (params.starEnabled ? 2 : 1);
+  const config = getVeDichPoints();
+  return safeValue * (params.starEnabled ? config.starMultiplier : 1);
 }
 
 export function computeVeDichStealDelta(params: {
@@ -38,7 +43,9 @@ export function computeVeDichStealDelta(params: {
 }): number {
   const safeValue = params.value === 30 ? 30 : 20;
   if (params.decision === "correct") return safeValue;
-  return -Math.ceil(safeValue / 2);
+  const config = getVeDichPoints();
+  const penaltyAmount = Math.ceil((safeValue * config.stealPenaltyPercentage) / 100);
+  return -penaltyAmount;
 }
 
 export type TangTocSubmission = {
@@ -47,10 +54,10 @@ export type TangTocSubmission = {
 };
 
 /**
- * Tính điểm Tăng tốc theo thứ tự thời gian (40/30/20/10) và xử lý tie.
+ * Tính điểm Tăng tốc theo thứ tự thời gian và xử lý tie.
  * - Sort tăng dần theo submittedAtMs.
  * - Nếu các submission trong cùng nhóm có chênh lệch <= thresholdMs → tie, cùng nhận điểm của hạng đó.
- * - Nếu tie làm "chiếm" nhiều slot, hạng tiếp theo sẽ bị nhảy (vd: 2 người tie hạng 1 → cả 2 nhận 40; người tiếp theo nhận 20).
+ * - Nếu tie làm "chiếm" nhiều slot, hạng tiếp theo sẽ bị nhảy.
  */
 export function computeTangTocAwards(params: {
   submissions: TangTocSubmission[];
@@ -60,7 +67,8 @@ export function computeTangTocAwards(params: {
   const threshold = Number.isFinite(params.thresholdMs)
     ? Math.max(0, Math.floor(params.thresholdMs!))
     : 10;
-  const pointsByRank = params.pointsByRank ?? [40, 30, 20, 10];
+  const config = getTangTocPoints();
+  const pointsByRank = params.pointsByRank ?? config.pointsByOrder;
 
   const sorted = [...params.submissions]
     .filter((s) => s && typeof s.id === "string" && Number.isFinite(s.submittedAtMs))

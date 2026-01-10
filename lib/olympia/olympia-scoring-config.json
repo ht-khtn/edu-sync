@@ -1,0 +1,107 @@
+{
+  "version": "1.0.0",
+  "description": "Olympia Scoring Configuration - All scoring rules, points, and packages",
+  "totalMaxPoints": 800,
+  "rounds": {
+    "khoi_dong": {
+      "name": "Khởi động",
+      "maxPoints": 180,
+      "personalRound": {
+        "name": "Lượt thi cá nhân",
+        "questionCount": 6,
+        "pointsPerQuestion": 10,
+        "totalPoints": 60
+      },
+      "commonRound": {
+        "name": "Lượt thi chung",
+        "questionCount": 12,
+        "pointsCorrect": 10,
+        "pointsIncorrect": -5,
+        "minPoints": 0,
+        "totalPoints": 120,
+        "note": "Không tính điểm âm"
+      }
+    },
+    "vcnv": {
+      "name": "Vượt chướng ngại vật",
+      "maxPoints": 70,
+      "horizontalAnswers": {
+        "count": 4,
+        "pointsPerCorrect": 10,
+        "decayPerLine": 10,
+        "basePoints": 60
+      },
+      "centralQuestion": {
+        "pointsCorrect": 10
+      },
+      "finalAttempt": {
+        "timeSeconds": 15,
+        "pointsCorrect": 20,
+        "note": "Thí sinh có 15 giây cuối để trả lời CNV"
+      }
+    },
+    "tang_toc": {
+      "name": "Tăng tốc",
+      "maxPoints": 160,
+      "questions": [
+        {
+          "order": 1,
+          "name": "Nhìn - Đáp",
+          "points": 40
+        },
+        {
+          "order": 2,
+          "name": "Sắp xếp - Lựa chọn",
+          "points": 30
+        },
+        {
+          "order": 3,
+          "name": "IQ",
+          "points": 20
+        },
+        {
+          "order": 4,
+          "name": "Dữ kiện",
+          "points": 10
+        }
+      ],
+      "note": "Tính điểm theo thứ tự thời gian trả lời đúng (nhanh nhất đến chậm nhất)"
+    },
+    "ve_dich": {
+      "name": "Về đích",
+      "maxPoints": 390,
+      "packages": [
+        {
+          "value": 20,
+          "points": 20,
+          "timeSeconds": 15,
+          "canMultiplyStar": true
+        },
+        {
+          "value": 30,
+          "points": 30,
+          "timeSeconds": 20,
+          "canMultiplyStar": true
+        }
+      ],
+      "stealAttempt": {
+        "timeSeconds": 3,
+        "note": "Khi thí sinh chính sai, 5 giây cho các thí sinh khác bấm chuông, người nhanh nhất được 3 giây trả lời"
+      },
+      "stealPenalty": {
+        "percentage": 0.5,
+        "note": "Trả lời sai cướp điểm: Bị trừ 50% số điểm của câu"
+      },
+      "ngôiSaoHyVọng": {
+        "multiplier": 2,
+        "note": "Trả lời đúng: nhân đôi điểm. Trả lời sai: bị trừ số điểm tương ứng"
+      }
+    }
+  },
+  "tieBreaker": {
+    "name": "Câu hỏi phụ",
+    "timeSeconds": 15,
+    "note": "Dùng khi có nhiều thí sinh cùng điểm cao nhất",
+    "maxAttempts": 3
+  }
+}

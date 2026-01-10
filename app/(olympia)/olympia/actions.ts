@@ -16,6 +16,11 @@ import {
   computeTangTocAwards,
   computeVcnvFinalScore,
 } from "@/lib/olympia-scoring";
+import {
+  getCountdownMs,
+  getVeDichCountdownMs,
+  getVeDichStealTimingMs,
+} from "@/lib/olympia/olympia-config";
 
 export type ActionState = {
   error?: string | null;
@@ -477,10 +482,10 @@ function getVeDichSlotRangeForSeat(seat: number): { start: number; end: number }
 }
 
 function computeVeDichDurationMsFromMeta(meta: unknown): number {
-  if (!meta || typeof meta !== "object") return 15000;
+  if (!meta || typeof meta !== "object") return getVeDichCountdownMs(20);
   const raw = (meta as Record<string, unknown>).ve_dich_value;
   const val = typeof raw === "number" ? raw : Number(raw);
-  return val === 30 ? 20000 : 15000;
+  return getVeDichCountdownMs(val === 30 ? 30 : 20);
 }
 
 const confirmVeDichMainSchema = z.object({
@@ -1525,10 +1530,8 @@ export async function startSessionTimerAutoAction(
         (session as unknown as { current_round_question_id?: string | null })
           .current_round_question_id ?? null;
 
-      let durationMs = 5000;
-      if (roundType === "khoi_dong") durationMs = 5000;
-      else if (roundType === "vcnv") durationMs = 15000;
-      else if (roundType === "ve_dich" && currentRqId) {
+      let durationMs = getCountdownMs(roundType ?? "khoi_dong");
+      if (roundType === "ve_dich" && currentRqId) {
         const { data: rq, error: rqErr } = await olympia
           .from("round_questions")
           .select("id, meta")
@@ -1545,10 +1548,7 @@ export async function startSessionTimerAutoAction(
         if (rqsErr) return { error: rqsErr.message };
         const list = (rqs as unknown as Array<{ id: string; order_index: number }> | null) ?? [];
         const idx = list.findIndex((r) => r.id === currentRqId);
-        // Theo luật: TT 1-2 = 20s, TT 3-4 = 30s.
-        if (idx === 0 || idx === 1) durationMs = 20000;
-        else if (idx === 2 || idx === 3) durationMs = 30000;
-        else durationMs = 20000;
+        durationMs = getCountdownMs(roundType, idx);
       }
 
       const deadline = new Date(Date.now() + durationMs).toISOString();
@@ -5140,8 +5140,9 @@ export async function confirmVeDichMainDecisionAction(
         .eq("id", session.id);
       if (completeErr) return { error: completeErr.message };
     } else {
-      // Sai/Hết giờ → mở cửa cướp 5s
-      const stealDeadline = new Date(Date.now() + 5000).toISOString();
+      // Sai/Hết giờ → mở cửa cướp
+      const { buzzTimeMs } = getVeDichStealTimingMs();
+      const stealDeadline = new Date(Date.now() + buzzTimeMs).toISOString();
       const { error: stealWindowErr } = await olympia
         .from("live_sessions")
         .update({

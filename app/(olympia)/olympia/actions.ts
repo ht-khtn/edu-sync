@@ -23,24 +23,50 @@ export type ActionState = {
   data?: Record<string, unknown> | null;
 };
 
+const OLYMPIA_ACTION_PERF_TRACE = process.env.OLYMPIA_PERF_TRACE === "1";
+
+function makePerfId(): string {
+  // Tránh đụng label khi có nhiều request song song.
+  return `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
+}
+
+async function perfAction<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  if (!OLYMPIA_ACTION_PERF_TRACE) return await fn();
+  const perfId = makePerfId();
+  const fullLabel = `${label} ${perfId}`;
+  console.time(fullLabel);
+  try {
+    return await fn();
+  } finally {
+    console.timeEnd(fullLabel);
+  }
+}
+
 async function requireOlympiaAdminContext(): Promise<{
   supabase: SupabaseClient;
   appUserId: string;
 }> {
-  const { supabase, appUserId } = await getServerAuthContext();
-  if (!appUserId) throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
+  return await perfAction("[perf][action] requireOlympiaAdminContext", async () => {
+    const { supabase, appUserId } = await getServerAuthContext();
+    if (!appUserId) throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
 
-  const olympia = supabase.schema("olympia");
-  const { data, error } = await olympia
-    .from("participants")
-    .select("role")
-    .eq("user_id", appUserId)
-    .maybeSingle();
-  if (error || !data || data.role !== "AD") {
-    throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
-  }
+    const olympia = supabase.schema("olympia");
+    const { data, error } = await perfAction(
+      "[perf][action] supabase.participants.role",
+      async () => {
+        return await olympia
+          .from("participants")
+          .select("role")
+          .eq("user_id", appUserId)
+          .maybeSingle();
+      }
+    );
+    if (error || !data || data.role !== "AD") {
+      throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
+    }
 
-  return { supabase, appUserId };
+    return { supabase, appUserId };
+  });
 }
 
 function generateRoomPassword() {
@@ -1224,57 +1250,59 @@ export async function setLiveSessionRoundAction(
   _: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
-    const olympia = supabase.schema("olympia");
-    const parsed = roundControlSchema.safeParse({
-      matchId: formData.get("matchId"),
-      roundId: formData.get("roundId"),
-      roundType: formData.get("roundType"),
-    });
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin vòng." };
+  return await perfAction("[perf][action] setLiveSessionRoundAction", async () => {
+    try {
+      await ensureOlympiaAdminAccess();
+      const { supabase } = await getServerAuthContext();
+      const olympia = supabase.schema("olympia");
+      const parsed = roundControlSchema.safeParse({
+        matchId: formData.get("matchId"),
+        roundId: formData.get("roundId"),
+        roundType: formData.get("roundType"),
+      });
+      if (!parsed.success) {
+        return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin vòng." };
+      }
+
+      const { matchId, roundId, roundType } = parsed.data;
+
+      // Tối ưu: 1 query update, filter trực tiếp theo match_id + status.
+      const { data: updatedRows, error } = await olympia
+        .from("live_sessions")
+        .update({
+          current_round_id: roundId,
+          current_round_type: roundType,
+          current_round_question_id: null,
+          question_state: "hidden",
+          timer_deadline: null,
+          // Khởi động thi chung + CNV: mặc định bật chuông.
+          buzzer_enabled: roundType === "khoi_dong" || roundType === "vcnv",
+        })
+        .eq("match_id", matchId)
+        .eq("status", "running")
+        .select("id, join_code");
+
+      if (error) return { error: error.message };
+      if (!updatedRows || updatedRows.length === 0) {
+        return { error: "Phòng chưa ở trạng thái running." };
+      }
+
+      // CNV: quyền đoán CNV chỉ áp dụng trong vòng CNV, nên reset cờ mỗi khi đổi vòng.
+      const { error: resetDqErr } = await olympia
+        .from("match_players")
+        .update({ is_disqualified_obstacle: false })
+        .eq("match_id", matchId);
+      if (resetDqErr) {
+        console.warn("[Olympia] reset is_disqualified_obstacle failed:", resetDqErr.message);
+      }
+
+      // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
+
+      return { success: `Đã chuyển sang vòng ${roundType}.` };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Không thể đổi vòng." };
     }
-
-    const { matchId, roundId, roundType } = parsed.data;
-
-    // Tối ưu: 1 query update, filter trực tiếp theo match_id + status.
-    const { data: updatedRows, error } = await olympia
-      .from("live_sessions")
-      .update({
-        current_round_id: roundId,
-        current_round_type: roundType,
-        current_round_question_id: null,
-        question_state: "hidden",
-        timer_deadline: null,
-        // Khởi động thi chung + CNV: mặc định bật chuông.
-        buzzer_enabled: roundType === "khoi_dong" || roundType === "vcnv",
-      })
-      .eq("match_id", matchId)
-      .eq("status", "running")
-      .select("id, join_code");
-
-    if (error) return { error: error.message };
-    if (!updatedRows || updatedRows.length === 0) {
-      return { error: "Phòng chưa ở trạng thái running." };
-    }
-
-    // CNV: quyền đoán CNV chỉ áp dụng trong vòng CNV, nên reset cờ mỗi khi đổi vòng.
-    const { error: resetDqErr } = await olympia
-      .from("match_players")
-      .update({ is_disqualified_obstacle: false })
-      .eq("match_id", matchId);
-    if (resetDqErr) {
-      console.warn("[Olympia] reset is_disqualified_obstacle failed:", resetDqErr.message);
-    }
-
-    // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.
-
-    return { success: `Đã chuyển sang vòng ${roundType}.` };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Không thể đổi vòng." };
-  }
+  });
 }
 
 export async function setQuestionStateAction(
@@ -1454,127 +1482,131 @@ export async function startSessionTimerAutoAction(
   _: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
-    const olympia = supabase.schema("olympia");
+  return await perfAction("[perf][action] startSessionTimerAutoAction", async () => {
+    try {
+      await ensureOlympiaAdminAccess();
+      const { supabase } = await getServerAuthContext();
+      const olympia = supabase.schema("olympia");
 
-    const parsed = startTimerAutoSchema.safeParse({
-      sessionId: formData.get("sessionId"),
-    });
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm giờ." };
-    }
-
-    const { data: session, error: sessionErr } = await olympia
-      .from("live_sessions")
-      .select(
-        "id, status, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline"
-      )
-      .eq("id", parsed.data.sessionId)
-      .maybeSingle();
-    if (sessionErr) return { error: sessionErr.message };
-    if (!session) return { error: "Không tìm thấy phòng thi." };
-    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
-    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
-    if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
-      return { error: "Host chưa mở câu hỏi/cửa cướp để bấm giờ." };
-    }
-
-    if (session.timer_deadline) {
-      const remaining = Date.parse(session.timer_deadline) - Date.now();
-      if (Number.isFinite(remaining) && remaining > 0) {
-        return { error: "Timer đang chạy." };
+      const parsed = startTimerAutoSchema.safeParse({
+        sessionId: formData.get("sessionId"),
+      });
+      if (!parsed.success) {
+        return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm giờ." };
       }
-    }
 
-    const roundType =
-      (session as unknown as { current_round_type?: string | null }).current_round_type ?? null;
-    const currentRoundId =
-      (session as unknown as { current_round_id?: string | null }).current_round_id ?? null;
-    const currentRqId =
-      (session as unknown as { current_round_question_id?: string | null })
-        .current_round_question_id ?? null;
-
-    let durationMs = 5000;
-    if (roundType === "khoi_dong") durationMs = 5000;
-    else if (roundType === "vcnv") durationMs = 15000;
-    else if (roundType === "ve_dich" && currentRqId) {
-      const { data: rq, error: rqErr } = await olympia
-        .from("round_questions")
-        .select("id, meta")
-        .eq("id", currentRqId)
+      const { data: session, error: sessionErr } = await olympia
+        .from("live_sessions")
+        .select(
+          "id, status, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline"
+        )
+        .eq("id", parsed.data.sessionId)
         .maybeSingle();
-      if (rqErr) return { error: rqErr.message };
-      durationMs = computeVeDichDurationMsFromMeta((rq as unknown as { meta?: unknown })?.meta);
-    } else if (roundType === "tang_toc" && currentRoundId && currentRqId) {
-      const { data: rqs, error: rqsErr } = await olympia
-        .from("round_questions")
-        .select("id, order_index")
-        .eq("match_round_id", currentRoundId)
-        .order("order_index", { ascending: true });
-      if (rqsErr) return { error: rqsErr.message };
-      const list = (rqs as unknown as Array<{ id: string; order_index: number }> | null) ?? [];
-      const idx = list.findIndex((r) => r.id === currentRqId);
-      // Theo luật: TT 1-2 = 20s, TT 3-4 = 30s.
-      if (idx === 0 || idx === 1) durationMs = 20000;
-      else if (idx === 2 || idx === 3) durationMs = 30000;
-      else durationMs = 20000;
+      if (sessionErr) return { error: sessionErr.message };
+      if (!session) return { error: "Không tìm thấy phòng thi." };
+      if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+      if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+      if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
+        return { error: "Host chưa mở câu hỏi/cửa cướp để bấm giờ." };
+      }
+
+      if (session.timer_deadline) {
+        const remaining = Date.parse(session.timer_deadline) - Date.now();
+        if (Number.isFinite(remaining) && remaining > 0) {
+          return { error: "Timer đang chạy." };
+        }
+      }
+
+      const roundType =
+        (session as unknown as { current_round_type?: string | null }).current_round_type ?? null;
+      const currentRoundId =
+        (session as unknown as { current_round_id?: string | null }).current_round_id ?? null;
+      const currentRqId =
+        (session as unknown as { current_round_question_id?: string | null })
+          .current_round_question_id ?? null;
+
+      let durationMs = 5000;
+      if (roundType === "khoi_dong") durationMs = 5000;
+      else if (roundType === "vcnv") durationMs = 15000;
+      else if (roundType === "ve_dich" && currentRqId) {
+        const { data: rq, error: rqErr } = await olympia
+          .from("round_questions")
+          .select("id, meta")
+          .eq("id", currentRqId)
+          .maybeSingle();
+        if (rqErr) return { error: rqErr.message };
+        durationMs = computeVeDichDurationMsFromMeta((rq as unknown as { meta?: unknown })?.meta);
+      } else if (roundType === "tang_toc" && currentRoundId && currentRqId) {
+        const { data: rqs, error: rqsErr } = await olympia
+          .from("round_questions")
+          .select("id, order_index")
+          .eq("match_round_id", currentRoundId)
+          .order("order_index", { ascending: true });
+        if (rqsErr) return { error: rqsErr.message };
+        const list = (rqs as unknown as Array<{ id: string; order_index: number }> | null) ?? [];
+        const idx = list.findIndex((r) => r.id === currentRqId);
+        // Theo luật: TT 1-2 = 20s, TT 3-4 = 30s.
+        if (idx === 0 || idx === 1) durationMs = 20000;
+        else if (idx === 2 || idx === 3) durationMs = 30000;
+        else durationMs = 20000;
+      }
+
+      const deadline = new Date(Date.now() + durationMs).toISOString();
+      const { error: updateErr } = await olympia
+        .from("live_sessions")
+        .update({ timer_deadline: deadline })
+        .eq("id", session.id);
+      if (updateErr) return { error: updateErr.message };
+
+      return { success: "Đã bắt đầu đếm giờ." };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Không thể bắt đầu đếm giờ." };
     }
-
-    const deadline = new Date(Date.now() + durationMs).toISOString();
-    const { error: updateErr } = await olympia
-      .from("live_sessions")
-      .update({ timer_deadline: deadline })
-      .eq("id", session.id);
-    if (updateErr) return { error: updateErr.message };
-
-    return { success: "Đã bắt đầu đếm giờ." };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Không thể bắt đầu đếm giờ." };
-  }
+  });
 }
 
 export async function expireSessionTimerAction(
   _: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
-    const olympia = supabase.schema("olympia");
+  return await perfAction("[perf][action] expireSessionTimerAction", async () => {
+    try {
+      await ensureOlympiaAdminAccess();
+      const { supabase } = await getServerAuthContext();
+      const olympia = supabase.schema("olympia");
 
-    const parsed = expireTimerSchema.safeParse({
-      sessionId: formData.get("sessionId"),
-    });
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin hết giờ." };
+      const parsed = expireTimerSchema.safeParse({
+        sessionId: formData.get("sessionId"),
+      });
+      if (!parsed.success) {
+        return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin hết giờ." };
+      }
+
+      const { data: session, error: sessionErr } = await olympia
+        .from("live_sessions")
+        .select("id, status, question_state, current_round_question_id")
+        .eq("id", parsed.data.sessionId)
+        .maybeSingle();
+      if (sessionErr) return { error: sessionErr.message };
+      if (!session) return { error: "Không tìm thấy phòng thi." };
+      if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
+      if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+      if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
+        return { error: "Host chưa mở câu hỏi/cửa cướp để hết giờ." };
+      }
+
+      const deadline = new Date(Date.now() - 1000).toISOString();
+      const { error: updateErr } = await olympia
+        .from("live_sessions")
+        .update({ timer_deadline: deadline })
+        .eq("id", session.id);
+      if (updateErr) return { error: updateErr.message };
+
+      return { success: "Đã đặt timer về hết giờ." };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Không thể đặt hết giờ." };
     }
-
-    const { data: session, error: sessionErr } = await olympia
-      .from("live_sessions")
-      .select("id, status, question_state, current_round_question_id")
-      .eq("id", parsed.data.sessionId)
-      .maybeSingle();
-    if (sessionErr) return { error: sessionErr.message };
-    if (!session) return { error: "Không tìm thấy phòng thi." };
-    if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
-    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
-    if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
-      return { error: "Host chưa mở câu hỏi/cửa cướp để hết giờ." };
-    }
-
-    const deadline = new Date(Date.now() - 1000).toISOString();
-    const { error: updateErr } = await olympia
-      .from("live_sessions")
-      .update({ timer_deadline: deadline })
-      .eq("id", session.id);
-    if (updateErr) return { error: updateErr.message };
-
-    return { success: "Đã đặt timer về hết giờ." };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Không thể đặt hết giờ." };
-  }
+  });
 }
 
 // Wrapper cho <form action={...}> trong Server Component (Next.js chỉ truyền 1 tham số FormData).

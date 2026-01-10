@@ -56,6 +56,28 @@ type PlayerSummary = {
   display_name: string | null
 }
 
+const OLYMPIA_HOST_PERF_TRACE = process.env.OLYMPIA_PERF_TRACE === '1'
+
+async function perfTime<T>(label: string, fn: () => PromiseLike<T>): Promise<T> {
+  if (!OLYMPIA_HOST_PERF_TRACE) return await fn()
+  console.time(label)
+  try {
+    return await fn()
+  } finally {
+    console.timeEnd(label)
+  }
+}
+
+function perfTimeSync<T>(label: string, fn: () => T): T {
+  if (!OLYMPIA_HOST_PERF_TRACE) return fn()
+  console.time(label)
+  try {
+    return fn()
+  } finally {
+    console.timeEnd(label)
+  }
+}
+
 function normalizePlayerSummary(value: PlayerSummary | PlayerSummary[] | null | undefined): PlayerSummary | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] ?? null : value
@@ -207,74 +229,104 @@ const roundLabelMap: Record<string, string> = {
 }
 
 async function fetchHostData(matchCode: string) {
-  const { supabase } = await getServerAuthContext()
+  const { supabase } = await perfTime('[perf][host] getServerAuthContext', () => getServerAuthContext())
   const olympia = supabase.schema('olympia')
 
   // Route param historically is match UUID, nhưng user cũng hay copy/paste join_code.
   // Hỗ trợ cả 2 để tránh 404.
   let realMatchId: string | null = null
+  let preloadedMatch: { id: string; name: string; status: string } | null = null
 
   // 1) Nếu là UUID: ưu tiên coi là matchId, nhưng fallback nếu thực tế là sessionId.
   if (isUuid(matchCode)) {
-    const { data: matchDirect, error: matchDirectError } = await olympia
-      .from('matches')
-      .select('id, name, status')
-      .eq('id', matchCode)
-      .maybeSingle()
+    const { data: matchDirect, error: matchDirectError } = await perfTime(
+      `[perf][host] supabase.matches.byId ${matchCode}`,
+      () => olympia
+        .from('matches')
+        .select('id, name, status')
+        .eq('id', matchCode)
+        .maybeSingle()
+    )
     if (matchDirectError) throw matchDirectError
     if (matchDirect) {
       realMatchId = matchDirect.id
+      preloadedMatch = matchDirect
     } else {
       // Fallback: treat UUID as live_sessions.id (nhiều người copy nhầm), hoặc join_code (trường hợp join_code dạng UUID).
-      const { data: sessionByIdOrJoin, error: sessionByIdOrJoinError } = await olympia
-        .from('live_sessions')
-        .select('match_id')
-        .or(`id.eq.${matchCode},join_code.eq.${matchCode}`)
-        .maybeSingle()
+      const { data: sessionByIdOrJoin, error: sessionByIdOrJoinError } = await perfTime(
+        `[perf][host] supabase.live_sessions.byIdOrJoin ${matchCode}`,
+        () => olympia
+          .from('live_sessions')
+          .select('match_id')
+          .or(`id.eq.${matchCode},join_code.eq.${matchCode}`)
+          .maybeSingle()
+      )
       if (sessionByIdOrJoinError) throw sessionByIdOrJoinError
       realMatchId = sessionByIdOrJoin?.match_id ?? null
     }
   } else {
     // 2) Nếu không phải UUID: coi là join_code.
-    const { data: sessionByJoin, error: sessionByJoinError } = await olympia
-      .from('live_sessions')
-      .select('match_id')
-      .eq('join_code', matchCode)
-      .maybeSingle()
+    const { data: sessionByJoin, error: sessionByJoinError } = await perfTime(
+      `[perf][host] supabase.live_sessions.byJoinCode ${matchCode}`,
+      () => olympia
+        .from('live_sessions')
+        .select('match_id')
+        .eq('join_code', matchCode)
+        .maybeSingle()
+    )
     if (sessionByJoinError) throw sessionByJoinError
     realMatchId = sessionByJoin?.match_id ?? null
   }
 
   if (!realMatchId) return null
 
-  const { data: match, error: matchError } = await olympia
-    .from('matches')
-    .select('id, name, status')
-    .eq('id', realMatchId)
-    .maybeSingle()
-  if (matchError) throw matchError
+  const match = await (async () => {
+    if (preloadedMatch?.id === realMatchId) return preloadedMatch
+    const { data, error } = await perfTime(
+      `[perf][host] supabase.matches.byId(realMatchId) ${realMatchId}`,
+      () => olympia
+        .from('matches')
+        .select('id, name, status')
+        .eq('id', realMatchId)
+        .maybeSingle()
+    )
+    if (error) throw error
+    return data
+  })()
   if (!match) return null
 
   const [{ data: liveSession, error: liveError }, { data: rounds, error: roundsError }, { data: players, error: playersError }, { data: scores, error: scoresError }] = await Promise.all([
-    olympia
-      .from('live_sessions')
-      .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, show_answers_overlay')
-      .eq('match_id', realMatchId)
-      .maybeSingle(),
-    olympia
-      .from('match_rounds')
-      .select('id, round_type, order_index')
-      .eq('match_id', realMatchId)
-      .order('order_index', { ascending: true }),
-    olympia
-      .from('match_players')
-      .select('id, seat_index, display_name, participant_id, is_disqualified_obstacle')
-      .eq('match_id', realMatchId)
-      .order('seat_index', { ascending: true }),
-    olympia
-      .from('match_scores')
-      .select('player_id, points')
-      .eq('match_id', realMatchId),
+    perfTime(
+      `[perf][host] supabase.live_sessions.byMatchId ${realMatchId}`,
+      () => olympia
+        .from('live_sessions')
+        .select('id, match_id, status, join_code, question_state, current_round_type, current_round_id, current_round_question_id, timer_deadline, requires_player_password, buzzer_enabled, show_scoreboard_overlay, show_answers_overlay')
+        .eq('match_id', realMatchId)
+        .maybeSingle()
+    ),
+    perfTime(
+      `[perf][host] supabase.match_rounds.byMatchId ${realMatchId}`,
+      () => olympia
+        .from('match_rounds')
+        .select('id, round_type, order_index')
+        .eq('match_id', realMatchId)
+        .order('order_index', { ascending: true })
+    ),
+    perfTime(
+      `[perf][host] supabase.match_players.byMatchId ${realMatchId}`,
+      () => olympia
+        .from('match_players')
+        .select('id, seat_index, display_name, participant_id, is_disqualified_obstacle')
+        .eq('match_id', realMatchId)
+        .order('seat_index', { ascending: true })
+    ),
+    perfTime(
+      `[perf][host] supabase.match_scores.byMatchId ${realMatchId}`,
+      () => olympia
+        .from('match_scores')
+        .select('player_id, points')
+        .eq('match_id', realMatchId)
+    ),
   ])
 
   if (liveError) throw liveError
@@ -285,7 +337,10 @@ async function fetchHostData(matchCode: string) {
   const participantIds = (players ?? [])
     .map((p) => (p as { participant_id?: string | null }).participant_id ?? null)
     .filter((id): id is string => Boolean(id))
-  const resolvedNameMap = await resolveDisplayNamesForUserIds(supabase, participantIds)
+  const resolvedNameMap = await perfTime(
+    `[perf][host] resolveDisplayNamesForUserIds n=${participantIds.length}`,
+    () => resolveDisplayNamesForUserIds(supabase, participantIds)
+  )
   const normalizedPlayers = (players ?? []).map((p) => {
     const row = p as { participant_id?: string | null; display_name?: string | null }
     const pid = row.participant_id ?? null
@@ -304,15 +359,18 @@ async function fetchHostData(matchCode: string) {
 
   const roundIds = (rounds ?? []).map((r) => r.id)
   const { data: roundQuestions } = roundIds.length
-    ? await olympia
-      .from('round_questions')
-      .select(
-        'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
-      )
-      .in('match_round_id', roundIds)
-      .order('match_round_id', { ascending: true })
-      .order('order_index', { ascending: true })
-      .order('id', { ascending: true })
+    ? await perfTime(
+      `[perf][host] supabase.round_questions.byRoundIds count=${roundIds.length}`,
+      () => olympia
+        .from('round_questions')
+        .select(
+          'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
+        )
+        .in('match_round_id', roundIds)
+        .order('match_round_id', { ascending: true })
+        .order('order_index', { ascending: true })
+        .order('id', { ascending: true })
+    )
     : { data: [] }
 
   const currentQuestionId = liveSession?.current_round_question_id
@@ -320,26 +378,32 @@ async function fetchHostData(matchCode: string) {
   const currentRoundQuestion = currentQuestionId ? roundQuestions?.find((q) => q.id === currentQuestionId) ?? null : null
 
   const { data: lastReset } = currentQuestionId
-    ? await olympia
-      .from('buzzer_events')
-      .select('occurred_at')
-      .eq('round_question_id', currentQuestionId)
-      .eq('event_type', 'reset')
-      .order('occurred_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    ? await perfTime(
+      `[perf][host] supabase.buzzer_events.lastReset rq=${currentQuestionId}`,
+      () => olympia
+        .from('buzzer_events')
+        .select('occurred_at')
+        .eq('round_question_id', currentQuestionId)
+        .eq('event_type', 'reset')
+        .order('occurred_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    )
     : { data: null }
   const resetOccurredAt = (lastReset as { occurred_at?: string | null } | null)?.occurred_at ?? null
 
   const { data: currentStar } =
     currentQuestionId && currentRoundQuestion?.target_player_id
-      ? await olympia
-        .from('star_uses')
-        .select('id')
-        .eq('match_id', realMatchId)
-        .eq('round_question_id', currentQuestionId)
-        .eq('player_id', currentRoundQuestion.target_player_id)
-        .maybeSingle()
+      ? await perfTime(
+        `[perf][host] supabase.star_uses.byTarget match=${realMatchId}`,
+        () => olympia
+          .from('star_uses')
+          .select('id')
+          .eq('match_id', realMatchId)
+          .eq('round_question_id', currentQuestionId)
+          .eq('player_id', currentRoundQuestion.target_player_id)
+          .maybeSingle()
+      )
       : { data: null }
 
   const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all([
@@ -352,7 +416,10 @@ async function fetchHostData(matchCode: string) {
           .in('event_type', ['buzz', 'steal'])
           .eq('result', 'win')
         if (resetOccurredAt) query = query.gte('occurred_at', resetOccurredAt)
-        return query.order('occurred_at', { ascending: true }).limit(1).maybeSingle()
+        return perfTime(
+          `[perf][host] supabase.buzzer_events.winner rq=${currentQuestionId}`,
+          () => query.order('occurred_at', { ascending: true }).limit(1).maybeSingle()
+        )
       })()
       : Promise.resolve({ data: null }),
     currentQuestionId
@@ -362,16 +429,22 @@ async function fetchHostData(matchCode: string) {
           .select('id, player_id, result, occurred_at, match_players(seat_index, display_name)')
           .eq('round_question_id', currentQuestionId)
         if (resetOccurredAt) query = query.gte('occurred_at', resetOccurredAt)
-        return query.order('occurred_at', { ascending: false }).limit(10)
+        return perfTime(
+          `[perf][host] supabase.buzzer_events.recent rq=${currentQuestionId}`,
+          () => query.order('occurred_at', { ascending: false }).limit(10)
+        )
       })()
       : Promise.resolve({ data: [] }),
     currentQuestionId
-      ? olympia
-        .from('answers')
-        .select('id, player_id, answer_text, is_correct, points_awarded, submitted_at, match_players(seat_index, display_name)')
-        .eq('round_question_id', currentQuestionId)
-        .order('submitted_at', { ascending: false })
-        .limit(10)
+      ? perfTime(
+        `[perf][host] supabase.answers.recent rq=${currentQuestionId}`,
+        () => olympia
+          .from('answers')
+          .select('id, player_id, answer_text, is_correct, points_awarded, submitted_at, match_players(seat_index, display_name)')
+          .eq('round_question_id', currentQuestionId)
+          .order('submitted_at', { ascending: false })
+          .limit(10)
+      )
       : Promise.resolve({ data: [] }),
   ])
 
@@ -380,37 +453,50 @@ async function fetchHostData(matchCode: string) {
   let obstacleGuesses: HostObstacleGuessRow[] = []
   let vcnvAnswerSummary: VcnvAnswerSummaryRow[] = []
   if (liveSession?.current_round_type === 'vcnv' && liveSession.current_round_id) {
-    const { data: obstacleRow } = await olympia
-      .from('obstacles')
-      .select('id, match_round_id, title, image_url')
-      .eq('match_round_id', liveSession.current_round_id)
-      .maybeSingle()
+    const { data: obstacleRow } = await perfTime(
+      `[perf][host] supabase.obstacles.byRoundId round=${liveSession.current_round_id}`,
+      () => olympia
+        .from('obstacles')
+        .select('id, match_round_id, title, image_url')
+        .eq('match_round_id', liveSession.current_round_id)
+        .maybeSingle()
+    )
     obstacle = (obstacleRow as HostObstacleRow | null) ?? null
 
     if (obstacle?.id) {
+      const obstacleId = obstacle.id
       const [{ data: tiles }, { data: guesses }] = await Promise.all([
-        olympia
-          .from('obstacle_tiles')
-          .select('id, round_question_id, position_index, is_open')
-          .eq('obstacle_id', obstacle.id)
-          .order('position_index', { ascending: true }),
-        olympia
-          .from('obstacle_guesses')
-          .select('id, player_id, guess_text, is_correct, attempt_order, attempted_at, match_players(seat_index, display_name)')
-          .eq('obstacle_id', obstacle.id)
-          .order('attempted_at', { ascending: false })
-          .limit(10),
+        perfTime(
+          `[perf][host] supabase.obstacle_tiles.byObstacle obstacle=${obstacleId}`,
+          () => olympia
+            .from('obstacle_tiles')
+            .select('id, round_question_id, position_index, is_open')
+            .eq('obstacle_id', obstacleId)
+            .order('position_index', { ascending: true })
+        ),
+        perfTime(
+          `[perf][host] supabase.obstacle_guesses.byObstacle obstacle=${obstacleId}`,
+          () => olympia
+            .from('obstacle_guesses')
+            .select('id, player_id, guess_text, is_correct, attempt_order, attempted_at, match_players(seat_index, display_name)')
+            .eq('obstacle_id', obstacleId)
+            .order('attempted_at', { ascending: false })
+            .limit(10)
+        ),
       ])
       obstacleTiles = (tiles as HostObstacleTileRow[] | null) ?? []
       obstacleGuesses = (guesses as HostObstacleGuessRow[] | null) ?? []
 
       const relatedRqIds = obstacleTiles.map((t) => t.round_question_id).filter((id): id is string => Boolean(id))
       if (relatedRqIds.length > 0) {
-        const { data: answerSummary } = await olympia
-          .from('answers')
-          .select('id, round_question_id, is_correct')
-          .eq('match_id', realMatchId)
-          .in('round_question_id', relatedRqIds)
+        const { data: answerSummary } = await perfTime(
+          `[perf][host] supabase.answers.vcnvSummary rqCount=${relatedRqIds.length}`,
+          () => olympia
+            .from('answers')
+            .select('id, round_question_id, is_correct')
+            .eq('match_id', realMatchId)
+            .in('round_question_id', relatedRqIds)
+        )
         vcnvAnswerSummary = (answerSummary as unknown as VcnvAnswerSummaryRow[] | null) ?? []
       }
     }
@@ -418,14 +504,17 @@ async function fetchHostData(matchCode: string) {
 
   let scoreChanges: ScoreChangeRow[] = []
   let scoreChangesError: string | null = null
-  const { data: scoreChangesData, error: scoreChangesErr } = await olympia
-    .from('score_changes')
-    .select(
-      'id, player_id, round_type, requested_delta, applied_delta, points_before, points_after, source, reason, created_at, revert_of, reverted_at, match_players(seat_index, display_name)'
-    )
-    .eq('match_id', realMatchId)
-    .order('created_at', { ascending: false })
-    .limit(10)
+  const { data: scoreChangesData, error: scoreChangesErr } = await perfTime(
+    `[perf][host] supabase.score_changes.recent match=${realMatchId}`,
+    () => olympia
+      .from('score_changes')
+      .select(
+        'id, player_id, round_type, requested_delta, applied_delta, points_before, points_after, source, reason, created_at, revert_of, reverted_at, match_players(seat_index, display_name)'
+      )
+      .eq('match_id', realMatchId)
+      .order('created_at', { ascending: false })
+      .limit(10)
+  )
 
   if (scoreChangesErr) {
     scoreChangesError = scoreChangesErr.message
@@ -470,8 +559,11 @@ export default async function OlympiaHostConsolePage({
   params: Promise<{ matchId: string }>
   searchParams?: Promise<{ preview?: string | string[]; kdSeat?: string | string[]; vdSeat?: string | string[] }>
 }) {
-  const { matchId } = await params
-  const resolvedSearchParams = (searchParams ? await searchParams : {}) as { preview?: string | string[]; kdSeat?: string | string[]; vdSeat?: string | string[] }
+  const { matchId } = await perfTime('[perf][host] await params', () => params)
+  const resolvedSearchParams = await perfTime('[perf][host] await searchParams', async () => {
+    const sp = searchParams ? await searchParams : {}
+    return sp as { preview?: string | string[]; kdSeat?: string | string[]; vdSeat?: string | string[] }
+  })
   const previewParam = Array.isArray(resolvedSearchParams.preview)
     ? resolvedSearchParams.preview[0]
     : resolvedSearchParams.preview
@@ -494,7 +586,7 @@ export default async function OlympiaHostConsolePage({
     return Number.isFinite(n) ? n : null
   })()
 
-  const data = await fetchHostData(matchId)
+  const data = await perfTime(`[perf][host] fetchHostData ${matchId}`, () => fetchHostData(matchId))
   if (!data) {
     notFound()
   }
@@ -515,6 +607,8 @@ export default async function OlympiaHostConsolePage({
     obstacleGuesses,
     vcnvAnswerSummary,
   } = data
+
+  if (OLYMPIA_HOST_PERF_TRACE) console.time('[perf][host] derive+render')
 
   const roundTypeByRoundId = new Map<string, string | null>()
   for (const r of rounds) {
@@ -609,7 +703,7 @@ export default async function OlympiaHostConsolePage({
         : null
 
 
-  const veDichPackageByPlayerId = (() => {
+  const veDichPackageByPlayerId = perfTimeSync('[perf][host] derive veDichPackageByPlayerId', () => {
     if (!liveSession?.current_round_id) {
       return new Map<string, { values: Array<20 | 30 | null>; confirmed: boolean }>()
     }
@@ -642,10 +736,10 @@ export default async function OlympiaHostConsolePage({
       out.set(p.id, { values: slotValues.slice(0, 3) as Array<20 | 30 | null>, confirmed })
     }
     return out
-  })()
+  })
 
 
-  return (
+  const jsx = (
     <section className="space-y-4">
       <VeDichPackageListener />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
@@ -1177,4 +1271,7 @@ export default async function OlympiaHostConsolePage({
       </div>
     </section>
   )
+
+  if (OLYMPIA_HOST_PERF_TRACE) console.timeEnd('[perf][host] derive+render')
+  return jsx
 }

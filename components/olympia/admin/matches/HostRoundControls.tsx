@@ -206,12 +206,12 @@ function CountdownControls({
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
             const durationMs = durationSecondsValue * 1000
-            
+
             // Validate durationMs là số hợp lệ
             if (!Number.isFinite(durationMs) || durationMs <= 0) {
               return
             }
-            
+
             formData.set('durationMs', String(durationMs))
 
             const nextDeadlineIso = new Date(Date.now() + durationMs).toISOString()

@@ -366,6 +366,7 @@ async function fetchHostData(matchCode: string) {
 
   if (!realMatchId) {
     if (OLYMPIA_HOST_PERF_TRACE) console.warn('[perf][host] no realMatchId resolved; returning null')
+    console.error('[host] Could not resolve match from matchCode:', matchCode)
     return null
   }
 
@@ -688,8 +689,16 @@ export default async function OlympiaHostConsolePage({
     return Number.isFinite(n) ? n : null
   })()
 
-  const data = await perfTime(`[perf][host] fetchHostData ${matchId}`, () => fetchHostData(matchId))
+  let data
+  try {
+    data = await perfTime(`[perf][host] fetchHostData ${matchId}`, () => fetchHostData(matchId))
+  } catch (error) {
+    console.error('[host] fetchHostData error for matchId:', matchId, error)
+    notFound()
+  }
+
   if (!data) {
+    console.error('[host] No data found for matchId:', matchId)
     notFound()
   }
 

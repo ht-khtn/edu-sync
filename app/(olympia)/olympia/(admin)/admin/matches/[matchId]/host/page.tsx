@@ -16,6 +16,7 @@ import { VeDichPackageFormComponent } from '@/components/olympia/admin/matches/V
 import { VeDichPackageListener } from '@/components/olympia/admin/matches/VeDichPackageListener'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resolveDisplayNamesForUserIds } from '@/lib/olympia-display-names'
+import { getSupabaseAdminServer } from '@/lib/supabase-admin-server'
 import { unstable_cache } from 'next/cache'
 import {
   ArrowLeft,
@@ -100,7 +101,7 @@ type CachedRoundQuestionRow = {
 const getRoundQuestionsForMatchCached = unstable_cache(
   async (matchId: string, cacheUserKey: string): Promise<CachedRoundQuestionRow[]> => {
     void cacheUserKey
-    const { supabase } = await getServerAuthContext()
+    const supabase = await getSupabaseAdminServer()
     const olympia = supabase.schema('olympia')
     const { data: rounds, error: roundsError } = await olympia
       .from('match_rounds')
@@ -454,7 +455,7 @@ async function fetchHostData(matchCode: string) {
 
     // Dữ liệu round_questions gần như tĩnh; cache ngắn hạn để giảm re-render sau server action.
     // Khi OLYMPIA_PERF_TRACE=1 vẫn đo được tổng thời gian qua measure/perfTime.
-    const cacheUserKey = appUserId ?? authUid ?? 'anon'
+    const cacheUserKey = 'shared'
     const cached = await perfTime(
       `[perf][host] cache.round_questions.byMatchId ${realMatchId}`,
       () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId, cacheUserKey))

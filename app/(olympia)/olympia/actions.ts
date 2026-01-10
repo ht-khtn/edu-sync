@@ -4661,14 +4661,9 @@ export async function setRoundQuestionTargetPlayerAction(
         };
       }
 
-      const alreadyConfirmed = mine.some((rq) => {
-        const qsi =
-          (rq as unknown as { question_set_item_id?: string | null }).question_set_item_id ?? null;
-        return Boolean(qsi);
-      });
-      if (alreadyConfirmed) {
-        return { error: `Ghế ${seat} đã chốt gói Về đích rồi, không thể đổi thí sinh.` };
-      }
+      // Cho phép chọn lại thí sinh/ghế ngay cả khi đã chốt gói.
+      // Mục tiêu ở host: chuyển qua lại giữa các ghế để điều khiển/preview câu,
+      // không phải "đổi" gói đã chốt. Không đụng tới question_set_item_id.
 
       const updates = mine
         .slice()

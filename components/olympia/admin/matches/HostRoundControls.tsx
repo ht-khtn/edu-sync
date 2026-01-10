@@ -88,6 +88,7 @@ function CountdownControls({
   const [hasUserEditedDuration, setHasUserEditedDuration] = useState<boolean>(false)
   const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
   const [countdownTick, setCountdownTick] = useState<number>(0)
+  const [, startTimerTransition] = useTransition()
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const effectiveTimerDeadline = useMemo(() => {
@@ -114,6 +115,7 @@ function CountdownControls({
 
     const now = new Date().getTime()
     const deadline = new Date(effectiveTimerDeadline).getTime()
+    if (!Number.isFinite(deadline)) return null
     const diffMs = deadline - now
     const seconds = Math.max(0, Math.ceil(diffMs / 1000))
     return seconds
@@ -142,6 +144,7 @@ function CountdownControls({
     countdownIntervalRef.current = setInterval(() => {
       const now = new Date().getTime()
       const deadline = new Date(effectiveTimerDeadline).getTime()
+      if (!Number.isFinite(deadline)) return
       const diffMs = deadline - now
       const remainingSeconds = Math.max(0, Math.ceil(diffMs / 1000))
 
@@ -203,12 +206,18 @@ function CountdownControls({
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
             const durationMs = durationSecondsValue * 1000
+            
+            // Validate durationMs là số hợp lệ
+            if (!Number.isFinite(durationMs) || durationMs <= 0) {
+              return
+            }
+            
             formData.set('durationMs', String(durationMs))
 
             const nextDeadlineIso = new Date(Date.now() + durationMs).toISOString()
             setRealtimeTimerDeadline(nextDeadlineIso)
 
-            timerStartAction(formData)
+            startTimerTransition(() => timerStartAction(formData))
           }}
         >
           <input type="hidden" name="sessionId" value={sessionId ?? ''} />
@@ -232,7 +241,7 @@ function CountdownControls({
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
             setRealtimeTimerDeadline(null)
-            timerExpireAction(formData)
+            startTimerTransition(() => timerExpireAction(formData))
           }}
         >
           <input type="hidden" name="sessionId" value={sessionId ?? ''} />

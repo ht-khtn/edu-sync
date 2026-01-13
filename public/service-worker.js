@@ -11,7 +11,7 @@
  */
 
 // APP_VERSION được inject khi build (xem scripts/inject-version.cjs)
-const APP_VERSION = '1.1.0-ceb86e7';
+const APP_VERSION = '1.1.0-518d747';
 const CACHE_NAMES = {
   static: `static-${APP_VERSION}`,
   pages: `pages-${APP_VERSION}`,

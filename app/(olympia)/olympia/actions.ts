@@ -1832,87 +1832,115 @@ export async function editMatchScoreManualAction(
 
     const olympia = supabase.schema("olympia");
 
-    const parsed = manualEditScoreSchema.safeParse({
-      matchId: formData.get("matchId"),
-      playerId: formData.get("playerId"),
-      newTotal: formData.get("newTotal"),
-    });
+    // Support editing multiple players in one submission.
+    const playerIds = formData
+      .getAll("playerId")
+      .map((v) => String(v))
+      .filter(Boolean);
+    const newTotalsRaw = formData.getAll("newTotal");
 
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin chỉnh điểm." };
+    if (playerIds.length === 0) {
+      return { error: "Thiếu thông tin chỉnh điểm." };
     }
-
-    const { matchId, playerId, newTotal } = parsed.data;
 
     const now = new Date().toISOString();
+    let anyChanged = false;
+    const summaries: string[] = [];
 
-    const { data: rows, error: rowsErr } = await olympia
-      .from("match_scores")
-      .select("id, round_type, points")
-      .eq("match_id", matchId)
-      .eq("player_id", playerId);
+    for (let i = 0; i < playerIds.length; i++) {
+      const pId = playerIds[i];
+      const rawNew = newTotalsRaw[i] ?? newTotalsRaw[0] ?? null;
 
-    if (rowsErr) return { error: rowsErr.message };
+      const parsedOne = manualEditScoreSchema.safeParse({
+        matchId: formData.get("matchId"),
+        playerId: pId,
+        newTotal: rawNew,
+      });
 
-    const pointsBefore = (rows ?? []).reduce((acc, r) => acc + (r.points ?? 0), 0);
-    const delta = newTotal - pointsBefore;
+      if (!parsedOne.success) {
+        return { error: parsedOne.error.issues[0]?.message ?? "Dữ liệu chỉnh điểm không hợp lệ." };
+      }
 
-    if (delta === 0) {
-      return { success: "Điểm không đổi." };
+      const { matchId, playerId, newTotal } = parsedOne.data;
+
+      const { data: rows, error: rowsErr } = await olympia
+        .from("match_scores")
+        .select("id, round_type, points")
+        .eq("match_id", matchId)
+        .eq("player_id", playerId);
+
+      if (rowsErr) return { error: rowsErr.message };
+
+      const pointsBefore = (rows ?? []).reduce((acc, r) => acc + (r.points ?? 0), 0);
+      const delta = newTotal - pointsBefore;
+
+      if (delta === 0) {
+        summaries.push(`${playerId}: không đổi`);
+        continue;
+      }
+
+      anyChanged = true;
+
+      const manualRow = (rows ?? []).find((r) => String(r.round_type ?? "") === "manual") ?? null;
+
+      if (manualRow?.id) {
+        const nextPoints = (manualRow.points ?? 0) + delta;
+        const { data: updated, error: updErr } = await olympia
+          .from("match_scores")
+          .update({ points: nextPoints, updated_at: now })
+          .eq("id", manualRow.id)
+          .select("id");
+        if (updErr) return { error: updErr.message };
+        if (!updated || updated.length === 0) return { error: "Không thể cập nhật điểm thủ công." };
+      } else {
+        const { data: inserted, error: insErr } = await olympia
+          .from("match_scores")
+          .insert({
+            match_id: matchId,
+            player_id: playerId,
+            round_type: "manual",
+            points: delta,
+            updated_at: now,
+          })
+          .select("id");
+        if (insErr) return { error: insErr.message };
+        if (!inserted || inserted.length === 0) return { error: "Không thể ghi điểm thủ công." };
+      }
+
+      const pointsAfter = pointsBefore + delta;
+
+      const { error: logErr } = await olympia.from("score_changes").insert({
+        match_id: matchId,
+        player_id: playerId,
+        round_type: "manual",
+        requested_delta: delta,
+        applied_delta: delta,
+        points_before: pointsBefore,
+        points_after: pointsAfter,
+        source: "manual",
+        reason: null,
+        round_question_id: null,
+        answer_id: null,
+        revert_of: null,
+        reverted_at: null,
+        reverted_by: null,
+        created_by: appUserId,
+      });
+
+      if (logErr) return { error: logErr.message };
+
+      summaries.push(`${pointsBefore} → ${pointsAfter}`);
     }
 
-    const manualRow = (rows ?? []).find((r) => String(r.round_type ?? "") === "manual") ?? null;
-
-    if (manualRow?.id) {
-      const nextPoints = (manualRow.points ?? 0) + delta;
-      const { data: updated, error: updErr } = await olympia
-        .from("match_scores")
-        .update({ points: nextPoints, updated_at: now })
-        .eq("id", manualRow.id)
-        .select("id");
-      if (updErr) return { error: updErr.message };
-      if (!updated || updated.length === 0) return { error: "Không thể cập nhật điểm thủ công." };
-    } else {
-      const { data: inserted, error: insErr } = await olympia
-        .from("match_scores")
-        .insert({
-          match_id: matchId,
-          player_id: playerId,
-          round_type: "manual",
-          points: delta,
-          updated_at: now,
-        })
-        .select("id");
-      if (insErr) return { error: insErr.message };
-      if (!inserted || inserted.length === 0) return { error: "Không thể ghi điểm thủ công." };
+    if (!anyChanged) {
+      return { success: "Không có thay đổi điểm nào." };
     }
 
-    const pointsAfter = pointsBefore + delta;
+    // Revalidate once for UI update
+    revalidatePath(`/olympia/admin/matches/${String(formData.get("matchId") ?? "")}/host`);
+    revalidatePath(`/olympia/admin/matches/${String(formData.get("matchId") ?? "")}`);
 
-    const { error: logErr } = await olympia.from("score_changes").insert({
-      match_id: matchId,
-      player_id: playerId,
-      round_type: "manual",
-      requested_delta: delta,
-      applied_delta: delta,
-      points_before: pointsBefore,
-      points_after: pointsAfter,
-      source: "manual",
-      reason: null,
-      round_question_id: null,
-      answer_id: null,
-      revert_of: null,
-      reverted_at: null,
-      reverted_by: null,
-      created_by: appUserId,
-    });
-
-    if (logErr) return { error: logErr.message };
-
-    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
-    revalidatePath(`/olympia/admin/matches/${matchId}`);
-
-    return { success: `Đã chỉnh điểm: ${pointsBefore} → ${pointsAfter}.` };
+    return { success: `Đã chỉnh điểm: ${summaries.join(", ")}` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể chỉnh điểm." };
   }

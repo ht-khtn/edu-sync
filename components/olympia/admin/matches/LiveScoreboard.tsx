@@ -105,6 +105,13 @@ export function LiveScoreboard({
     if (resetState.success || editState.success) toast.success(message)
   }, [editState.error, editState.success, resetState.error, resetState.success])
 
+  useEffect(() => {
+    if (!pendingEdit && !pendingReset) {
+      setEditing(false)
+    }
+  }, [pendingEdit, pendingReset])
+
+
   const sortedScores = useMemo(
     () => [...realtimeScores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
     [realtimeScores]
@@ -148,30 +155,31 @@ export function LiveScoreboard({
           <p className="text-sm text-muted-foreground">Chưa có dữ liệu điểm số</p>
         ) : (
           <div className="space-y-2">
-            {sortedScores.map((player, index) => (
-              <div
-                key={player.playerId}
-                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 font-semibold text-slate-700">
-                  {index + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate">{player.displayName}</p>
-                  {player.className && (
-                    <p className="text-xs text-muted-foreground truncate">{player.className}</p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <Badge variant="outline" className="font-mono">
-                    {player.totalScore ?? 0}
-                    {maxScore ? `/${maxScore}` : ''} điểm
-                  </Badge>
-                </div>
+            {editing && editScoreAction ? (
+              <form action={editFormAction} className="space-y-2">
+                <input type="hidden" name="matchId" value={matchId} />
 
-                {editing && editScoreAction ? (
-                  <form action={editFormAction} className="flex items-center gap-2">
-                    <input type="hidden" name="matchId" value={matchId} />
+                {sortedScores.map((player, index) => (
+                  <div
+                    key={player.playerId}
+                    className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 font-semibold text-slate-700">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{player.displayName}</p>
+                      {player.className && (
+                        <p className="text-xs text-muted-foreground truncate">{player.className}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <Badge variant="outline" className="font-mono">
+                        {player.totalScore ?? 0}
+                        {maxScore ? `/${maxScore}` : ''} điểm
+                      </Badge>
+                    </div>
+
                     <input type="hidden" name="playerId" value={player.playerId} />
                     <input
                       name="newTotal"
@@ -180,13 +188,41 @@ export function LiveScoreboard({
                       className="h-8 w-20 rounded-md border border-slate-200 bg-white px-2 text-sm"
                       aria-label={`Điểm mới cho ${player.displayName}`}
                     />
-                    <Button type="submit" size="sm" disabled={pendingEdit || pendingReset}>
-                      Lưu
-                    </Button>
-                  </form>
-                ) : null}
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <Button type="submit" size="sm" disabled={pendingEdit || pendingReset}>
+                    Lưu
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-2">
+                {sortedScores.map((player, index) => (
+                  <div
+                    key={player.playerId}
+                    className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 font-semibold text-slate-700">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{player.displayName}</p>
+                      {player.className && (
+                        <p className="text-xs text-muted-foreground truncate">{player.className}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <Badge variant="outline" className="font-mono">
+                        {player.totalScore ?? 0}
+                        {maxScore ? `/${maxScore}` : ''} điểm
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </CardContent>

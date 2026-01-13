@@ -35,6 +35,27 @@ const OLYMPIA_ACTION_TRACE =
 
 type OlympiaTraceFields = Record<string, string | number | boolean | null>;
 
+function utf8ByteLength(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
+
+function estimateFormDataPayloadBytes(formData: FormData): number {
+  let total = 0;
+  for (const [key, value] of formData.entries()) {
+    total += utf8ByteLength(key);
+    if (typeof value === "string") {
+      total += utf8ByteLength(value);
+      continue;
+    }
+
+    // File/Blob: chỉ ước lượng metadata + size, không đọc nội dung.
+    total += utf8ByteLength(value.name);
+    total += utf8ByteLength(value.type);
+    total += value.size;
+  }
+  return total;
+}
+
 function readStringFormField(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
   if (typeof raw !== "string") return null;
@@ -57,13 +78,16 @@ function traceInfo(params: {
 }): void {
   if (!OLYMPIA_ACTION_TRACE) return;
   const { traceId, action, event, fields } = params;
-  console.info("[Olympia][Trace]", {
+  const payload = {
     layer: "server",
     traceId,
     action,
     event,
+    ts: new Date().toISOString(),
+    payloadBytes: typeof fields?.payloadBytes === "number" ? fields.payloadBytes : 0,
     ...(fields ?? {}),
-  });
+  };
+  console.info("[Olympia][Trace]", JSON.stringify(payload));
 }
 
 function makePerfId(): string {
@@ -2109,7 +2133,10 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       traceId,
       action: "submitAnswerAction",
       event: "start",
-      fields: { sessionId: readStringFormField(formData, "sessionId") },
+      fields: {
+        sessionId: readStringFormField(formData, "sessionId"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
+      },
     });
 
     const { supabase, authUid, appUserId } = await getServerAuthContext();
@@ -2353,7 +2380,10 @@ export async function triggerBuzzerAction(
       traceId,
       action: "triggerBuzzerAction",
       event: "start",
-      fields: { sessionId: readStringFormField(formData, "sessionId") },
+      fields: {
+        sessionId: readStringFormField(formData, "sessionId"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
+      },
     });
 
     const { supabase, authUid, appUserId } = await getServerAuthContext();
@@ -2812,6 +2842,7 @@ export async function confirmDecisionAction(
         sessionId: readStringFormField(formData, "sessionId"),
         playerId: readStringFormField(formData, "playerId"),
         decision: readStringFormField(formData, "decision"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
       },
     });
     let afterSessionFetchAt: number | null = null;
@@ -3266,6 +3297,18 @@ export async function confirmDecisionAndAdvanceAction(
 ): Promise<ActionState> {
   try {
     const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAndAdvanceAction",
+      event: "start",
+      fields: {
+        sessionId: readStringFormField(formData, "sessionId"),
+        playerId: readStringFormField(formData, "playerId"),
+        matchId: readStringFormField(formData, "matchId"),
+        decision: readStringFormField(formData, "decision"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
+      },
+    });
     const parsed = decisionAndAdvanceSchema.safeParse({
       sessionId: formData.get("sessionId"),
       playerId: formData.get("playerId"),
@@ -3325,6 +3368,7 @@ export async function setCurrentQuestionAction(
       fields: {
         matchId: readStringFormField(formData, "matchId"),
         roundQuestionId: readStringFormField(formData, "roundQuestionId"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
       },
     });
     const { supabase } = await requireOlympiaAdminContext();
@@ -3496,6 +3540,7 @@ export async function advanceCurrentQuestionAction(
       fields: {
         matchId: readStringFormField(formData, "matchId"),
         direction: readStringFormField(formData, "direction"),
+        payloadBytes: estimateFormDataPayloadBytes(formData),
       },
     });
     const { supabase } = await requireOlympiaAdminContext();

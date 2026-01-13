@@ -1,13 +1,51 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
-import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
+import type { RealtimeChannel, RealtimePostgresChangesPayload, SupabaseClient } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
 import getSupabase from '@/lib/supabase'
 import { dispatchHostBuzzerUpdate, dispatchHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+
+const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === '1'
+
+type OlympiaHostTraceFields = Record<string, string | number | boolean | null>
+
+function utf8ByteLength(text: string): number {
+    return new TextEncoder().encode(text).length
+}
+
+function estimateJsonPayloadBytes(value: object | null): number {
+    if (!value) return 0
+    try {
+        return utf8ByteLength(JSON.stringify(value))
+    } catch {
+        return 0
+    }
+}
+
+function getReceiveLagMs(commitTimestamp: string | null | undefined): number | null {
+    if (!commitTimestamp) return null
+    const commitMs = Date.parse(commitTimestamp)
+    if (!Number.isFinite(commitMs)) return null
+    const lag = Date.now() - commitMs
+    return lag >= 0 ? lag : 0
+}
+
+function traceHostReceive(params: { event: string; fields: OlympiaHostTraceFields }): void {
+    if (!OLYMPIA_CLIENT_TRACE) return
+    const payload = {
+        layer: 'client-receive',
+        action: 'postgres_changes',
+        event: params.event,
+        ts: new Date().toISOString(),
+        payloadBytes: typeof params.fields.payloadBytes === 'number' ? params.fields.payloadBytes : 0,
+        ...params.fields,
+    }
+    console.info('[Olympia][Trace]', JSON.stringify(payload))
+}
 
 type Props = {
     matchId: string
@@ -250,36 +288,51 @@ export function HostRealtimeEventsListener({
                             table: 'live_sessions',
                             ...(sessionId ? { filter: `id=eq.${sessionId}` } : {}),
                         },
-                        (payload) => {
+                        (payload: RealtimePostgresChangesPayload<LiveSessionRow>) => {
                             trackReason('live_sessions')
 
-                            const row = (payload.new as LiveSessionRow | null) ?? null
-                            if (row) {
+                            const commitTs = payload.commit_timestamp ?? null
+                            const receiveLagMs = getReceiveLagMs(commitTs)
+                            const traceRow = (payload.new as LiveSessionRow | null) ?? null
+                            traceHostReceive({
+                                event: 'receive:live_sessions',
+                                fields: {
+                                    matchId,
+                                    sessionId: sessionId ?? null,
+                                    eventType: payload.eventType,
+                                    commitTs,
+                                    receiveLagMs,
+                                    payloadBytes: estimateJsonPayloadBytes(traceRow),
+                                },
+                            })
+
+                            const liveSessionRow = (payload.new as LiveSessionRow | null) ?? null
+                            if (liveSessionRow) {
                                 const prevRoundId = currentRoundIdRef.current
                                 const prevRoundType = currentRoundTypeRef.current
 
                                 const hadBaseline = hasSeenLiveSessionRef.current
                                 hasSeenLiveSessionRef.current = true
 
-                                currentRoundIdRef.current = row.current_round_id
-                                currentRoundTypeRef.current = row.current_round_type
+                                currentRoundIdRef.current = liveSessionRow.current_round_id
+                                currentRoundTypeRef.current = liveSessionRow.current_round_type
 
                                 dispatchHostSessionUpdate({
-                                    currentRoundId: row.current_round_id,
-                                    currentRoundType: row.current_round_type,
-                                    currentRoundQuestionId: row.current_round_question_id,
-                                    questionState: row.question_state,
-                                    timerDeadline: row.timer_deadline,
-                                    buzzerEnabled: row.buzzer_enabled,
-                                    showScoreboardOverlay: row.show_scoreboard_overlay,
-                                    showAnswersOverlay: row.show_answers_overlay,
+                                    currentRoundId: liveSessionRow.current_round_id,
+                                    currentRoundType: liveSessionRow.current_round_type,
+                                    currentRoundQuestionId: liveSessionRow.current_round_question_id,
+                                    questionState: liveSessionRow.question_state,
+                                    timerDeadline: liveSessionRow.timer_deadline,
+                                    buzzerEnabled: liveSessionRow.buzzer_enabled,
+                                    showScoreboardOverlay: liveSessionRow.show_scoreboard_overlay,
+                                    showAnswersOverlay: liveSessionRow.show_answers_overlay,
                                     source: 'realtime',
                                 })
 
                                 // Chỉ refresh toàn trang khi đổi vòng (SSR cần load danh sách câu/vòng, VCNV/VD bundles...).
                                 const roundChanged =
-                                    (prevRoundId ?? null) !== (row.current_round_id ?? null) ||
-                                    (prevRoundType ?? null) !== (row.current_round_type ?? null)
+                                    (prevRoundId ?? null) !== (liveSessionRow.current_round_id ?? null) ||
+                                    (prevRoundType ?? null) !== (liveSessionRow.current_round_type ?? null)
                                 if (hadBaseline && roundChanged) {
                                     scheduleRefresh('live_sessions:round_changed')
                                 }
@@ -289,8 +342,23 @@ export function HostRealtimeEventsListener({
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'star_uses', filter: `match_id=eq.${matchId}` },
-                        () => {
+                        (payload: RealtimePostgresChangesPayload<{ id: string }>) => {
                             trackReason('star_uses')
+
+                            const commitTs = payload.commit_timestamp ?? null
+                            const receiveLagMs = getReceiveLagMs(commitTs)
+                            const starUseRow = (payload.new ?? payload.old) as { id: string } | null
+                            traceHostReceive({
+                                event: 'receive:star_uses',
+                                fields: {
+                                    matchId,
+                                    sessionId: sessionId ?? null,
+                                    eventType: payload.eventType,
+                                    commitTs,
+                                    receiveLagMs,
+                                    payloadBytes: estimateJsonPayloadBytes(starUseRow),
+                                },
+                            })
                             // Star chủ yếu dùng cho Về đích; tránh refresh không cần thiết.
                             if (currentRoundTypeRef.current === 've_dich') {
                                 scheduleRefresh('star_uses')
@@ -300,8 +368,23 @@ export function HostRealtimeEventsListener({
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
-                        (payload) => {
+                        (payload: RealtimePostgresChangesPayload<{ id: string }>) => {
                             trackReason('answers')
+
+                            const commitTs = payload.commit_timestamp ?? null
+                            const receiveLagMs = getReceiveLagMs(commitTs)
+                            const answerRow = (payload.new ?? payload.old) as { id: string } | null
+                            traceHostReceive({
+                                event: 'receive:answers',
+                                fields: {
+                                    matchId,
+                                    sessionId: sessionId ?? null,
+                                    eventType: payload.eventType,
+                                    commitTs,
+                                    receiveLagMs,
+                                    payloadBytes: estimateJsonPayloadBytes(answerRow),
+                                },
+                            })
                             // Không refresh toàn trang theo answers: các card client tự subscribe/poll snapshot.
                             void payload
                         }
@@ -309,16 +392,31 @@ export function HostRealtimeEventsListener({
                     .on(
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'buzzer_events', filter: `match_id=eq.${matchId}` },
-                        (payload) => {
+                        (payload: RealtimePostgresChangesPayload<BuzzerEventRow>) => {
                             trackReason('buzzer_events')
 
-                            const row = payload.new as BuzzerEventRow | null
-                            if (!row) return
+                            const commitTs = payload.commit_timestamp ?? null
+                            const receiveLagMs = getReceiveLagMs(commitTs)
+                            const traceRow = (payload.new ?? payload.old) as BuzzerEventRow | null
+                            traceHostReceive({
+                                event: 'receive:buzzer_events',
+                                fields: {
+                                    matchId,
+                                    sessionId: sessionId ?? null,
+                                    eventType: payload.eventType,
+                                    commitTs,
+                                    receiveLagMs,
+                                    payloadBytes: estimateJsonPayloadBytes(traceRow),
+                                },
+                            })
+
+                            const buzzerRow = payload.new as BuzzerEventRow | null
+                            if (!buzzerRow) return
 
                             const activeQ = currentRoundQuestionIdRef.current
-                            const sameQuestion = Boolean(activeQ && row.round_question_id === activeQ)
+                            const sameQuestion = Boolean(activeQ && buzzerRow.round_question_id === activeQ)
                             if (sameQuestion && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
-                                if (payload.eventType === 'INSERT' && row.event_type === 'reset') {
+                                if (payload.eventType === 'INSERT' && buzzerRow.event_type === 'reset') {
                                     dispatchHostBuzzerUpdate({
                                         roundQuestionId: activeQ,
                                         winnerPlayerId: null,
@@ -326,19 +424,22 @@ export function HostRealtimeEventsListener({
                                     })
                                 }
 
-                                if (row.result === 'win' && (row.event_type === 'buzz' || row.event_type === 'steal')) {
+                                if (
+                                    buzzerRow.result === 'win' &&
+                                    (buzzerRow.event_type === 'buzz' || buzzerRow.event_type === 'steal')
+                                ) {
                                     dispatchHostBuzzerUpdate({
                                         roundQuestionId: activeQ,
-                                        winnerPlayerId: row.player_id ?? null,
+                                        winnerPlayerId: buzzerRow.player_id ?? null,
                                         source: 'realtime',
                                     })
                                 }
                             }
 
                             // Toast chỉ cho người nhanh nhất (cho cả INSERT/UPDATE -> win).
-                            if (row.result !== 'win') return
-                            if (!activeQ || row.round_question_id !== activeQ) return
-                            toastWinnerOnce(row)
+                            if (buzzerRow.result !== 'win') return
+                            if (!activeQ || buzzerRow.round_question_id !== activeQ) return
+                            toastWinnerOnce(buzzerRow)
                         }
                     )
 

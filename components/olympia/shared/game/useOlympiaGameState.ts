@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import getSupabase from "@/lib/supabase";
 import type {
   AnswerRow,
@@ -34,6 +34,44 @@ type BuzzerEvent = BuzzerEventRow & {
 
 type VcnvRevealMap = Record<string, boolean>;
 type VcnvLockMap = Record<string, boolean>;
+
+const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === "1";
+
+type OlympiaClientTraceFields = Record<string, string | number | boolean | null>;
+
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+function estimateJsonPayloadBytes<T extends object>(value: T | null): number {
+  if (!value) return 0;
+  try {
+    return utf8ByteLength(JSON.stringify(value));
+  } catch {
+    return 0;
+  }
+}
+
+function getReceiveLagMs(commitTimestamp: string | null | undefined): number | null {
+  if (!commitTimestamp) return null;
+  const commitMs = Date.parse(commitTimestamp);
+  if (!Number.isFinite(commitMs)) return null;
+  const lag = Date.now() - commitMs;
+  return lag >= 0 ? lag : 0;
+}
+
+function traceClientReceive(params: { event: string; fields: OlympiaClientTraceFields }): void {
+  if (!OLYMPIA_CLIENT_TRACE) return;
+  const payload = {
+    layer: "client-receive",
+    action: "postgres_changes",
+    event: params.event,
+    ts: new Date().toISOString(),
+    payloadBytes: typeof params.fields.payloadBytes === "number" ? params.fields.payloadBytes : 0,
+    ...params.fields,
+  };
+  console.info("[Olympia][Trace]", JSON.stringify(payload));
+}
 
 const computeRemaining = (deadline: string | null): TimerSnapshot => {
   if (!deadline) return { deadline: null, remainingMs: null, isExpired: false };
@@ -482,7 +520,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           .on(
             "postgres_changes",
             { event: "*", schema: "olympia", table: "live_sessions", filter: `id=eq.${sessionId}` },
-            (payload) => {
+            (payload: RealtimePostgresChangesPayload<GameSessionPayload["session"]>) => {
+              const commitTs = payload.commit_timestamp ?? null;
+              const receiveLagMs = getReceiveLagMs(commitTs);
+              const row = (payload.new as GameSessionPayload["session"] | null) ?? null;
+              traceClientReceive({
+                event: "receive:live_sessions",
+                fields: {
+                  sessionId,
+                  matchId,
+                  eventType: payload.eventType,
+                  commitTs,
+                  receiveLagMs,
+                  payloadBytes: estimateJsonPayloadBytes(row),
+                },
+              });
               if (payload.new) {
                 setSession((prev) => ({ ...prev, ...(payload.new as typeof prev) }));
               }
@@ -516,7 +568,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           .on(
             "postgres_changes",
             { event: "*", schema: "olympia", table: "match_scores" },
-            (payload) => {
+            (payload: RealtimePostgresChangesPayload<ScoreRow>) => {
+              const commitTs = payload.commit_timestamp ?? null;
+              const receiveLagMs = getReceiveLagMs(commitTs);
+              const row = (payload.new as ScoreRow | null) ?? null;
+              traceClientReceive({
+                event: "receive:match_scores",
+                fields: {
+                  sessionId,
+                  matchId,
+                  eventType: payload.eventType,
+                  commitTs,
+                  receiveLagMs,
+                  payloadBytes: estimateJsonPayloadBytes(row),
+                },
+              });
               const nextScore = payload.new as ScoreRow | null;
               if (!nextScore) return;
               if ((nextScore.match_id ?? matchId) !== matchId) return;
@@ -569,7 +635,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           .on(
             "postgres_changes",
             { event: "INSERT", schema: "olympia", table: "buzzer_events" },
-            (payload) => {
+            (payload: RealtimePostgresChangesPayload<BuzzerEvent>) => {
+              const commitTs = payload.commit_timestamp ?? null;
+              const receiveLagMs = getReceiveLagMs(commitTs);
+              const row = (payload.new as BuzzerEvent | null) ?? null;
+              traceClientReceive({
+                event: "receive:buzzer_events",
+                fields: {
+                  sessionId,
+                  matchId,
+                  eventType: payload.eventType,
+                  commitTs,
+                  receiveLagMs,
+                  payloadBytes: estimateJsonPayloadBytes(row),
+                },
+              });
               const eventRow = payload.new as BuzzerEvent | null;
               if (!eventRow) return;
               if ((eventRow.match_id ?? matchId) !== matchId) return;
@@ -580,7 +660,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           .on(
             "postgres_changes",
             { event: "*", schema: "olympia", table: "answers" },
-            (payload) => {
+            (payload: RealtimePostgresChangesPayload<AnswerRow>) => {
+              const commitTs = payload.commit_timestamp ?? null;
+              const receiveLagMs = getReceiveLagMs(commitTs);
+              const traceRow = ((payload.new ?? payload.old) as AnswerRow | null) ?? null;
+              traceClientReceive({
+                event: "receive:answers",
+                fields: {
+                  sessionId,
+                  matchId,
+                  eventType: payload.eventType,
+                  commitTs,
+                  receiveLagMs,
+                  payloadBytes: estimateJsonPayloadBytes(traceRow),
+                },
+              });
               const row = (payload.new ?? payload.old) as AnswerRow | null;
               if (!row) return;
 

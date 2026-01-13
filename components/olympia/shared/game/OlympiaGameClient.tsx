@@ -56,6 +56,26 @@ const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === '1'
 
 type OlympiaClientTraceFields = Record<string, string | number | boolean | null>
 
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).length
+}
+
+function estimateFormDataPayloadBytes(formData: FormData): number {
+  let total = 0
+  for (const [key, value] of formData.entries()) {
+    total += utf8ByteLength(key)
+    if (typeof value === 'string') {
+      total += utf8ByteLength(value)
+      continue
+    }
+
+    total += utf8ByteLength(value.name)
+    total += utf8ByteLength(value.type)
+    total += value.size
+  }
+  return total
+}
+
 function createClientTraceId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -71,13 +91,16 @@ function traceClient(params: {
 }): void {
   if (!OLYMPIA_CLIENT_TRACE) return
   const { traceId, action, event, fields } = params
-  console.info('[Olympia][Trace]', {
+  const payload = {
     layer: 'client',
     traceId,
     action,
     event,
+    ts: new Date().toISOString(),
+    payloadBytes: typeof fields?.payloadBytes === 'number' ? fields.payloadBytes : 0,
     ...(fields ?? {}),
-  })
+  }
+  console.info('[Olympia][Trace]', JSON.stringify(payload))
 }
 
 function FormSubmitButton({ children, disabled, variant }: { children: ReactNode; disabled?: boolean; variant?: 'default' | 'outline' }) {
@@ -120,7 +143,12 @@ export function OlympiaGameClient({
     async (prevState: ActionState, formData: FormData): Promise<ActionState> => {
       const traceId = createClientTraceId()
       formData.set('traceId', traceId)
-      traceClient({ traceId, action: 'submitAnswerAction', event: 'start', fields: { sessionId } })
+      traceClient({
+        traceId,
+        action: 'submitAnswerAction',
+        event: 'start',
+        fields: { sessionId, payloadBytes: estimateFormDataPayloadBytes(formData) },
+      })
       const t0 = performance.now()
       const result = await submitAnswerAction(prevState, formData)
       const t1 = performance.now()
@@ -139,7 +167,12 @@ export function OlympiaGameClient({
     async (prevState: ActionState, formData: FormData): Promise<ActionState> => {
       const traceId = createClientTraceId()
       formData.set('traceId', traceId)
-      traceClient({ traceId, action: 'triggerBuzzerAction', event: 'start', fields: { sessionId } })
+      traceClient({
+        traceId,
+        action: 'triggerBuzzerAction',
+        event: 'start',
+        fields: { sessionId, payloadBytes: estimateFormDataPayloadBytes(formData) },
+      })
       const t0 = performance.now()
       const result = await triggerBuzzerAction(prevState, formData)
       const t1 = performance.now()

@@ -2195,12 +2195,20 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       }
     }
 
-    const { data: playerRow, error: playerError } = await olympia
-      .from("match_players")
-      .select("id, is_disqualified_obstacle")
-      .eq("match_id", session.match_id)
-      .eq("participant_id", appUserId)
-      .maybeSingle();
+    const [{ data: playerRow, error: playerError }, { data: roundQuestion, error: rqError }] =
+      await Promise.all([
+        olympia
+          .from("match_players")
+          .select("id, is_disqualified_obstacle")
+          .eq("match_id", session.match_id)
+          .eq("participant_id", appUserId)
+          .maybeSingle(),
+        olympia
+          .from("round_questions")
+          .select("id, match_round_id, target_player_id, meta, answer_text")
+          .eq("id", session.current_round_question_id)
+          .maybeSingle(),
+      ]);
 
     traceInfo({
       traceId,
@@ -2208,21 +2216,6 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       event: "db.match_players",
       fields: { msSinceStart: Date.now() - startedAt },
     });
-
-    if (playerError) return { error: playerError.message };
-    if (!playerRow) return { error: "Bạn không thuộc trận này." };
-
-    // CNV: nếu đã bị loại quyền đoán CNV trong vòng này, không cho gửi đáp án từ khung nhập.
-    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
-      return { error: "Bạn đã bị loại quyền trả lời ở vòng CNV này." };
-    }
-
-    const { data: roundQuestion, error: rqError } = await olympia
-      .from("round_questions")
-      .select("id, match_round_id, target_player_id, meta, answer_text")
-      .eq("id", session.current_round_question_id)
-      .maybeSingle();
-
     traceInfo({
       traceId,
       action: "submitAnswerAction",
@@ -2230,8 +2223,16 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       fields: { msSinceStart: Date.now() - startedAt },
     });
 
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
     if (rqError) return { error: rqError.message };
     if (!roundQuestion) return { error: "Không tìm thấy câu hỏi hiện tại." };
+
+    // CNV: nếu đã bị loại quyền đoán CNV trong vòng này, không cho gửi đáp án từ khung nhập.
+    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
+      return { error: "Bạn đã bị loại quyền trả lời ở vòng CNV này." };
+    }
 
     // Khởi động lượt cá nhân: chỉ thí sinh đúng ghế (KD{seat}-) mới được gửi đáp án.
     // Ưu tiên target_player_id nếu có; nếu không có, suy luận theo meta.code.
@@ -2430,12 +2431,20 @@ export async function triggerBuzzerAction(
       return { error: "Host chưa mở câu hỏi/cửa cướp để nhận buzzer." };
     }
 
-    const { data: playerRow, error: playerError } = await olympia
-      .from("match_players")
-      .select("id, is_disqualified_obstacle")
-      .eq("match_id", session.match_id)
-      .eq("participant_id", appUserId)
-      .maybeSingle();
+    const [{ data: playerRow, error: playerError }, { data: rq, error: rqError }] =
+      await Promise.all([
+        olympia
+          .from("match_players")
+          .select("id, is_disqualified_obstacle")
+          .eq("match_id", session.match_id)
+          .eq("participant_id", appUserId)
+          .maybeSingle(),
+        olympia
+          .from("round_questions")
+          .select("id, target_player_id, meta")
+          .eq("id", session.current_round_question_id)
+          .maybeSingle(),
+      ]);
 
     traceInfo({
       traceId,
@@ -2443,29 +2452,24 @@ export async function triggerBuzzerAction(
       event: "db.match_players",
       fields: { msSinceStart: Date.now() - startedAt },
     });
-
-    if (playerError) return { error: playerError.message };
-    if (!playerRow) return { error: "Bạn không thuộc trận này." };
-
-    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
-      return { error: "Bạn đã bị loại quyền đoán CNV ở vòng này." };
-    }
-
-    // Khởi động lượt cá nhân: không cho bấm chuông.
-    const { data: rq, error: rqError } = await olympia
-      .from("round_questions")
-      .select("id, target_player_id, meta")
-      .eq("id", session.current_round_question_id)
-      .maybeSingle();
-
     traceInfo({
       traceId,
       action: "triggerBuzzerAction",
       event: "db.round_questions",
       fields: { msSinceStart: Date.now() - startedAt },
     });
+
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
     if (rqError) return { error: rqError.message };
     if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
+
+    if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
+      return { error: "Bạn đã bị loại quyền đoán CNV ở vòng này." };
+    }
+
+    // Khởi động lượt cá nhân: không cho bấm chuông.
     const inferredKhoiDong =
       session.current_round_type === "khoi_dong" && !rq?.target_player_id
         ? parseKhoiDongCodeInfoFromMeta((rq as unknown as { meta?: unknown })?.meta)

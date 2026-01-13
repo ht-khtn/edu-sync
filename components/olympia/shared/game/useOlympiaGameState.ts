@@ -1,11 +1,9 @@
 /*
  * Game session hook responsible for syncing live session state.
- * TODO: replace basic polling fallback with dedicated edge channel for lower latency events.
  */
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import getSupabase from "@/lib/supabase";
 import type {
@@ -86,7 +84,6 @@ const computeRemaining = (deadline: string | null): TimerSnapshot => {
 };
 
 export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameStateArgs) {
-  const router = useRouter();
   const [session, setSession] = useState(initialData.session);
   const [scores, setScores] = useState(initialData.scores);
   const [roundQuestions, setRoundQuestions] = useState(initialData.roundQuestions);
@@ -105,12 +102,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const channelRef = useRef<RealtimeChannel | null>(null);
   const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabase>> | null>(null);
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
-  const pollInFlightRef = useRef(false);
   const realtimeReadyRef = useRef(false);
-  const lastPollAtRef = useRef(0);
+  const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
   const vcnvTrackedRqIdsRef = useRef<string[]>([]);
 
@@ -371,17 +366,12 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     }
   }, []);
 
-  const refreshFromServer = useCallback(() => {
-    setStatusMessage("Đang đồng bộ dữ liệu mới…");
-    router.refresh();
-  }, [router]);
-
-  const pollSnapshot = useCallback(async () => {
+  const fetchSnapshotOnce = useCallback(async () => {
     const supabase = supabaseRef.current;
     if (!supabase) return;
     if (typeof document !== "undefined" && document.hidden) return;
-    if (pollInFlightRef.current) return;
-    pollInFlightRef.current = true;
+    if (snapshotInFlightRef.current) return;
+    snapshotInFlightRef.current = true;
 
     try {
       const olympia = supabase.schema("olympia");
@@ -462,17 +452,14 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       console.warn("[Olympia] poll snapshot failed", err);
       setStatusMessage("Không thể đồng bộ realtime · đang thử lại…");
     } finally {
-      pollInFlightRef.current = false;
+      snapshotInFlightRef.current = false;
     }
   }, [fetchAnswersForQuestion, matchId, sessionId]);
 
-  // Khi host đổi vòng/đổi câu: gọi poll ngay để tránh trường hợp realtime chậm/mất event.
-  useEffect(() => {
-    if (!session.current_round_id && !session.current_round_question_id) return;
-    // Tránh spam: chỉ poll khi đã có supabase client.
-    if (!supabaseRef.current) return;
-    void pollSnapshot();
-  }, [pollSnapshot, session.current_round_id, session.current_round_question_id]);
+  const refreshFromServer = useCallback(() => {
+    setStatusMessage("Đang đồng bộ dữ liệu mới…");
+    void fetchSnapshotOnce();
+  }, [fetchSnapshotOnce]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -540,34 +527,15 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               }
             }
           )
-          // Round questions update when host selects a question (TODO: highlight active question path animation).
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "round_questions" },
-            (payload) => {
-              const nextQuestion = payload.new as RoundQuestionRow | null;
-              if (!nextQuestion) return;
-              const joinMatchId = Array.isArray(nextQuestion.match_rounds)
-                ? nextQuestion.match_rounds[0]?.match_id
-                : nextQuestion.match_rounds?.match_id;
-              const eventMatchId = joinMatchId ?? matchId;
-              if (eventMatchId !== matchId) return;
-              setRoundQuestions((prev) => {
-                const next = [...prev];
-                const idx = next.findIndex((row) => row.id === nextQuestion.id);
-                if (idx === -1) {
-                  next.push(nextQuestion);
-                } else {
-                  next[idx] = { ...next[idx], ...nextQuestion };
-                }
-                return next;
-              });
-            }
-          )
           // Scores reflect adjudication server-side.
           .on(
             "postgres_changes",
-            { event: "*", schema: "olympia", table: "match_scores" },
+            {
+              event: "*",
+              schema: "olympia",
+              table: "match_scores",
+              filter: `match_id=eq.${matchId}`,
+            },
             (payload: RealtimePostgresChangesPayload<ScoreRow>) => {
               const commitTs = payload.commit_timestamp ?? null;
               const receiveLagMs = getReceiveLagMs(commitTs);
@@ -603,11 +571,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           // Về đích: theo dõi Star (upsert/delete).
           .on(
             "postgres_changes",
-            { event: "*", schema: "olympia", table: "star_uses" },
+            { event: "*", schema: "olympia", table: "star_uses", filter: `match_id=eq.${matchId}` },
             (payload) => {
               const row = (payload.new ?? payload.old) as StarUseRow | null;
               if (!row) return;
-              if ((row.match_id ?? matchId) !== matchId) return;
 
               const isDelete =
                 (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
@@ -634,7 +601,12 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           // TODO: render buzzer feed with animations once UI finalized.
           .on(
             "postgres_changes",
-            { event: "INSERT", schema: "olympia", table: "buzzer_events" },
+            {
+              event: "INSERT",
+              schema: "olympia",
+              table: "buzzer_events",
+              filter: `match_id=eq.${matchId}`,
+            },
             (payload: RealtimePostgresChangesPayload<BuzzerEvent>) => {
               const commitTs = payload.commit_timestamp ?? null;
               const receiveLagMs = getReceiveLagMs(commitTs);
@@ -652,14 +624,13 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               });
               const eventRow = payload.new as BuzzerEvent | null;
               if (!eventRow) return;
-              if ((eventRow.match_id ?? matchId) !== matchId) return;
               setBuzzerEvents((prev) => [eventRow, ...prev].slice(0, 20));
             }
           )
           // Đáp án thí sinh (MC/host view dùng để theo dõi realtime)
           .on(
             "postgres_changes",
-            { event: "*", schema: "olympia", table: "answers" },
+            { event: "*", schema: "olympia", table: "answers", filter: `match_id=eq.${matchId}` },
             (payload: RealtimePostgresChangesPayload<AnswerRow>) => {
               const commitTs = payload.commit_timestamp ?? null;
               const receiveLagMs = getReceiveLagMs(commitTs);
@@ -677,9 +648,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               });
               const row = (payload.new ?? payload.old) as AnswerRow | null;
               if (!row) return;
-
-              // Nếu row có match_id thì filter chặt; nếu không có (tuỳ schema), fallback không filter.
-              if (row.match_id && row.match_id !== matchId) return;
 
               const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
               const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
@@ -727,6 +695,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             realtimeReadyRef.current = true;
             setStatusMessage(null);
             retryCountRef.current = 0;
+            void fetchSnapshotOnce();
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             setRealtimeReady(false);
@@ -755,18 +724,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
     subscribe();
 
-    // Fallback polling: đảm bảo mọi thay đổi (điểm/câu hỏi/màn chờ) cập nhật dù realtime bị chặn bởi auth/RLS.
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-    }
-    pollingRef.current = setInterval(() => {
-      const now = Date.now();
-      const intervalMs = realtimeReadyRef.current ? 15000 : 1500;
-      if (now - lastPollAtRef.current < intervalMs) return;
-      lastPollAtRef.current = now;
-      void pollSnapshot();
-    }, 1500);
-
     return () => {
       mounted = false;
       if (cleanupTimerRef.current) {
@@ -776,17 +733,13 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
       if (channelRef.current && supabaseRef.current) {
         supabaseRef.current.removeChannel(channelRef.current);
       } else if (channelRef.current) {
         channelRef.current.unsubscribe();
       }
     };
-  }, [sessionId, matchId, pollSnapshot, fetchVcnvRevealSnapshot, computeVcnvRowQuestionIds]);
+  }, [sessionId, matchId, fetchSnapshotOnce, fetchVcnvRevealSnapshot, computeVcnvRowQuestionIds]);
 
   // Khi host chuyển câu, load lại danh sách đáp án hiện tại (không reload trang).
   useEffect(() => {

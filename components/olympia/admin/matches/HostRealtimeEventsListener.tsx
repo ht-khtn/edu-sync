@@ -210,12 +210,15 @@ export function HostRealtimeEventsListener({
         const scheduleRefresh = (reason: string) => {
             if (!mounted) return
             if (typeof document !== 'undefined' && document.hidden) return
+            queuedReasonsRef.current.add(reason)
             if (refreshTimerRef.current) return
             refreshTimerRef.current = setTimeout(() => {
                 refreshTimerRef.current = null
-                console.debug('[HostRealtimeEventsListener] router.refresh', reason)
+                const reasons = Array.from(queuedReasonsRef.current)
+                queuedReasonsRef.current.clear()
+                console.debug('[HostRealtimeEventsListener] router.refresh', reasons)
                 router.refresh()
-            }, 220)
+            }, 40)
         }
 
         const trackReason = (reason: string) => {

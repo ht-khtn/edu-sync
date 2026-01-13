@@ -71,6 +71,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
   const pollInFlightRef = useRef(false);
+  const realtimeReadyRef = useRef(false);
+  const lastPollAtRef = useRef(0);
   const sessionRef = useRef(initialData.session);
   const vcnvTrackedRqIdsRef = useRef<string[]>([]);
 
@@ -628,11 +630,13 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
         channel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
+            realtimeReadyRef.current = true;
             setStatusMessage(null);
             retryCountRef.current = 0;
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             setRealtimeReady(false);
+            realtimeReadyRef.current = false;
 
             const nextCount = Math.min(retryCountRef.current + 1, 6);
             retryCountRef.current = nextCount;
@@ -662,6 +666,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       clearInterval(pollingRef.current);
     }
     pollingRef.current = setInterval(() => {
+      const now = Date.now();
+      const intervalMs = realtimeReadyRef.current ? 15000 : 1500;
+      if (now - lastPollAtRef.current < intervalMs) return;
+      lastPollAtRef.current = now;
       void pollSnapshot();
     }, 1500);
 

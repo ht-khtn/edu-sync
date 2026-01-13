@@ -117,7 +117,7 @@ CREATE TABLE olympia.obstacle_guesses (
   obstacle_id uuid NOT NULL,
   player_id uuid NOT NULL,
   guess_text text NOT NULL,
-  is_correct boolean NOT NULL DEFAULT false,
+  is_correct boolean NOT NULL DEFAULT false,  
   attempt_order smallint,
   attempted_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT obstacle_guesses_pkey PRIMARY KEY (id),

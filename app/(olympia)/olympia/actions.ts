@@ -30,6 +30,42 @@ export type ActionState = {
 
 const OLYMPIA_ACTION_PERF_TRACE = process.env.OLYMPIA_PERF_TRACE === "1";
 
+const OLYMPIA_ACTION_TRACE =
+  process.env.OLYMPIA_TRACE === "1" || process.env.OLYMPIA_PERF_TRACE === "1";
+
+type OlympiaTraceFields = Record<string, string | number | boolean | null>;
+
+function readStringFormField(formData: FormData, key: string): string | null {
+  const raw = formData.get(key);
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
+}
+
+function getOrCreateTraceId(formData: FormData): string {
+  const provided = readStringFormField(formData, "traceId");
+  if (provided) return provided;
+  // Dùng randomBytes để tránh phụ thuộc crypto.randomUUID trên mọi runtime.
+  return randomBytes(8).toString("hex");
+}
+
+function traceInfo(params: {
+  traceId: string;
+  action: string;
+  event: string;
+  fields?: OlympiaTraceFields;
+}): void {
+  if (!OLYMPIA_ACTION_TRACE) return;
+  const { traceId, action, event, fields } = params;
+  console.info("[Olympia][Trace]", {
+    layer: "server",
+    traceId,
+    action,
+    event,
+    ...(fields ?? {}),
+  });
+}
+
 function makePerfId(): string {
   // Tránh đụng label khi có nhiều request song song.
   return `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
@@ -2067,6 +2103,15 @@ export async function resetLiveSessionAndScoresAction(
 
 export async function submitAnswerAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
+    const startedAt = Date.now();
+    const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "start",
+      fields: { sessionId: readStringFormField(formData, "sessionId") },
+    });
+
     const { supabase, authUid, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
     if (!authUid || !appUserId) {
@@ -2091,6 +2136,13 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       )
       .eq("id", sessionId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "db.live_sessions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     if (error) return { error: error.message };
     if (!session) return { error: "Không tìm thấy phòng thi." };
@@ -2123,6 +2175,13 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       .eq("participant_id", appUserId)
       .maybeSingle();
 
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "db.match_players",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (playerError) return { error: playerError.message };
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
 
@@ -2136,6 +2195,13 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       .select("id, match_round_id, target_player_id, meta, answer_text")
       .eq("id", session.current_round_question_id)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "db.round_questions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     if (rqError) return { error: rqError.message };
     if (!roundQuestion) return { error: "Không tìm thấy câu hỏi hiện tại." };
@@ -2224,6 +2290,13 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
         .order("occurred_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      traceInfo({
+        traceId,
+        action: "submitAnswerAction",
+        event: "db.buzzer_events.last_reset",
+        fields: { msSinceStart: Date.now() - startedAt },
+      });
       const submittedMs = Date.parse(submittedAt);
       const resetMs = lastReset?.occurred_at
         ? Date.parse(lastReset.occurred_at as unknown as string)
@@ -2246,13 +2319,24 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
       is_correct: autoMarkCorrect,
     });
 
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "db.answers.insert",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (insertError) {
       return { error: insertError.message };
     }
 
-    return {
-      success: "Đã ghi nhận đáp án. Host sẽ chấm và cập nhật điểm.",
-    };
+    traceInfo({
+      traceId,
+      action: "submitAnswerAction",
+      event: "end",
+      fields: { msTotal: Date.now() - startedAt, matchId: session.match_id },
+    });
+    return { success: "Đã ghi nhận đáp án. Host sẽ chấm và cập nhật điểm." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể gửi đáp án ngay lúc này." };
   }
@@ -2263,6 +2347,15 @@ export async function triggerBuzzerAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
+    const startedAt = Date.now();
+    const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "start",
+      fields: { sessionId: readStringFormField(formData, "sessionId") },
+    });
+
     const { supabase, authUid, appUserId } = await getServerAuthContext();
     const olympia = supabase.schema("olympia");
     if (!authUid || !appUserId) {
@@ -2281,6 +2374,13 @@ export async function triggerBuzzerAction(
       )
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.live_sessions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     if (error) return { error: error.message };
     if (!session) return { error: "Không tìm thấy phòng thi." };
@@ -2307,6 +2407,13 @@ export async function triggerBuzzerAction(
       .eq("participant_id", appUserId)
       .maybeSingle();
 
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.match_players",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (playerError) return { error: playerError.message };
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
 
@@ -2320,6 +2427,13 @@ export async function triggerBuzzerAction(
       .select("id, target_player_id, meta")
       .eq("id", session.current_round_question_id)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.round_questions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
     if (rqError) return { error: rqError.message };
     if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
     const inferredKhoiDong =
@@ -2349,6 +2463,13 @@ export async function triggerBuzzerAction(
       .order("occurred_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.buzzer_events.last_reset",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
     if (resetErr) return { error: resetErr.message };
     const resetOccurredAt =
       (lastReset as unknown as { occurred_at?: string | null })?.occurred_at ?? null;
@@ -2366,6 +2487,13 @@ export async function triggerBuzzerAction(
       .order("occurred_at", { ascending: true })
       .limit(1)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.buzzer_events.first_buzz",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     if (buzzError) return { error: buzzError.message };
     if (firstBuzz && firstBuzz.result === "win" && firstBuzz.player_id !== playerRow.id) {
@@ -2385,6 +2513,13 @@ export async function triggerBuzzerAction(
       event_type: eventType,
       result: isWinner ? "win" : "lose",
       occurred_at: now,
+    });
+
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "db.buzzer_events.insert",
+      fields: { msSinceStart: Date.now() - startedAt, isWinner },
     });
 
     if (insertError) return { error: insertError.message };
@@ -2410,6 +2545,12 @@ export async function triggerBuzzerAction(
         .eq("id", session.id);
     }
 
+    traceInfo({
+      traceId,
+      action: "triggerBuzzerAction",
+      event: "end",
+      fields: { msTotal: Date.now() - startedAt, matchId: session.match_id, isWinner },
+    });
     return {
       success: isWinner
         ? eventType === "steal"
@@ -2662,6 +2803,17 @@ export async function confirmDecisionAction(
 ): Promise<ActionState> {
   try {
     const startedAt = Date.now();
+    const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "start",
+      fields: {
+        sessionId: readStringFormField(formData, "sessionId"),
+        playerId: readStringFormField(formData, "playerId"),
+        decision: readStringFormField(formData, "decision"),
+      },
+    });
     let afterSessionFetchAt: number | null = null;
     let afterScoreWriteAt: number | null = null;
 
@@ -2684,6 +2836,13 @@ export async function confirmDecisionAction(
       .select("id, match_id, join_code, current_round_type, current_round_question_id")
       .eq("id", sessionId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "db.live_sessions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     afterSessionFetchAt = Date.now();
 
@@ -2711,6 +2870,13 @@ export async function confirmDecisionAction(
         .maybeSingle();
       if (rqErr) return { error: rqErr.message };
       currentTargetPlayerId = (rqRow?.target_player_id as string | null) ?? null;
+
+      traceInfo({
+        traceId,
+        action: "confirmDecisionAction",
+        event: "db.round_questions",
+        fields: { msSinceStart: Date.now() - startedAt },
+      });
 
       // Xác định loại câu Khởi động dựa trên code (DKA- = thi chung, KD{N}- = thi riêng)
       let khoiDongCodeInfo: ReturnType<typeof parseKhoiDongCodeInfoFromMeta> | null = null;
@@ -2803,6 +2969,13 @@ export async function confirmDecisionAction(
       .eq("round_type", roundType)
       .maybeSingle();
 
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "db.match_scores.select",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (scoreError) return { error: scoreError.message };
 
     const currentPoints = scoreRow?.points ?? 0;
@@ -2883,6 +3056,13 @@ export async function confirmDecisionAction(
       if (insertScoreError) return { error: insertScoreError.message };
     }
 
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "db.match_scores.upsert",
+      fields: { msSinceStart: Date.now() - startedAt, appliedDelta },
+    });
+
     afterScoreWriteAt = Date.now();
 
     // Cập nhật đáp án mới nhất (nếu có) để lưu điểm và trạng thái đúng/sai.
@@ -2911,6 +3091,13 @@ export async function confirmDecisionAction(
         if (updateAnswerError) return { error: updateAnswerError.message };
       }
     }
+
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "db.answers.update_latest",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
 
     const { error: auditErr } = await insertScoreChange({
       olympia,
@@ -2941,6 +3128,13 @@ export async function confirmDecisionAction(
       msTotal: Date.now() - startedAt,
       msFetchSession: afterSessionFetchAt ? afterSessionFetchAt - startedAt : null,
       msAfterScoreWrite: afterScoreWriteAt ? afterScoreWriteAt - startedAt : null,
+    });
+
+    traceInfo({
+      traceId,
+      action: "confirmDecisionAction",
+      event: "end",
+      fields: { msTotal: Date.now() - startedAt, matchId: session.match_id, nextPoints },
     });
 
     return { success: `Đã xác nhận: ${decision}. Điểm mới: ${nextPoints}.` };
@@ -3071,6 +3265,7 @@ export async function confirmDecisionAndAdvanceAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
+    const traceId = getOrCreateTraceId(formData);
     const parsed = decisionAndAdvanceSchema.safeParse({
       sessionId: formData.get("sessionId"),
       playerId: formData.get("playerId"),
@@ -3090,6 +3285,7 @@ export async function confirmDecisionAndAdvanceAction(
     // 2) Chuyển câu tiếp theo và autoShow để host/clients thấy ngay.
     const fd = new FormData();
     fd.set("matchId", parsed.data.matchId);
+    fd.set("traceId", traceId);
     fd.set("direction", "next");
     if (typeof parsed.data.durationMs === "number" && Number.isFinite(parsed.data.durationMs)) {
       fd.set("durationMs", String(parsed.data.durationMs));
@@ -3121,6 +3317,16 @@ export async function setCurrentQuestionAction(
 ): Promise<ActionState> {
   try {
     const startedAt = Date.now();
+    const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "setCurrentQuestionAction",
+      event: "start",
+      fields: {
+        matchId: readStringFormField(formData, "matchId"),
+        roundQuestionId: readStringFormField(formData, "roundQuestionId"),
+      },
+    });
     const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
@@ -3140,6 +3346,13 @@ export async function setCurrentQuestionAction(
       .select("id, status")
       .eq("match_id", matchId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "setCurrentQuestionAction",
+      event: "db.live_sessions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
     if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
@@ -3157,6 +3370,13 @@ export async function setCurrentQuestionAction(
       .select("id, match_round_id, target_player_id, meta, match_rounds(round_type)")
       .eq("id", roundQuestionId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "setCurrentQuestionAction",
+      event: "db.round_questions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
     if (rqError) return { error: rqError.message };
     if (!roundQuestionRow) return { error: "Không tìm thấy câu hỏi." };
 
@@ -3216,6 +3436,13 @@ export async function setCurrentQuestionAction(
       })
       .eq("id", session.id);
 
+    traceInfo({
+      traceId,
+      action: "setCurrentQuestionAction",
+      event: "db.live_sessions.update",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (updateError) return { error: updateError.message };
 
     // Mỗi lần chọn câu: luôn insert reset để client lọc đúng theo mốc reset mới.
@@ -3238,6 +3465,12 @@ export async function setCurrentQuestionAction(
       roundQuestionId,
       msTotal: Date.now() - startedAt,
     });
+    traceInfo({
+      traceId,
+      action: "setCurrentQuestionAction",
+      event: "end",
+      fields: { msTotal: Date.now() - startedAt, matchId, roundQuestionId },
+    });
     return { success: "Đã hiển thị câu hỏi." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật câu hỏi." };
@@ -3255,6 +3488,16 @@ export async function advanceCurrentQuestionAction(
 ): Promise<ActionState> {
   try {
     const startedAt = Date.now();
+    const traceId = getOrCreateTraceId(formData);
+    traceInfo({
+      traceId,
+      action: "advanceCurrentQuestionAction",
+      event: "start",
+      fields: {
+        matchId: readStringFormField(formData, "matchId"),
+        direction: readStringFormField(formData, "direction"),
+      },
+    });
     const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
@@ -3278,6 +3521,13 @@ export async function advanceCurrentQuestionAction(
       )
       .eq("match_id", matchId)
       .maybeSingle();
+
+    traceInfo({
+      traceId,
+      action: "advanceCurrentQuestionAction",
+      event: "db.live_sessions",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
     if (sessionError) return { error: sessionError.message };
     if (!session) return { error: "Trận chưa mở phòng live." };
     if (session.status !== "running") return { error: "Phòng chưa ở trạng thái running." };
@@ -3508,6 +3758,13 @@ export async function advanceCurrentQuestionAction(
       })
       .eq("id", session.id);
 
+    traceInfo({
+      traceId,
+      action: "advanceCurrentQuestionAction",
+      event: "db.live_sessions.update",
+      fields: { msSinceStart: Date.now() - startedAt },
+    });
+
     if (updateError) return { error: updateError.message };
 
     // Mỗi lần đổi câu: luôn insert 1 reset event để client lọc buzzer events theo mốc reset mới.
@@ -3536,6 +3793,13 @@ export async function advanceCurrentQuestionAction(
       shouldAutoShow,
       durationMs,
       msTotal: Date.now() - startedAt,
+    });
+
+    traceInfo({
+      traceId,
+      action: "advanceCurrentQuestionAction",
+      event: "end",
+      fields: { msTotal: Date.now() - startedAt, matchId, shouldAutoShow },
     });
     return {
       success: shouldAutoShow ? "Đã chuyển & hiển thị câu mới." : "Đã chuyển câu & bật màn chờ.",

@@ -52,6 +52,34 @@ const questionStateLabel: Record<string, string> = {
 
 const actionInitialState: ActionState = { error: null, success: null }
 
+const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === '1'
+
+type OlympiaClientTraceFields = Record<string, string | number | boolean | null>
+
+function createClientTraceId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`
+}
+
+function traceClient(params: {
+  traceId: string
+  action: string
+  event: string
+  fields?: OlympiaClientTraceFields
+}): void {
+  if (!OLYMPIA_CLIENT_TRACE) return
+  const { traceId, action, event, fields } = params
+  console.info('[Olympia][Trace]', {
+    layer: 'client',
+    traceId,
+    action,
+    event,
+    ...(fields ?? {}),
+  })
+}
+
 function FormSubmitButton({ children, disabled, variant }: { children: ReactNode; disabled?: boolean; variant?: 'default' | 'outline' }) {
   const { pending } = useFormStatus()
   return (
@@ -87,8 +115,47 @@ export function OlympiaGameClient({
     viewerUserId,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
-  const [answerState, answerAction] = useActionState(submitAnswerAction, actionInitialState)
-  const [buzzerState, buzzerAction] = useActionState(triggerBuzzerAction, actionInitialState)
+
+  const submitAnswerActionTraced = useCallback(
+    async (prevState: ActionState, formData: FormData): Promise<ActionState> => {
+      const traceId = createClientTraceId()
+      formData.set('traceId', traceId)
+      traceClient({ traceId, action: 'submitAnswerAction', event: 'start', fields: { sessionId } })
+      const t0 = performance.now()
+      const result = await submitAnswerAction(prevState, formData)
+      const t1 = performance.now()
+      traceClient({
+        traceId,
+        action: 'submitAnswerAction',
+        event: 'end',
+        fields: { msAwaitServerAction: Math.round(t1 - t0), ok: !result.error },
+      })
+      return result
+    },
+    [sessionId]
+  )
+
+  const triggerBuzzerActionTraced = useCallback(
+    async (prevState: ActionState, formData: FormData): Promise<ActionState> => {
+      const traceId = createClientTraceId()
+      formData.set('traceId', traceId)
+      traceClient({ traceId, action: 'triggerBuzzerAction', event: 'start', fields: { sessionId } })
+      const t0 = performance.now()
+      const result = await triggerBuzzerAction(prevState, formData)
+      const t1 = performance.now()
+      traceClient({
+        traceId,
+        action: 'triggerBuzzerAction',
+        event: 'end',
+        fields: { msAwaitServerAction: Math.round(t1 - t0), ok: !result.error },
+      })
+      return result
+    },
+    [sessionId]
+  )
+
+  const [answerState, answerAction] = useActionState(submitAnswerActionTraced, actionInitialState)
+  const [buzzerState, buzzerAction] = useActionState(triggerBuzzerActionTraced, actionInitialState)
 
   const [optimisticBuzzerWinner, setOptimisticBuzzerWinner] = useState<{
     roundQuestionId: string

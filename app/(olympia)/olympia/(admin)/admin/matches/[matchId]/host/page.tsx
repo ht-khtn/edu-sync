@@ -98,34 +98,40 @@ type CachedRoundQuestionRow = {
   | null
 }
 
-const getRoundQuestionsForMatchCached = unstable_cache(
-  async (matchId: string, cacheUserKey: string): Promise<CachedRoundQuestionRow[]> => {
-    void cacheUserKey
-    const supabase = await getSupabaseAdminServer()
-    const olympia = supabase.schema('olympia')
-    const { data: rounds, error: roundsError } = await olympia
-      .from('match_rounds')
-      .select('id')
-      .eq('match_id', matchId)
-    if (roundsError) throw roundsError
-    const roundIds = (rounds ?? []).map((r) => r.id)
-    if (roundIds.length === 0) return []
+async function getRoundQuestionsForMatchCached(matchId: string): Promise<CachedRoundQuestionRow[]> {
+  // Lưu ý: `unstable_cache` cần key ổn định theo matchId.
+  // Nếu key không bao gồm matchId, dữ liệu round_questions có thể bị dùng chung giữa các trận,
+  // dẫn đến UI Về đích hiển thị "đã chốt gói" ngay trên trận mới.
+  const cached = unstable_cache(
+    async (): Promise<CachedRoundQuestionRow[]> => {
+      const supabase = await getSupabaseAdminServer()
+      const olympia = supabase.schema('olympia')
+      const { data: rounds, error: roundsError } = await olympia
+        .from('match_rounds')
+        .select('id')
+        .eq('match_id', matchId)
+      if (roundsError) throw roundsError
+      const roundIds = (rounds ?? []).map((r) => r.id)
+      if (roundIds.length === 0) return []
 
-    const { data: roundQuestions, error: rqError } = await olympia
-      .from('round_questions')
-      .select(
-        'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
-      )
-      .in('match_round_id', roundIds)
-      .order('match_round_id', { ascending: true })
-      .order('order_index', { ascending: true })
-      .order('id', { ascending: true })
-    if (rqError) throw rqError
-    return (roundQuestions as unknown as CachedRoundQuestionRow[] | null) ?? []
-  },
-  ['olympia', 'host', 'round-questions-by-match'],
-  { revalidate: 15 }
-)
+      const { data: roundQuestions, error: rqError } = await olympia
+        .from('round_questions')
+        .select(
+          'id, match_round_id, order_index, question_id, question_set_item_id, target_player_id, meta, question_text, answer_text, note, questions(image_url, audio_url), question_set_items(image_url, audio_url)'
+        )
+        .in('match_round_id', roundIds)
+        .order('match_round_id', { ascending: true })
+        .order('order_index', { ascending: true })
+        .order('id', { ascending: true })
+      if (rqError) throw rqError
+      return (roundQuestions as unknown as CachedRoundQuestionRow[] | null) ?? []
+    },
+    ['olympia', 'host', 'round-questions-by-match', matchId],
+    { revalidate: 15 }
+  )
+
+  return await cached()
+}
 
 async function perfTime<T>(label: string, fn: () => PromiseLike<T>): Promise<T> {
   if (!OLYMPIA_HOST_PERF_TRACE) return await fn()
@@ -456,10 +462,9 @@ async function fetchHostData(matchCode: string) {
 
     // Dữ liệu round_questions gần như tĩnh; cache ngắn hạn để giảm re-render sau server action.
     // Khi OLYMPIA_PERF_TRACE=1 vẫn đo được tổng thời gian qua measure/perfTime.
-    const cacheUserKey = 'shared'
     const cached = await perfTime(
       `[perf][host] cache.round_questions.byMatchId ${realMatchId}`,
-      () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId, cacheUserKey))
+      () => measure(perf, 'cache.round_questions.byMatchId', () => getRoundQuestionsForMatchCached(realMatchId))
     )
     return { data: cached }
   })()

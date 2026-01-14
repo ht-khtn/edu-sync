@@ -63,8 +63,8 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="EduSync" />
 
         {/* Icons for PWA */}
-        <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="32x32" />
+        <link rel="apple-touch-icon" />
 
         {/* Preconnect to external resources */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />

@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/inject-version.cjs",
-    "dev": "npm run predev && next dev",
+    "dev": "pnpm run predev && next dev",
     "dev:nosourcemaps": "next dev --disable-source-maps",
     "dev:webpack": "next dev --webpack",
     "prebuild": "node scripts/inject-version.cjs",
-    "build": "npm run prebuild && next build",
+    "build": "pnpm run prebuild && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",

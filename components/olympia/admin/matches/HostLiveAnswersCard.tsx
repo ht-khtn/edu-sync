@@ -40,6 +40,32 @@ type HostSnapshotResponse = {
     answers: HostSnapshotAnswer[]
 }
 
+type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | { [key: string]: JsonValue }
+    | JsonValue[]
+
+type RealtimeEventPayload = Record<string, JsonValue>
+
+type RealtimeEventRow = {
+    id: string
+    match_id: string
+    session_id: string | null
+    entity: string
+    entity_id: string | null
+    event_type: string
+    payload: RealtimeEventPayload
+    created_at: string
+}
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+    const value = payload[key]
+    return typeof value === 'string' ? value : null
+}
+
 type PlayerRow = {
     id: string
     seat_index: number | null
@@ -145,7 +171,6 @@ export function HostLiveAnswersCard({
     const playersChannelRef = useRef<RealtimeChannel | null>(null)
 
     const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     const effectiveRoundQuestionIdRef = useRef<string | null>(initialRoundQuestionId)
     useEffect(() => {
@@ -295,17 +320,13 @@ export function HostLiveAnswersCard({
             refreshTimerRef.current = setTimeout(() => {
                 refreshTimerRef.current = null
                 void refreshAnswers(reason)
-            }, 200)
+            }, 40)
         }
 
         const cleanup = async () => {
             if (refreshTimerRef.current) {
                 clearTimeout(refreshTimerRef.current)
                 refreshTimerRef.current = null
-            }
-            if (pollTimerRef.current) {
-                clearInterval(pollTimerRef.current)
-                pollTimerRef.current = null
             }
 
             try {
@@ -352,12 +373,17 @@ export function HostLiveAnswersCard({
                     .channel(`olympia-host-answers-${matchId}`)
                     .on(
                         'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
+                        { event: 'INSERT', schema: 'olympia', table: 'realtime_events', filter: `match_id=eq.${matchId}` },
                         (payload) => {
-                            const row = (payload.new ?? payload.old) as { round_question_id?: string | null } | null
                             const rqId = effectiveRoundQuestionIdRef.current
                             if (!rqId) return
-                            if (!row?.round_question_id || row.round_question_id !== rqId) return
+
+                            const evt = (payload.new ?? null) as RealtimeEventRow | null
+                            if (!evt || evt.match_id !== matchId) return
+                            if (evt.entity !== 'answers') return
+
+                            const changedRqId = payloadString(evt.payload, 'roundQuestionId')
+                            if (!changedRqId || changedRqId !== rqId) return
                             scheduleRefresh('answers changed')
                         }
                     )
@@ -371,7 +397,6 @@ export function HostLiveAnswersCard({
                         'postgres_changes',
                         { event: '*', schema: 'olympia', table: 'match_players', filter: `match_id=eq.${matchId}` },
                         () => {
-                            // Không optimize incremental để tránh sai type; refetch nhẹ.
                             void (async () => {
                                 try {
                                     const olympia = supabase.schema('olympia')
@@ -392,13 +417,6 @@ export function HostLiveAnswersCard({
 
                 playersChannel.subscribe()
                 playersChannelRef.current = playersChannel
-
-                // Poll snapshot: đảm bảo host thấy đáp án/buzzer/đổi câu mà không cần reload.
-                if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-                pollTimerRef.current = setInterval(() => {
-                    if (typeof document !== 'undefined' && document.hidden) return
-                    void refreshSnapshot('poll')
-                }, 2000)
             } catch {
                 // ignore
             }

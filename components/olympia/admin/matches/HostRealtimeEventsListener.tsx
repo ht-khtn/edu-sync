@@ -76,6 +76,29 @@ type LiveSessionRow = {
     show_answers_overlay: boolean | null
 }
 
+type RealtimeEventPayload = Record<string, string | number | boolean | null>
+
+type RealtimeEventRow = {
+    id: string
+    match_id: string
+    session_id: string | null
+    entity: string
+    entity_id: string | null
+    event_type: string
+    payload: RealtimeEventPayload
+    created_at: string
+}
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+    const value = payload[key]
+    return typeof value === 'string' ? value : null
+}
+
+function payloadBoolean(payload: RealtimeEventPayload, key: string): boolean | null {
+    const value = payload[key]
+    return typeof value === 'boolean' ? value : null
+}
+
 export function HostRealtimeEventsListener({
     matchId,
     sessionId,
@@ -286,31 +309,45 @@ export function HostRealtimeEventsListener({
                     .on(
                         'postgres_changes',
                         {
-                            event: '*',
+                            event: 'INSERT',
                             schema: 'olympia',
-                            table: 'live_sessions',
-                            ...(sessionId ? { filter: `id=eq.${sessionId}` } : {}),
+                            table: 'realtime_events',
+                            filter: `match_id=eq.${matchId}`,
                         },
-                        (payload: RealtimePostgresChangesPayload<LiveSessionRow>) => {
-                            trackReason('live_sessions')
+                        (payload: RealtimePostgresChangesPayload<RealtimeEventRow>) => {
+                            const evt = (payload.new as RealtimeEventRow | null) ?? null
+                            if (!evt || evt.match_id !== matchId) return
 
                             const commitTs = payload.commit_timestamp ?? null
                             const receiveLagMs = getReceiveLagMs(commitTs)
-                            const traceRow = (payload.new as LiveSessionRow | null) ?? null
                             traceHostReceive({
-                                event: 'receive:live_sessions',
+                                event: `receive:realtime_events:${evt.entity}`,
                                 fields: {
                                     matchId,
                                     sessionId: sessionId ?? null,
-                                    eventType: payload.eventType,
+                                    eventType: evt.event_type,
                                     commitTs,
                                     receiveLagMs,
-                                    payloadBytes: estimateJsonPayloadBytes(traceRow),
+                                    payloadBytes: estimateJsonPayloadBytes(evt.payload),
                                 },
                             })
 
-                            const liveSessionRow = (payload.new as LiveSessionRow | null) ?? null
-                            if (liveSessionRow) {
+                            if (evt.entity === 'live_sessions') {
+                                if (sessionId && evt.session_id && evt.session_id !== sessionId) return
+
+                                trackReason('live_sessions')
+                                const liveSessionRow: LiveSessionRow = {
+                                    id: payloadString(evt.payload, 'id') ?? (evt.session_id ?? ''),
+                                    current_round_id: payloadString(evt.payload, 'currentRoundId'),
+                                    current_round_type: payloadString(evt.payload, 'currentRoundType'),
+                                    current_round_question_id: payloadString(evt.payload, 'currentRoundQuestionId'),
+                                    question_state: payloadString(evt.payload, 'questionState'),
+                                    timer_deadline: payloadString(evt.payload, 'timerDeadline'),
+                                    buzzer_enabled: payloadBoolean(evt.payload, 'buzzerEnabled'),
+                                    show_scoreboard_overlay: payloadBoolean(evt.payload, 'showScoreboardOverlay'),
+                                    show_answers_overlay: payloadBoolean(evt.payload, 'showAnswersOverlay'),
+                                }
+
                                 const prevRoundId = currentRoundIdRef.current
                                 const prevRoundType = currentRoundTypeRef.current
 
@@ -332,117 +369,69 @@ export function HostRealtimeEventsListener({
                                     source: 'realtime',
                                 })
 
-                                // Chỉ refresh toàn trang khi đổi vòng (SSR cần load danh sách câu/vòng, VCNV/VD bundles...).
                                 const roundChanged =
                                     (prevRoundId ?? null) !== (liveSessionRow.current_round_id ?? null) ||
                                     (prevRoundType ?? null) !== (liveSessionRow.current_round_type ?? null)
                                 if (hadBaseline && roundChanged) {
                                     scheduleRefresh('live_sessions:round_changed')
                                 }
+                                return
                             }
-                        }
-                    )
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'star_uses', filter: `match_id=eq.${matchId}` },
-                        (payload: RealtimePostgresChangesPayload<{ id: string }>) => {
-                            trackReason('star_uses')
 
-                            const commitTs = payload.commit_timestamp ?? null
-                            const receiveLagMs = getReceiveLagMs(commitTs)
-                            const starUseRow = (payload.new ?? payload.old) as { id: string } | null
-                            traceHostReceive({
-                                event: 'receive:star_uses',
-                                fields: {
-                                    matchId,
-                                    sessionId: sessionId ?? null,
-                                    eventType: payload.eventType,
-                                    commitTs,
-                                    receiveLagMs,
-                                    payloadBytes: estimateJsonPayloadBytes(starUseRow),
-                                },
-                            })
-                            // Star chủ yếu dùng cho Về đích; tránh refresh không cần thiết.
-                            if (currentRoundTypeRef.current === 've_dich') {
-                                scheduleRefresh('star_uses')
+                            if (evt.entity === 'star_uses') {
+                                trackReason('star_uses')
+                                if (currentRoundTypeRef.current === 've_dich') {
+                                    scheduleRefresh('star_uses')
+                                }
+                                return
                             }
-                        }
-                    )
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
-                        (payload: RealtimePostgresChangesPayload<{ id: string }>) => {
-                            trackReason('answers')
 
-                            const commitTs = payload.commit_timestamp ?? null
-                            const receiveLagMs = getReceiveLagMs(commitTs)
-                            const answerRow = (payload.new ?? payload.old) as { id: string } | null
-                            traceHostReceive({
-                                event: 'receive:answers',
-                                fields: {
-                                    matchId,
-                                    sessionId: sessionId ?? null,
-                                    eventType: payload.eventType,
-                                    commitTs,
-                                    receiveLagMs,
-                                    payloadBytes: estimateJsonPayloadBytes(answerRow),
-                                },
-                            })
-                            // Không refresh toàn trang theo answers: các card client tự subscribe/poll snapshot.
-                            void payload
-                        }
-                    )
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'buzzer_events', filter: `match_id=eq.${matchId}` },
-                        (payload: RealtimePostgresChangesPayload<BuzzerEventRow>) => {
-                            trackReason('buzzer_events')
+                            if (evt.entity === 'answers') {
+                                trackReason('answers')
+                                return
+                            }
 
-                            const commitTs = payload.commit_timestamp ?? null
-                            const receiveLagMs = getReceiveLagMs(commitTs)
-                            const traceRow = (payload.new ?? payload.old) as BuzzerEventRow | null
-                            traceHostReceive({
-                                event: 'receive:buzzer_events',
-                                fields: {
-                                    matchId,
-                                    sessionId: sessionId ?? null,
-                                    eventType: payload.eventType,
-                                    commitTs,
-                                    receiveLagMs,
-                                    payloadBytes: estimateJsonPayloadBytes(traceRow),
-                                },
-                            })
+                            if (evt.entity === 'buzzer_events') {
+                                trackReason('buzzer_events')
 
-                            const buzzerRow = payload.new as BuzzerEventRow | null
-                            if (!buzzerRow) return
-
-                            const activeQ = currentRoundQuestionIdRef.current
-                            const sameQuestion = Boolean(activeQ && buzzerRow.round_question_id === activeQ)
-                            if (sameQuestion && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
-                                if (payload.eventType === 'INSERT' && buzzerRow.event_type === 'reset') {
-                                    dispatchHostBuzzerUpdate({
-                                        roundQuestionId: activeQ,
-                                        winnerPlayerId: null,
-                                        source: 'realtime',
-                                    })
+                                const buzzerRow: BuzzerEventRow = {
+                                    id: payloadString(evt.payload, 'id') ?? '',
+                                    match_id: evt.match_id,
+                                    round_question_id: payloadString(evt.payload, 'roundQuestionId'),
+                                    player_id: payloadString(evt.payload, 'playerId'),
+                                    result: payloadString(evt.payload, 'result'),
+                                    event_type: payloadString(evt.payload, 'eventType'),
+                                    occurred_at: payloadString(evt.payload, 'occurredAt'),
                                 }
 
-                                if (
-                                    buzzerRow.result === 'win' &&
-                                    (buzzerRow.event_type === 'buzz' || buzzerRow.event_type === 'steal')
-                                ) {
-                                    dispatchHostBuzzerUpdate({
-                                        roundQuestionId: activeQ,
-                                        winnerPlayerId: buzzerRow.player_id ?? null,
-                                        source: 'realtime',
-                                    })
-                                }
-                            }
+                                const activeQ = currentRoundQuestionIdRef.current
+                                const sameQuestion = Boolean(activeQ && buzzerRow.round_question_id === activeQ)
 
-                            // Toast chỉ cho người nhanh nhất (cho cả INSERT/UPDATE -> win).
-                            if (buzzerRow.result !== 'win') return
-                            if (!activeQ || buzzerRow.round_question_id !== activeQ) return
-                            toastWinnerOnce(buzzerRow)
+                                if (sameQuestion && (evt.event_type === 'INSERT' || evt.event_type === 'UPDATE')) {
+                                    if (evt.event_type === 'INSERT' && buzzerRow.event_type === 'reset') {
+                                        dispatchHostBuzzerUpdate({
+                                            roundQuestionId: activeQ,
+                                            winnerPlayerId: null,
+                                            source: 'realtime',
+                                        })
+                                    }
+
+                                    if (
+                                        buzzerRow.result === 'win' &&
+                                        (buzzerRow.event_type === 'buzz' || buzzerRow.event_type === 'steal')
+                                    ) {
+                                        dispatchHostBuzzerUpdate({
+                                            roundQuestionId: activeQ,
+                                            winnerPlayerId: buzzerRow.player_id ?? null,
+                                            source: 'realtime',
+                                        })
+                                    }
+                                }
+
+                                if (buzzerRow.result !== 'win') return
+                                if (!activeQ || buzzerRow.round_question_id !== activeQ) return
+                                toastWinnerOnce(buzzerRow)
+                            }
                         }
                     )
 

@@ -423,7 +423,7 @@ async function fetchHostData(matchCode: string) {
       `[perf][host] supabase.match_scores.byMatchId ${realMatchId}`,
       () => olympia
         .from('match_scores')
-        .select('player_id, points')
+        .select('id, player_id, points')
         .eq('match_id', realMatchId)
     ),
   ])
@@ -635,6 +635,7 @@ async function fetchHostData(matchCode: string) {
     liveSession,
     rounds: rounds ?? [],
     players: normalizedPlayers,
+    scoreRows: (scores ?? []) as Array<{ id: string; player_id: string; points: number | null }>,
     scores: normalizedPlayers.map((p) => ({
       playerId: p.id,
       displayName:
@@ -712,6 +713,7 @@ export default async function OlympiaHostConsolePage({
     liveSession,
     rounds,
     players,
+    scoreRows,
     scores,
     roundQuestions,
     currentRoundQuestion,
@@ -1441,6 +1443,7 @@ export default async function OlympiaHostConsolePage({
           {scores.length > 0 ? (
             <LiveScoreboard
               matchId={match.id}
+              initialScoreRows={scoreRows}
               scores={scores}
               title="Xếp hạng"
               description=""

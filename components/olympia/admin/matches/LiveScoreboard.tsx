@@ -1,3 +1,4 @@
+
 'use client'
 
 import type { ReactNode } from 'react'
@@ -7,6 +8,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import getSupabase from '@/lib/supabase'
+
+type RealtimeEventPayload = Record<string, string | number | boolean | null>
+
+type RealtimeEventRow = {
+  id: string
+  match_id: string
+  session_id: string | null
+  entity: string
+  entity_id: string | null
+  event_type: string
+  payload: RealtimeEventPayload
+  created_at: string
+}
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+  const value = payload[key]
+  return typeof value === 'string' ? value : null
+}
+
+function payloadNumber(payload: RealtimeEventPayload, key: string): number | null {
+  const value = payload[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
 
 type ActionState = {
   error?: string | null
@@ -33,6 +57,7 @@ type Props = {
   title?: ReactNode
   description?: ReactNode
   scores: PlayerScore[]
+  initialScoreRows?: Array<{ id: string; player_id: string; points: number | null }>
   showRoundBreakdown?: boolean
   maxScore?: number
   resetScoresAction?: ScoreboardAction
@@ -44,6 +69,7 @@ export function LiveScoreboard({
   title = 'Bảng xếp hạng',
   description = 'Điểm số các thí sinh trong trận thi',
   scores,
+  initialScoreRows,
   maxScore,
   resetScoresAction,
   editScoreAction,
@@ -52,29 +78,51 @@ export function LiveScoreboard({
   const [editState, editFormAction, pendingEdit] = useActionState(editScoreAction ?? noopAction, initialState)
   const lastToastRef = useRef<string | null>(null)
   const [editing, setEditing] = useState<boolean>(false)
-  const [realtimeScores, setRealtimeScores] = useState<PlayerScore[]>(scores)
 
-  // Subscribe to realtime score updates
+  const [playerMeta, setPlayerMeta] = useState<PlayerScore[]>(scores)
+  const [scoreRowsById, setScoreRowsById] = useState<Record<string, { playerId: string; points: number | null }>>(() => {
+    const map: Record<string, { playerId: string; points: number | null }> = {}
+    for (const row of initialScoreRows ?? []) {
+      map[row.id] = { playerId: row.player_id, points: row.points ?? 0 }
+    }
+    return map
+  })
+
+  // Subscribe to realtime score updates (single stream: realtime_events)
   useEffect(() => {
     const setupSubscription = async () => {
       try {
         const supabase = await getSupabase()
 
-        // Subscribe to match_scores changes for this match using realtime
         const subscription = supabase
-          .channel(`match-scores-${matchId}`)
+          .channel(`olympia-score-events-${matchId}`)
           .on(
             'postgres_changes',
             {
-              event: '*',
+              event: 'INSERT',
               schema: 'olympia',
-              table: 'match_scores',
+              table: 'realtime_events',
               filter: `match_id=eq.${matchId}`,
             },
-            () => {
-              // When scores change, force parent to refetch
-              // Parent component will pass new scores via props
-              setRealtimeScores((prev) => [...prev])
+            (payload) => {
+              const evt = (payload.new ?? null) as RealtimeEventRow | null
+              if (!evt || evt.match_id !== matchId) return
+              if (evt.entity !== 'match_scores') return
+
+              const rowId = payloadString(evt.payload, 'id')
+              const playerId = payloadString(evt.payload, 'playerId')
+              const points = payloadNumber(evt.payload, 'points')
+              if (!rowId || !playerId) return
+
+              setScoreRowsById((prev) => {
+                if (evt.event_type === 'DELETE') {
+                  if (!prev[rowId]) return prev
+                  const next = { ...prev }
+                  delete next[rowId]
+                  return next
+                }
+                return { ...prev, [rowId]: { playerId, points } }
+              })
             }
           )
           .subscribe()
@@ -92,8 +140,19 @@ export function LiveScoreboard({
 
   // Update local state when props change
   useEffect(() => {
-    setRealtimeScores(scores)
+    setPlayerMeta(scores)
   }, [scores])
+
+  useEffect(() => {
+    if (!initialScoreRows) return
+    setScoreRowsById(() => {
+      const map: Record<string, { playerId: string; points: number | null }> = {}
+      for (const row of initialScoreRows) {
+        map[row.id] = { playerId: row.player_id, points: row.points ?? 0 }
+      }
+      return map
+    })
+  }, [initialScoreRows])
 
   useEffect(() => {
     const message = resetState.error ?? resetState.success ?? editState.error ?? editState.success
@@ -112,9 +171,22 @@ export function LiveScoreboard({
   }, [pendingEdit, pendingReset])
 
 
+  const derivedScores = useMemo(() => {
+    const totals = new Map<string, number>()
+    for (const row of Object.values(scoreRowsById)) {
+      const prev = totals.get(row.playerId) ?? 0
+      totals.set(row.playerId, prev + (row.points ?? 0))
+    }
+
+    return playerMeta.map((p) => ({
+      ...p,
+      totalScore: totals.get(p.playerId) ?? p.totalScore ?? 0,
+    }))
+  }, [playerMeta, scoreRowsById])
+
   const sortedScores = useMemo(
-    () => [...realtimeScores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
-    [realtimeScores]
+    () => [...derivedScores].sort((a, b) => (b.totalScore ?? 0) - (a.totalScore ?? 0)),
+    [derivedScores]
   )
 
   return (

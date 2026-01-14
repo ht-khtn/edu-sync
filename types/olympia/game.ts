@@ -50,7 +50,7 @@ export type RoundQuestionRow = {
   question_set_item_id?: string | null;
   order_index: number | null;
   target_player_id: string | null;
-  meta?: Record<string, unknown> | null;
+  meta?: Record<string, string | number | boolean | null> | null;
   // Snapshot fields (ưu tiên hiển thị khi migrate sang question_set_items).
   question_text?: string | null;
   answer_text?: string | null;

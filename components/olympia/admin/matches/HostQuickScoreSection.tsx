@@ -5,12 +5,6 @@ import { HostQuickScorePanel } from '@/components/olympia/admin/matches/HostQuic
 import { subscribeHostBuzzerUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { getCountdownMs, getVeDichCountdownMs } from '@/lib/olympia/olympia-config'
 
-type HostSnapshotResponse = {
-    currentRoundQuestionId: string | null
-    questionState: string | null
-    winnerPlayerId: string | null
-}
-
 type PlayerRow = {
     id: string
     seat_index: number | null
@@ -103,7 +97,6 @@ export function HostQuickScoreSection(props: Props) {
     const [effectiveTargetPlayerId, setEffectiveTargetPlayerId] = useState<string | null>(null)
 
     const effectiveRoundQuestionIdRef = useRef<string | null>(initialRoundQuestionId)
-    const pollInFlightRef = useRef(false)
 
     useEffect(() => {
         effectiveRoundQuestionIdRef.current = effectiveRoundQuestionId
@@ -167,46 +160,6 @@ export function HostQuickScoreSection(props: Props) {
             setEffectiveWinnerBuzzPlayerId(payload.winnerPlayerId ?? null)
         })
     }, [effectiveRoundQuestionId])
-
-    const refreshSnapshot = useCallback(async () => {
-        if (!matchId) return
-        if (!sessionId) return
-        if (typeof document !== 'undefined' && document.hidden) return
-        if (pollInFlightRef.current) return
-        pollInFlightRef.current = true
-
-        try {
-            const url = new URL('/api/olympia/host/snapshot', window.location.origin)
-            url.searchParams.set('matchId', matchId)
-            url.searchParams.set('sessionId', sessionId)
-
-            const res = await fetch(url.toString(), {
-                method: 'GET',
-                cache: 'no-store',
-                headers: { Accept: 'application/json' },
-            })
-            if (!res.ok) return
-
-            const data = (await res.json()) as HostSnapshotResponse
-
-            setEffectiveRoundQuestionId(data.currentRoundQuestionId ?? null)
-            setEffectiveQuestionState(data.questionState ?? null)
-            setEffectiveWinnerBuzzPlayerId(data.winnerPlayerId ?? null)
-        } catch {
-            // ignore: polling fallback
-        } finally {
-            pollInFlightRef.current = false
-        }
-    }, [matchId, sessionId])
-
-    useEffect(() => {
-        // Poll fallback để không phụ thuộc hoàn toàn vào Supabase Realtime.
-        void refreshSnapshot()
-        const t = setInterval(() => {
-            void refreshSnapshot()
-        }, 2000)
-        return () => clearInterval(t)
-    }, [refreshSnapshot])
 
     const effectiveRoundQuestion = useMemo(() => {
         if (!effectiveRoundQuestionId) return null

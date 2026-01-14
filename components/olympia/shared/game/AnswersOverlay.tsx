@@ -5,6 +5,42 @@ import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js'
 import getSupabase from '@/lib/supabase'
 import type { AnswerRow, PlayerRow, LiveSessionRow } from '@/types/olympia/game'
 
+type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | { [key: string]: JsonValue }
+    | JsonValue[]
+
+type RealtimeEventPayload = Record<string, JsonValue>
+
+type RealtimeEventRow = {
+    id: string
+    match_id: string
+    session_id: string | null
+    entity: string
+    entity_id: string | null
+    event_type: string
+    payload: RealtimeEventPayload
+    created_at: string
+}
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+    const value = payload[key]
+    return typeof value === 'string' ? value : null
+}
+
+function payloadNumber(payload: RealtimeEventPayload, key: string): number | null {
+    const value = payload[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function payloadBoolean(payload: RealtimeEventPayload, key: string): boolean | null {
+    const value = payload[key]
+    return typeof value === 'boolean' ? value : null
+}
+
 type Props = {
     session: LiveSessionRow
     match: { id: string; name: string }
@@ -17,7 +53,6 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
     const [answers, setAnswers] = useState<AnswerRow[]>([])
     const supabaseRef = useRef<SupabaseClient | null>(null)
     const answersChannelRef = useRef<RealtimeChannel | null>(null)
-    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     const currentQuestionId = session.current_round_question_id
 
@@ -36,11 +71,15 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                 .eq('round_question_id', currentQuestionId)
                 .order('response_time_ms', { ascending: true, nullsFirst: false })
                 .limit(50)
-            setAnswers((data ?? []) as unknown as AnswerRow[])
+            setAnswers((data ?? []) as AnswerRow[])
         } catch {
             // ignore
         }
     }, [currentQuestionId])
+
+    useEffect(() => {
+        void fetchAnswers()
+    }, [fetchAnswers])
 
     useEffect(() => {
         const subscribe = async () => {
@@ -54,22 +93,45 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                     .channel(`olympia-answers-overlay-${session.id}`)
                     .on(
                         'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${match.id}` },
+                        { event: 'INSERT', schema: 'olympia', table: 'realtime_events', filter: `match_id=eq.${match.id}` },
                         (payload) => {
-                            const row = (payload.new ?? payload.old) as { round_question_id?: string | null } | null
-                            if (!row?.round_question_id || row.round_question_id !== currentQuestionId) return
-                            void fetchAnswers()
+                            const evt = (payload.new ?? null) as RealtimeEventRow | null
+                            if (!evt || evt.match_id !== match.id) return
+                            if (evt.entity !== 'answers') return
+
+                            const rqId = payloadString(evt.payload, 'roundQuestionId')
+                            if (!rqId || rqId !== currentQuestionId) return
+
+                            const id = payloadString(evt.payload, 'id')
+                            const playerId = payloadString(evt.payload, 'playerId')
+                            const submittedAt = payloadString(evt.payload, 'submittedAt')
+                            if (!id || !playerId || !submittedAt) return
+
+                            const row: AnswerRow = {
+                                id,
+                                match_id: match.id,
+                                round_question_id: rqId,
+                                player_id: playerId,
+                                answer_text: payloadString(evt.payload, 'answerText'),
+                                is_correct: payloadBoolean(evt.payload, 'isCorrect'),
+                                points_awarded: payloadNumber(evt.payload, 'pointsAwarded'),
+                                response_time_ms: payloadNumber(evt.payload, 'responseTimeMs'),
+                                submitted_at: submittedAt,
+                            }
+
+                            setAnswers((prev) => {
+                                if (evt.event_type === 'DELETE') return prev.filter((a) => a.id !== row.id)
+                                const idx = prev.findIndex((a) => a.id === row.id)
+                                if (idx === -1) return [...prev, row]
+                                const next = prev.slice()
+                                next[idx] = { ...next[idx], ...row }
+                                return next
+                            })
                         }
                     )
 
                 ch.subscribe()
                 answersChannelRef.current = ch
-
-                if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-                pollTimerRef.current = setInterval(() => {
-                    if (typeof document !== 'undefined' && document.hidden) return
-                    void fetchAnswers()
-                }, 1000)
             } catch {
                 // ignore
             }
@@ -77,10 +139,6 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
 
         void subscribe()
         return () => {
-            if (pollTimerRef.current) {
-                clearInterval(pollTimerRef.current)
-                pollTimerRef.current = null
-            }
             try {
                 const supabase = supabaseRef.current
                 if (supabase && answersChannelRef.current) supabase.removeChannel(answersChannelRef.current)

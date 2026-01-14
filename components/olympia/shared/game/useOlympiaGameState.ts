@@ -26,10 +26,50 @@ type TimerSnapshot = {
   isExpired: boolean;
 };
 
+type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
 type BuzzerEvent = BuzzerEventRow & {
-  payload?: Record<string, unknown> | null;
+  payload?: Record<string, JsonValue> | null;
 };
 
+type RealtimeEventPayload = Record<string, JsonValue>;
+
+type RealtimeEventRow = {
+  id: string;
+  match_id: string;
+  session_id: string | null;
+  entity: string;
+  entity_id: string | null;
+  event_type: string;
+  payload: RealtimeEventPayload;
+  created_at: string;
+};
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+}
+
+function payloadNumber(payload: RealtimeEventPayload, key: string): number | null {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function payloadBoolean(payload: RealtimeEventPayload, key: string): boolean | null {
+  const value = payload[key];
+  return typeof value === "boolean" ? value : null;
+}
+
+function payloadObject(
+  payload: RealtimeEventPayload,
+  key: string
+): { [k: string]: JsonValue } | null {
+  const value = payload[key];
+  if (!value) return null;
+  if (typeof value !== "object") return null;
+  if (Array.isArray(value)) return null;
+  return value as { [k: string]: JsonValue };
+}
 type VcnvRevealMap = Record<string, boolean>;
 type VcnvLockMap = Record<string, boolean>;
 
@@ -121,7 +161,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     if (!rq) return null;
     const meta = rq.meta;
     if (meta && typeof meta === "object") {
-      const rec = meta as Record<string, unknown>;
+      const rec = meta as Record<string, string | number | boolean | null>;
       const raw = rec.code;
       const trimmed = typeof raw === "string" ? raw.trim().toUpperCase() : "";
       if (trimmed) return trimmed;
@@ -308,7 +348,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
         for (const rq of (rqRows as Array<{
           id: string;
-          meta?: unknown;
+          meta?: Record<string, string | number | boolean | null> | null;
           questions?: { code?: string } | null;
           question_set_items?: { code?: string } | null;
         }> | null) ?? []) {
@@ -316,7 +356,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
           // Ưu tiên meta.code
           if (rq.meta && typeof rq.meta === "object") {
-            const raw = (rq.meta as Record<string, unknown>).code;
+            const raw = (rq.meta as Record<string, string | number | boolean | null>).code;
             code = typeof raw === "string" ? raw.trim().toUpperCase() : null;
           }
 
@@ -425,8 +465,9 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           setRoundQuestions((prev) => {
             const next = [...prev];
             const idx = next.findIndex((row) => row.id === rqRow.id);
-            if (idx === -1) next.push(rqRow as unknown as RoundQuestionRow);
-            else next[idx] = { ...next[idx], ...(rqRow as unknown as RoundQuestionRow) };
+            const normalized = rqRow as RoundQuestionRow;
+            if (idx === -1) next.push(normalized);
+            else next[idx] = { ...next[idx], ...normalized };
             return next;
           });
         }
@@ -503,189 +544,214 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
         const channel = supabase
           .channel(`olympia-game-${sessionId}`)
-          // NOTE: live_sessions drives question_state + timer.
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "live_sessions", filter: `id=eq.${sessionId}` },
-            (payload: RealtimePostgresChangesPayload<GameSessionPayload["session"]>) => {
-              const commitTs = payload.commit_timestamp ?? null;
-              const receiveLagMs = getReceiveLagMs(commitTs);
-              const row = (payload.new as GameSessionPayload["session"] | null) ?? null;
-              traceClientReceive({
-                event: "receive:live_sessions",
-                fields: {
-                  sessionId,
-                  matchId,
-                  eventType: payload.eventType,
-                  commitTs,
-                  receiveLagMs,
-                  payloadBytes: estimateJsonPayloadBytes(row),
-                },
-              });
-              if (payload.new) {
-                setSession((prev) => ({ ...prev, ...(payload.new as typeof prev) }));
-              }
-            }
-          )
-          // Scores reflect adjudication server-side.
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "olympia",
-              table: "match_scores",
-              filter: `match_id=eq.${matchId}`,
-            },
-            (payload: RealtimePostgresChangesPayload<ScoreRow>) => {
-              const commitTs = payload.commit_timestamp ?? null;
-              const receiveLagMs = getReceiveLagMs(commitTs);
-              const row = (payload.new as ScoreRow | null) ?? null;
-              traceClientReceive({
-                event: "receive:match_scores",
-                fields: {
-                  sessionId,
-                  matchId,
-                  eventType: payload.eventType,
-                  commitTs,
-                  receiveLagMs,
-                  payloadBytes: estimateJsonPayloadBytes(row),
-                },
-              });
-              const nextScore = payload.new as ScoreRow | null;
-              if (!nextScore) return;
-              if ((nextScore.match_id ?? matchId) !== matchId) return;
-              setScores((prev) => {
-                const next = [...prev];
-                const resolveId = (row: ScoreRow) => row.id ?? `player:${row.player_id}`;
-                const candidateId = resolveId(nextScore);
-                const idx = next.findIndex((row) => resolveId(row) === candidateId);
-                if (idx === -1) {
-                  next.push(nextScore);
-                } else {
-                  next[idx] = { ...next[idx], ...nextScore };
-                }
-                return next;
-              });
-            }
-          )
-          // Về đích: theo dõi Star (upsert/delete).
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "star_uses", filter: `match_id=eq.${matchId}` },
-            (payload) => {
-              const row = (payload.new ?? payload.old) as StarUseRow | null;
-              if (!row) return;
-
-              const isDelete =
-                (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
-              setStarUses((prev) => {
-                const idx = prev.findIndex(
-                  (s) =>
-                    s.id === row.id ||
-                    (s.round_question_id === row.round_question_id && s.player_id === row.player_id)
-                );
-                if (isDelete) {
-                  if (idx === -1) return prev;
-                  const next = [...prev];
-                  next.splice(idx, 1);
-                  return next;
-                }
-
-                if (idx === -1) return [row, ...prev];
-                const next = [...prev];
-                next[idx] = { ...next[idx], ...row };
-                return next;
-              });
-            }
-          )
-          // TODO: render buzzer feed with animations once UI finalized.
           .on(
             "postgres_changes",
             {
               event: "INSERT",
               schema: "olympia",
-              table: "buzzer_events",
+              table: "realtime_events",
               filter: `match_id=eq.${matchId}`,
             },
-            (payload: RealtimePostgresChangesPayload<BuzzerEvent>) => {
+            (payload: RealtimePostgresChangesPayload<RealtimeEventRow>) => {
               const commitTs = payload.commit_timestamp ?? null;
               const receiveLagMs = getReceiveLagMs(commitTs);
-              const row = (payload.new as BuzzerEvent | null) ?? null;
+              const evt = (payload.new as RealtimeEventRow | null) ?? null;
               traceClientReceive({
-                event: "receive:buzzer_events",
+                event: `receive:realtime_events:${evt?.entity ?? "unknown"}`,
                 fields: {
                   sessionId,
                   matchId,
-                  eventType: payload.eventType,
+                  eventType: evt?.event_type ?? null,
                   commitTs,
                   receiveLagMs,
-                  payloadBytes: estimateJsonPayloadBytes(row),
+                  payloadBytes: estimateJsonPayloadBytes(evt?.payload ?? null),
                 },
               });
-              const eventRow = payload.new as BuzzerEvent | null;
-              if (!eventRow) return;
-              setBuzzerEvents((prev) => [eventRow, ...prev].slice(0, 20));
-            }
-          )
-          // Đáp án thí sinh (MC/host view dùng để theo dõi realtime)
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "olympia", table: "answers", filter: `match_id=eq.${matchId}` },
-            (payload: RealtimePostgresChangesPayload<AnswerRow>) => {
-              const commitTs = payload.commit_timestamp ?? null;
-              const receiveLagMs = getReceiveLagMs(commitTs);
-              const traceRow = ((payload.new ?? payload.old) as AnswerRow | null) ?? null;
-              traceClientReceive({
-                event: "receive:answers",
-                fields: {
-                  sessionId,
-                  matchId,
-                  eventType: payload.eventType,
-                  commitTs,
-                  receiveLagMs,
-                  payloadBytes: estimateJsonPayloadBytes(traceRow),
-                },
-              });
-              const row = (payload.new ?? payload.old) as AnswerRow | null;
-              if (!row) return;
 
-              const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
-              const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
-              const currentRqId = sessionRef.current.current_round_question_id;
-              const isCurrentQuestion = Boolean(
-                currentRqId && row.round_question_id === currentRqId
-              );
-              const isVcnvRound = sessionRef.current.current_round_type === "vcnv";
+              if (!evt) return;
+              if (evt.match_id !== matchId) return;
 
-              if (!isTrackedVcnv && !isCurrentQuestion && !isVcnvRound) return;
+              if (evt.entity === "live_sessions") {
+                if (evt.session_id && evt.session_id !== sessionId) return;
 
-              if (isTrackedVcnv || isVcnvRound) {
-                // Fetch snapshot cho tất cả hàng VCNV nếu là round VCNV
-                const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : computeVcnvRowQuestionIds();
-                if (rqIdsToCheck.length > 0) {
-                  void fetchVcnvRevealSnapshot(rqIdsToCheck);
-                }
+                const guestMediaControlObj = payloadObject(evt.payload, "guestMediaControl");
+                const guestMediaControl = guestMediaControlObj
+                  ? (guestMediaControlObj as GameSessionPayload["session"]["guest_media_control"])
+                  : undefined;
+
+                setSession((prev) => ({
+                  ...prev,
+                  status: payloadString(evt.payload, "status") ?? prev.status,
+                  join_code: payloadString(evt.payload, "joinCode") ?? prev.join_code,
+                  question_state: payloadString(evt.payload, "questionState"),
+                  current_round_id: payloadString(evt.payload, "currentRoundId"),
+                  current_round_type: payloadString(evt.payload, "currentRoundType"),
+                  current_round_question_id: payloadString(evt.payload, "currentRoundQuestionId"),
+                  timer_deadline: payloadString(evt.payload, "timerDeadline"),
+                  buzzer_enabled:
+                    payloadBoolean(evt.payload, "buzzerEnabled") ?? prev.buzzer_enabled,
+                  show_scoreboard_overlay:
+                    payloadBoolean(evt.payload, "showScoreboardOverlay") ??
+                    prev.show_scoreboard_overlay,
+                  show_answers_overlay:
+                    payloadBoolean(evt.payload, "showAnswersOverlay") ?? prev.show_answers_overlay,
+                  guest_media_control: guestMediaControl ?? prev.guest_media_control,
+                }));
+                return;
               }
 
-              if (isCurrentQuestion) {
-                const isDelete =
-                  (payload as { eventType?: string }).eventType === "DELETE" || !payload.new;
-                setAnswers((prev) => {
-                  if (isDelete) {
-                    return prev.filter((a) => a.id !== row.id);
+              if (evt.entity === "match_scores") {
+                const id = payloadString(evt.payload, "id");
+                const playerId = payloadString(evt.payload, "playerId");
+                const roundTypeValue = payloadString(evt.payload, "roundType");
+                const points = payloadNumber(evt.payload, "points");
+                if (!id || !playerId) return;
+
+                setScores((prev) => {
+                  const next = [...prev];
+                  const idx = next.findIndex((row) => (row.id ?? "") === id);
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    next.splice(idx, 1);
+                    return next;
                   }
 
-                  const next = [row, ...prev.filter((a) => a.id !== row.id)];
-                  const parsed = next
-                    .slice()
-                    .sort((a, b) => {
-                      const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
-                      const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
-                      return bt - at;
-                    })
-                    .slice(0, 20);
-                  return parsed;
+                  const nextScore: ScoreRow = {
+                    id,
+                    match_id: matchId,
+                    player_id: playerId,
+                    round_type: roundTypeValue,
+                    points,
+                  };
+                  if (idx === -1) next.push(nextScore);
+                  else next[idx] = { ...next[idx], ...nextScore };
+                  return next;
                 });
+                return;
+              }
+
+              if (evt.entity === "star_uses") {
+                const id = payloadString(evt.payload, "id");
+                const playerId = payloadString(evt.payload, "playerId");
+                const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
+                const declaredAt = payloadString(evt.payload, "declaredAt");
+                if (!id || !playerId || !roundQuestionId) return;
+                if (!declaredAt) return;
+
+                const row: StarUseRow = {
+                  id,
+                  match_id: matchId,
+                  player_id: playerId,
+                  round_question_id: roundQuestionId,
+                  outcome: payloadString(evt.payload, "outcome"),
+                  declared_at: declaredAt,
+                };
+
+                setStarUses((prev) => {
+                  const idx = prev.findIndex(
+                    (s) =>
+                      s.id === row.id ||
+                      (s.round_question_id === row.round_question_id &&
+                        s.player_id === row.player_id)
+                  );
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    const next = [...prev];
+                    next.splice(idx, 1);
+                    return next;
+                  }
+
+                  if (idx === -1) return [row, ...prev];
+                  const next = [...prev];
+                  next[idx] = { ...next[idx], ...row };
+                  return next;
+                });
+                return;
+              }
+
+              if (evt.entity === "buzzer_events") {
+                const id = payloadString(evt.payload, "id");
+                if (!id) return;
+                const row: BuzzerEvent = {
+                  id,
+                  match_id: matchId,
+                  round_question_id: payloadString(evt.payload, "roundQuestionId"),
+                  player_id: payloadString(evt.payload, "playerId"),
+                  event_type: payloadString(evt.payload, "eventType"),
+                  result: payloadString(evt.payload, "result"),
+                  occurred_at: payloadString(evt.payload, "occurredAt"),
+                };
+
+                setBuzzerEvents((prev) => {
+                  const idx = prev.findIndex((e) => e.id === row.id);
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    const next = prev.slice();
+                    next.splice(idx, 1);
+                    return next;
+                  }
+                  if (idx === -1) return [row, ...prev].slice(0, 20);
+                  const next = prev.slice();
+                  next[idx] = { ...next[idx], ...row };
+                  return next;
+                });
+                return;
+              }
+
+              if (evt.entity === "answers") {
+                const id = payloadString(evt.payload, "id");
+                const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
+                const playerId = payloadString(evt.payload, "playerId");
+                const submittedAt = payloadString(evt.payload, "submittedAt");
+                if (!id || !roundQuestionId || !playerId || !submittedAt) return;
+
+                const row: AnswerRow = {
+                  id,
+                  match_id: matchId,
+                  round_question_id: roundQuestionId,
+                  player_id: playerId,
+                  answer_text: payloadString(evt.payload, "answerText"),
+                  is_correct: payloadBoolean(evt.payload, "isCorrect"),
+                  points_awarded: payloadNumber(evt.payload, "pointsAwarded"),
+                  submitted_at: submittedAt,
+                  response_time_ms: payloadNumber(evt.payload, "responseTimeMs"),
+                };
+
+                const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
+                const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
+                const currentRqId = sessionRef.current.current_round_question_id;
+                const isCurrentQuestion = Boolean(
+                  currentRqId && row.round_question_id === currentRqId
+                );
+                const isVcnvRound = sessionRef.current.current_round_type === "vcnv";
+
+                if (!isTrackedVcnv && !isCurrentQuestion && !isVcnvRound) return;
+
+                if (isTrackedVcnv || isVcnvRound) {
+                  const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : computeVcnvRowQuestionIds();
+                  if (rqIdsToCheck.length > 0) {
+                    void fetchVcnvRevealSnapshot(rqIdsToCheck);
+                  }
+                }
+
+                if (isCurrentQuestion) {
+                  setAnswers((prev) => {
+                    if (evt.event_type === "DELETE") {
+                      return prev.filter((a) => a.id !== row.id);
+                    }
+
+                    const next = [row, ...prev.filter((a) => a.id !== row.id)];
+                    const parsed = next
+                      .slice()
+                      .sort((a, b) => {
+                        const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                        const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                        return bt - at;
+                      })
+                      .slice(0, 20);
+                    return parsed;
+                  });
+                }
               }
             }
           );

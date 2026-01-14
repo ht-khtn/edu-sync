@@ -9,6 +9,34 @@ import getSupabase from '@/lib/supabase'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { Check, Timer, X } from 'lucide-react'
 
+type RealtimeEventPayload = Record<string, string | number | boolean | null>
+
+type RealtimeEventRow = {
+    id: string
+    match_id: string
+    session_id: string | null
+    entity: string
+    entity_id: string | null
+    event_type: string
+    payload: RealtimeEventPayload
+    created_at: string
+}
+
+function payloadString(payload: RealtimeEventPayload, key: string): string | null {
+    const value = payload[key]
+    return typeof value === 'string' ? value : null
+}
+
+function payloadNumber(payload: RealtimeEventPayload, key: string): number | null {
+    const value = payload[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function payloadBoolean(payload: RealtimeEventPayload, key: string): boolean | null {
+    const value = payload[key]
+    return typeof value === 'boolean' ? value : null
+}
+
 export type AnswerRow = {
     id: string
     player_id: string
@@ -60,8 +88,6 @@ export function HostAnswersByTimeCard(props: Props) {
 
     const supabaseRef = useRef<SupabaseClient | null>(null)
     const answersChannelRef = useRef<RealtimeChannel | null>(null)
-    const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     useEffect(() => {
         return subscribeHostSessionUpdate((payload) => {
@@ -86,25 +112,18 @@ export function HostAnswersByTimeCard(props: Props) {
                 .eq('round_question_id', effectiveRoundQuestionId)
                 .order('submitted_at', { ascending: true })
                 .limit(50)
-            setAnswers((data ?? []) as unknown as AnswerRow[])
+            setAnswers((data ?? []) as AnswerRow[])
         } catch {
             // ignore
         }
     }, [effectiveRoundQuestionId, matchId])
 
     useEffect(() => {
-        let mounted = true
+        // Snapshot 1 lần khi đổi câu để không miss các đáp án đã submit trước khi subscribe.
+        void refreshAnswers()
+    }, [refreshAnswers])
 
-        const scheduleRefresh = () => {
-            if (!mounted) return
-            if (!effectiveRoundQuestionId) return
-            if (refreshTimerRef.current) return
-            refreshTimerRef.current = setTimeout(() => {
-                refreshTimerRef.current = null
-                void refreshAnswers()
-            }, 200)
-        }
-
+    useEffect(() => {
         const subscribe = async () => {
             try {
                 const supabase = supabaseRef.current ?? (await getSupabase())
@@ -116,22 +135,49 @@ export function HostAnswersByTimeCard(props: Props) {
                     .channel(`olympia-host-answers-by-time-${matchId}`)
                     .on(
                         'postgres_changes',
-                        { event: '*', schema: 'olympia', table: 'answers', filter: `match_id=eq.${matchId}` },
+                        { event: 'INSERT', schema: 'olympia', table: 'realtime_events', filter: `match_id=eq.${matchId}` },
                         (payload) => {
-                            const row = (payload.new ?? payload.old) as { round_question_id?: string | null } | null
-                            if (!row?.round_question_id || row.round_question_id !== effectiveRoundQuestionId) return
-                            scheduleRefresh()
+                            const evt = (payload.new ?? null) as RealtimeEventRow | null
+                            if (!evt || evt.match_id !== matchId) return
+                            if (evt.entity !== 'answers') return
+
+                            const rqId = payloadString(evt.payload, 'roundQuestionId')
+                            if (!rqId || rqId !== effectiveRoundQuestionId) return
+
+                            const answerId = payloadString(evt.payload, 'id')
+                            const playerId = payloadString(evt.payload, 'playerId')
+                            const answerText = payloadString(evt.payload, 'answerText')
+                            const submittedAt = payloadString(evt.payload, 'submittedAt')
+                            const responseTimeMs = payloadNumber(evt.payload, 'responseTimeMs')
+                            const isCorrect = payloadBoolean(evt.payload, 'isCorrect')
+                            const pointsAwarded = payloadNumber(evt.payload, 'pointsAwarded')
+
+                            if (!answerId || !playerId || !submittedAt) return
+
+                            setAnswers((prev) => {
+                                if (evt.event_type === 'DELETE') return prev.filter((a) => a.id !== answerId)
+
+                                const nextRow: AnswerRow = {
+                                    id: answerId,
+                                    player_id: playerId,
+                                    answer_text: answerText,
+                                    is_correct: isCorrect,
+                                    points_awarded: pointsAwarded,
+                                    submitted_at: submittedAt,
+                                    response_time_ms: responseTimeMs,
+                                }
+
+                                const idx = prev.findIndex((a) => a.id === answerId)
+                                if (idx === -1) return [...prev, nextRow]
+                                const next = prev.slice()
+                                next[idx] = { ...next[idx], ...nextRow }
+                                return next
+                            })
                         }
                     )
 
                 ch.subscribe()
                 answersChannelRef.current = ch
-
-                if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-                pollTimerRef.current = setInterval(() => {
-                    if (typeof document !== 'undefined' && document.hidden) return
-                    void refreshAnswers()
-                }, 2500)
             } catch {
                 // ignore
             }
@@ -139,15 +185,6 @@ export function HostAnswersByTimeCard(props: Props) {
 
         void subscribe()
         return () => {
-            mounted = false
-            if (refreshTimerRef.current) {
-                clearTimeout(refreshTimerRef.current)
-                refreshTimerRef.current = null
-            }
-            if (pollTimerRef.current) {
-                clearInterval(pollTimerRef.current)
-                pollTimerRef.current = null
-            }
             try {
                 const supabase = supabaseRef.current
                 if (supabase && answersChannelRef.current) supabase.removeChannel(answersChannelRef.current)
@@ -157,7 +194,7 @@ export function HostAnswersByTimeCard(props: Props) {
                 answersChannelRef.current = null
             }
         }
-    }, [effectiveRoundQuestionId, matchId, refreshAnswers])
+    }, [effectiveRoundQuestionId, matchId])
 
     const sorted = useMemo(() => {
         const arr = answers.slice()

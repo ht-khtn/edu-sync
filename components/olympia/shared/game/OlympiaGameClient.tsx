@@ -13,6 +13,11 @@ import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { OlympiaQuestionsPreloadOverlay } from '@/components/olympia/shared/game/OlympiaQuestionsPreloadOverlay'
+import {
+  createClientTraceId,
+  estimateFormDataPayloadBytes,
+  traceClient,
+} from "@/lib/olympia/olympia-client-trace";
 
 import { cn } from '@/utils/cn'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
@@ -52,56 +57,6 @@ const questionStateLabel: Record<string, string> = {
 
 const actionInitialState: ActionState = { error: null, success: null }
 
-const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === '1'
-
-type OlympiaClientTraceFields = Record<string, string | number | boolean | null>
-
-function utf8ByteLength(text: string): number {
-  return new TextEncoder().encode(text).length
-}
-
-function estimateFormDataPayloadBytes(formData: FormData): number {
-  let total = 0
-  for (const [key, value] of formData.entries()) {
-    total += utf8ByteLength(key)
-    if (typeof value === 'string') {
-      total += utf8ByteLength(value)
-      continue
-    }
-
-    total += utf8ByteLength(value.name)
-    total += utf8ByteLength(value.type)
-    total += value.size
-  }
-  return total
-}
-
-function createClientTraceId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`
-}
-
-function traceClient(params: {
-  traceId: string
-  action: string
-  event: string
-  fields?: OlympiaClientTraceFields
-}): void {
-  if (!OLYMPIA_CLIENT_TRACE) return
-  const { traceId, action, event, fields } = params
-  const payload = {
-    layer: 'client',
-    traceId,
-    action,
-    event,
-    ts: new Date().toISOString(),
-    payloadBytes: typeof fields?.payloadBytes === 'number' ? fields.payloadBytes : 0,
-    ...(fields ?? {}),
-  }
-  console.info('[Olympia][Trace]', JSON.stringify(payload))
-}
 
 function FormSubmitButton({ children, disabled, variant }: { children: ReactNode; disabled?: boolean; variant?: 'default' | 'outline' }) {
   const { pending } = useFormStatus()

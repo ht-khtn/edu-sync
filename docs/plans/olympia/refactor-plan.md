@@ -1,123 +1,207 @@
-# Olympia Refactor Plan (2026-01-14)
+# Olympia Codebase Refactor & Latency Optimization Plan
 
-## Mục tiêu
+## Overview
 
-- Giảm kích thước và độ phức tạp của các file Olympia rất lớn (page.tsx ~1000+, actions ~7000+) bằng cách module hoá theo concern.
-- Bảo toàn 100% hành vi hiện tại:
-  - Không thay đổi logic nghiệp vụ, luồng dữ liệu, ranh giới transaction, thứ tự event/side-effects.
-  - Realtime: không đổi channel/filter/payload/thứ tự phát.
-- Cải thiện khả năng bảo trì/đọc/test và tối ưu hiệu năng theo hướng **an toàn** (không “fix bug ngầm”).
+Structural refactoring of the Olympia codebase to reduce code duplication and improve maintainability **without changing any behavior, data flow, or transaction boundaries**.
 
-## Ràng buộc tuyệt đối
+## System Mapping Summary
 
-- Không thêm thư viện mới.
-- Không thay đổi contract public của các action/hàm đang được import ở nơi khác (tên export, tham số, kiểu trả về, error semantics).
-- Không thay đổi boundaries Client/Server của Next.js theo cách có thể ảnh hưởng hành vi (chỉ chuyển đổi khi chứng minh 100% tương đương).
-- Không thay đổi số lần gọi DB, thứ tự gọi DB trong transaction, hay các trigger side-effects (trừ khi chỉ là gom code _không đổi_ thứ tự gọi).
+### Architecture Overview
 
-## Phạm vi
+```mermaid
+graph TB
+    subgraph "App Routes"
+        A1["app/(olympia)/olympia/(admin)/*"]
+        A2["app/(olympia)/olympia/(client)/*"]
+    end
+    
+    subgraph "Server Actions"
+        SA["app/(olympia)/olympia/actions.ts<br/>5932 lines"]
+        MA["actions/olympia/match.actions.ts<br/>1109 lines"]
+        RA["actions/olympia/realtime.actions.ts<br/>2383 lines"]
+        SC["actions/olympia/scoring.actions.ts<br/>2681 lines"]
+        PA["actions/olympia/permissions.actions.ts<br/>450 lines"]
+    end
+    
+    subgraph "Components"
+        C1["components/olympia/admin/matches/*<br/>40+ files"]
+        C2["components/olympia/client/*<br/>17 files"]
+        C3["components/olympia/shared/*"]
+    end
+    
+    SA --> MA & RA & SC & PA
+    A1 --> SA
+    A2 --> SA
+    A1 --> C1
+    A2 --> C2  
+```
 
-1. Actions Olympia (hiện nằm trong app/(olympia)/.../actions.ts hoặc tương đương):
+### Identified Issues
 
-- Tách theo concern:
-  - match.actions.ts: tạo/cập nhật/trạng thái trận đấu, điều hướng vòng đời match.
-  - scoring.actions.ts: chấm điểm, tính toán điểm, cập nhật scoreboard.
-  - realtime.actions.ts: subscribe/broadcast/notify (giữ nguyên channel/filter/payload/thứ tự).
-  - permissions.actions.ts: authz/rbac, check quyền.
-  - queries.ts (nếu có): các hàm fetch dữ liệu thuần.
-  - helpers/\*.ts: helper thuần không side-effect (format, validate, mapping).
+| Issue | Impact | Files Affected |
+|-------|--------|----------------|
+| `utf8ByteLength()` duplicated | Bundle bloat | 6 files |
+| `estimateFormDataPayloadBytes()` duplicated | Bundle bloat | 5 files |
+| `traceInfo()` pattern duplicated | Maintenance burden | 5 files |
+| `requireOlympiaAdminContext()` duplicated | Maintenance burden | 3 action files |
+| `perfAction()` duplicated | Maintenance burden | 3 action files |
+| `actions.ts` re-exports + inline code | Confusing architecture | 1 file (5932 lines) |
 
-2. Page Olympia lớn (app/(olympia)/.../page.tsx):
+---
 
-- Chuyển file page.tsx thành **orchestration-only**:
-  - Data fetching server-side (giữ nguyên thứ tự/điều kiện).
-  - Ghép props và render layout.
-- Tách UI thành components nhỏ, tách state/hook hợp lý.
-- Nếu có phần client-only lớn: dùng dynamic import **chỉ khi** không ảnh hưởng realtime/subscription order.
+## Proposed Changes
 
-## Chiến lược thực hiện (bắt buộc theo thứ tự)
+### Component 1: Shared Olympia Trace Utilities
 
-### Bước 1 — Phân tích (Read-only)
+Create a centralized module for trace/perf utilities used across server actions.
 
-- Xác định chính xác các file cực lớn:
-  - file page.tsx nào thuộc Olympia đang ~1000+ dòng.
-  - file actions nào thuộc Olympia đang ~7000+ dòng.
-- Lập bảng:
-  - Public exports (hàm/action) và nơi đang import.
-  - Nhóm concern (UI, server action, domain, realtime, permission, data fetching).
-  - Các điểm nhạy cảm:
-    - Transaction blocks (BEGIN/COMMIT), RPC calls, trigger-dependent updates.
-    - Realtime subscriptions/broadcast order.
-    - Side-effects: write DB, invalidate cache, revalidatePath/tag, log/audit.
+#### [NEW] [olympia-trace.ts](file:///d:/app/edu-sync/lib/olympia/olympia-trace.ts)
 
-### Bước 2 — Tách module (Mechanical refactor, preserve order)
+Extract and consolidate duplicated functions:
+- `utf8ByteLength(text: string): number`
+- `estimateFormDataPayloadBytes(formData: FormData): number`
+- `readStringFormField(formData: FormData, key: string): string | null`
+- `getOrCreateTraceId(formData: FormData): string`
+- `traceInfo(params: {...}): void`
+- `makePerfId(): string`
+- `perfAction<T>(label: string, fn: () => Promise<T>): Promise<T>`
+- Export `OLYMPIA_ACTION_TRACE`, `OLYMPIA_ACTION_PERF_TRACE` constants
 
-- Nguyên tắc tách:
-  - Mỗi module chỉ di chuyển code (cut/paste) + cập nhật import; không đổi logic.
-  - Giữ nguyên thứ tự gọi hàm trong mỗi action.
-  - Không gộp/đổi cấu trúc promise/await làm thay đổi timing.
-  - Không đổi error messages/codes trừ khi TypeScript bắt buộc; nếu phải đổi, dừng lại.
+---
 
-- Actions:
-  - Tạo thư mục đích (ưu tiên cùng layer để không đổi runtime semantics):
-    - app/(olympia)/olympia/actions/_ hoặc actions/olympia/_ (sẽ quyết định sau khi kiểm tra Next server action import pattern hiện tại).
-  - Mỗi file mới có `"use server"` nếu chứa server actions.
-  - Các helper thuần tách riêng (không `"use server"`).
-  - Cập nhật các import ở nơi sử dụng sang module mới.
-  - Nếu cần giữ path cũ để tương thích, dùng re-export **chỉ khi xác nhận Next.js server actions vẫn hoạt động y nguyên**; nếu không chắc, không dùng.
+### Component 2: Shared Auth Context Helper
 
-- Page/UI:
-  - Tách components theo khu vực UI (header/panels/dialogs/tables).
-  - Tách hooks (state machine, derived state) vào hooks/.
-  - Tách types riêng vào types/.
-  - Giữ nguyên props/JSX tree order đối với các phần realtime-subscribe để không đổi event order.
+Create a centralized auth context helper for server actions.
 
-### Bước 3 — Tối ưu client (an toàn)
+#### [NEW] [olympia-auth.ts](file:///d:/app/edu-sync/lib/olympia/olympia-auth.ts)
 
-- Chỉ áp dụng khi chứng minh không đổi hành vi:
-  - Chuyển phần không cần client sang Server Component.
-  - Dynamic import cho các panel ít dùng, nhưng **không** trì hoãn mount của phần realtime-critical.
-  - Giảm bundle bằng cách tránh import nặng ở client.
+Extract and consolidate:
+- `requireOlympiaAdminContext(): Promise<{ supabase, appUserId }>`
 
-### Bước 4 — Tối ưu server (an toàn)
+---
 
-- Không thay transaction/order. Chỉ tối ưu dạng:
-  - Tránh duplicate compute thuần (memoization nội bộ trong cùng request) nếu không ảnh hưởng side-effects.
-  - Gom helper và query-builder để giảm overhead, nhưng giữ số lần query và thứ tự.
+### Component 3: Server Action Files Cleanup
 
-### Bước 5 — Xác minh
+Update action files to import from shared modules instead of duplicating code.
 
-- Kiểm tra TypeScript errors trên các file đã đổi.
-- Đối chiếu:
-  - Public exports không đổi.
-  - Realtime: channel/filter/payload + order không đổi.
-  - Không tạo race condition mới (không đổi await order).
+#### [MODIFY] [realtime.actions.ts](file:///d:/app/edu-sync/actions/olympia/realtime.actions.ts)
 
-### Bước 6 — Báo cáo
+- Remove lines 17-116 (duplicated utility functions)
+- Add imports from `@/lib/olympia/olympia-trace` and `@/lib/olympia/olympia-auth`
+- Keep all action functions unchanged
 
-- Tạo docs/plans/olympia/refactor-report.md:
-  - Map file cũ → file mới.
-  - Lý do tách.
-  - Checklist xác nhận preserve behavior.
+#### [MODIFY] [scoring.actions.ts](file:///d:/app/edu-sync/actions/olympia/scoring.actions.ts)
 
-## Output yêu cầu cho từng module
+- Remove lines 23-122 (duplicated utility functions)
+- Add imports from `@/lib/olympia/olympia-trace` and `@/lib/olympia/olympia-auth`
+- Keep all action functions unchanged
 
-Với mỗi module tạo mới, report sẽ ghi:
+---
 
-- Nguồn gốc: khối code được di chuyển từ file nào.
-- Export public gồm những gì.
-- Xác nhận preserve logic: chỉ di chuyển/cập nhật import, không đổi control-flow.
+### Component 4: Actions Re-export Cleanup
 
-## Tiến độ hiện tại
+Clean up the monolithic actions.ts file.
 
-- [x] Tách actions Olympia theo 4 module: match, permissions, realtime, scoring.
-- [x] Chuẩn hoá app/(olympia)/olympia/actions.ts thành file re-export tối giản (giữ tương thích import cũ).
-- [x] Cập nhật refactor-report.md với mapping line-range + xác nhận preserve behavior.
+#### [MODIFY] [actions.ts](file:///d:/app/edu-sync/app/(olympia)/olympia/actions.ts)
 
-## Checklist an toàn realtime
+- Remove all inline duplicate code (lines 5-93 and any other non-re-export code)
+- Keep only clean re-exports:
+  ```typescript
+  "use server";
+  export * from "@/actions/olympia/match.actions";
+  export * from "@/actions/olympia/permissions.actions";
+  export * from "@/actions/olympia/realtime.actions";
+  export * from "@/actions/olympia/scoring.actions";
+  ```
 
-- [ ] Không đổi channel
-- [ ] Không đổi filter
-- [ ] Không đổi payload shape
-- [ ] Không đổi thứ tự broadcast/emit
-- [ ] Không buffering/batching
+---
+
+### Component 5: Client-Side Trace Utilities
+
+Create shared client-side trace module for components.
+
+#### [NEW] [olympia-client-trace.ts](file:///d:/app/edu-sync/lib/olympia/olympia-client-trace.ts)
+
+Extract from `OlympiaGameClient.tsx` and `HostRealtimeEventsListener.tsx`:
+- Client-side `utf8ByteLength()`
+- Client-side `estimateFormDataPayloadBytes()`
+- Client-side `estimateJsonPayloadBytes()`
+- `createClientTraceId()`
+- `traceClient(params: {...})`
+
+#### [MODIFY] [OlympiaGameClient.tsx](file:///d:/app/edu-sync/components/olympia/shared/game/OlympiaGameClient.tsx)
+
+- Remove lines 57-104 (duplicated utility functions)
+- Add import from `@/lib/olympia/olympia-client-trace`
+
+#### [MODIFY] [HostRealtimeEventsListener.tsx](file:///d:/app/edu-sync/components/olympia/admin/matches/HostRealtimeEventsListener.tsx)
+
+- Remove lines 14-48 (duplicated utility functions)
+- Add import from `@/lib/olympia/olympia-client-trace`
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+1. **Run existing scoring tests**:
+   ```powershell
+   cd d:\app\edu-sync
+   npx vitest run tests/olympia-scoring.test.ts
+   ```
+   Expected: All 8 tests pass (unchanged behavior).
+
+2. **TypeScript compilation check**:
+   ```powershell
+   cd d:\app\edu-sync
+   npx tsc --noEmit
+   ```
+   Expected: No type errors.
+
+3. **Development build test**:
+   ```powershell
+   cd d:\app\edu-sync
+   npm run build 2>&1 | Select-String -Pattern "error|Error" -Context 0,2
+   ```
+   Expected: No build errors.
+
+### Manual Verification
+
+After the refactor, request user to verify:
+
+1. **Admin Host Console**: Navigate to `/olympia/admin/matches/{matchId}/host` and confirm page loads correctly
+2. **Client Game Page**: Navigate to `/olympia/client/game/{joinCode}` and confirm page loads correctly
+3. **Action Functions**: Verify trace logs still appear in console when `OLYMPIA_TRACE=1`
+
+---
+
+## Behavior Preservation Confirmation
+
+> [!IMPORTANT]
+> This refactor is **strictly structural**. The following are explicitly preserved:
+
+- ✅ All action function signatures unchanged
+- ✅ All Supabase query logic unchanged
+- ✅ All realtime channel subscriptions unchanged
+- ✅ All event ordering preserved
+- ✅ All transaction boundaries unchanged
+- ✅ All component props/state unchanged
+- ✅ No new buffering, batching, or debounce
+- ✅ No new background jobs
+- ✅ No new external libraries
+
+---
+
+## Files Summary
+
+| Action | File | Change Description |
+|--------|------|-------------------|
+| NEW | `lib/olympia/olympia-trace.ts` | Shared server trace utilities |
+| NEW | `lib/olympia/olympia-auth.ts` | Shared auth context helper |
+| NEW | `lib/olympia/olympia-client-trace.ts` | Shared client trace utilities |
+| MODIFY | `actions/olympia/realtime.actions.ts` | Import shared, remove duplicates |
+| MODIFY | `actions/olympia/scoring.actions.ts` | Import shared, remove duplicates |
+| MODIFY | `app/(olympia)/olympia/actions.ts` | Clean re-exports only |
+| MODIFY | `components/olympia/shared/game/OlympiaGameClient.tsx` | Import shared, remove duplicates |
+| MODIFY | `components/olympia/admin/matches/HostRealtimeEventsListener.tsx` | Import shared, remove duplicates |

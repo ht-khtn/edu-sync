@@ -1,6 +1,5 @@
 "use server";
 
-import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -12,114 +11,17 @@ import {
   computeVcnvFinalScore,
 } from "@/lib/olympia-scoring";
 import { getVeDichStealTimingMs } from "@/lib/olympia/olympia-config";
+import {
+  estimateFormDataPayloadBytes,
+  getOrCreateTraceId,
+  perfAction,
+  readStringFormField,
+  traceInfo,
+} from "@/lib/olympia/olympia-trace";
+import { requireOlympiaAdminContext } from "@/lib/olympia/olympia-auth";
 import type { ActionState } from "./match.actions";
 import { advanceCurrentQuestionAction } from "./realtime.actions";
 
-const OLYMPIA_ACTION_PERF_TRACE = process.env.OLYMPIA_PERF_TRACE === "1";
-
-const OLYMPIA_ACTION_TRACE =
-  process.env.OLYMPIA_TRACE === "1" || process.env.OLYMPIA_PERF_TRACE === "1";
-
-type OlympiaTraceFields = Record<string, string | number | boolean | null>;
-
-function utf8ByteLength(text: string): number {
-  return Buffer.byteLength(text, "utf8");
-}
-
-function estimateFormDataPayloadBytes(formData: FormData): number {
-  let total = 0;
-  for (const [key, value] of formData.entries()) {
-    total += utf8ByteLength(key);
-    if (typeof value === "string") {
-      total += utf8ByteLength(value);
-      continue;
-    }
-
-    // File/Blob: chỉ ước lượng metadata + size, không đọc nội dung.
-    total += utf8ByteLength(value.name);
-    total += utf8ByteLength(value.type);
-    total += value.size;
-  }
-  return total;
-}
-
-function readStringFormField(formData: FormData, key: string): string | null {
-  const raw = formData.get(key);
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  return trimmed ? trimmed : null;
-}
-
-function getOrCreateTraceId(formData: FormData): string {
-  const provided = readStringFormField(formData, "traceId");
-  if (provided) return provided;
-  // Dùng randomBytes để tránh phụ thuộc crypto.randomUUID trên mọi runtime.
-  return randomBytes(8).toString("hex");
-}
-
-function traceInfo(params: {
-  traceId: string;
-  action: string;
-  event: string;
-  fields?: OlympiaTraceFields;
-}): void {
-  if (!OLYMPIA_ACTION_TRACE) return;
-  const { traceId, action, event, fields } = params;
-  const payload = {
-    layer: "server",
-    traceId,
-    action,
-    event,
-    ts: new Date().toISOString(),
-    payloadBytes: typeof fields?.payloadBytes === "number" ? fields.payloadBytes : 0,
-    ...(fields ?? {}),
-  };
-  console.info("[Olympia][Trace]", JSON.stringify(payload));
-}
-
-function makePerfId(): string {
-  // Tránh đụng label khi có nhiều request song song.
-  return `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
-}
-
-async function perfAction<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  if (!OLYMPIA_ACTION_PERF_TRACE) return await fn();
-  const perfId = makePerfId();
-  const fullLabel = `${label} ${perfId}`;
-  console.time(fullLabel);
-  try {
-    return await fn();
-  } finally {
-    console.timeEnd(fullLabel);
-  }
-}
-
-async function requireOlympiaAdminContext(): Promise<{
-  supabase: SupabaseClient;
-  appUserId: string;
-}> {
-  return await perfAction("[perf][action] requireOlympiaAdminContext", async () => {
-    const { supabase, appUserId } = await getServerAuthContext();
-    if (!appUserId) throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
-
-    const olympia = supabase.schema("olympia");
-    const { data, error } = await perfAction(
-      "[perf][action] supabase.participants.role",
-      async () => {
-        return await olympia
-          .from("participants")
-          .select("role")
-          .eq("user_id", appUserId)
-          .maybeSingle();
-      }
-    );
-    if (error || !data || data.role !== "AD") {
-      throw new Error("FORBIDDEN_OLYMPIA_ADMIN");
-    }
-
-    return { supabase, appUserId };
-  });
-}
 
 function parseKhoiDongCodeInfoFromMeta(
   meta: unknown

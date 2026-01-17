@@ -3,7 +3,7 @@
 import { createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
+import { requireOlympiaAdminContext } from "@/lib/olympia/olympia-auth";
 import { getServerAuthContext, getServerSupabase } from "@/lib/server-auth";
 import type { ActionState } from "./match.actions";
 
@@ -191,8 +191,7 @@ export async function openLiveSessionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
     const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
     if (!parsed.success) {
@@ -291,8 +290,7 @@ export async function getSessionPasswordAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = regeneratePasswordSchema.safeParse({
@@ -327,8 +325,7 @@ export async function regenerateSessionPasswordAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = regeneratePasswordSchema.safeParse({
@@ -405,8 +402,7 @@ export async function endLiveSessionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
     const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
     if (!parsed.success) {

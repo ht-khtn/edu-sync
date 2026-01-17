@@ -7,7 +7,7 @@ import {
   normalizeAssetBasename,
   parseQuestionSetWorkbook,
 } from "@/lib/olympia/question-set-workbook";
-import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
+import { requireOlympiaAdminContext } from "@/lib/olympia/olympia-auth";
 import { getServerAuthContext } from "@/lib/server-auth";
 
 export type ActionState = {
@@ -70,10 +70,8 @@ function parseQuestionRoundType(code: string): string | null {
 
 export async function createMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
-    if (!appUserId) return { error: "Không tìm thấy thông tin người dùng." };
 
     const parsed = matchSchema.safeParse({
       name: formData.get("name"),
@@ -151,8 +149,7 @@ export async function createMatchAction(_: ActionState, formData: FormData): Pro
 
 export async function deleteMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = matchIdSchema.safeParse({ matchId: formData.get("matchId") });
@@ -181,8 +178,7 @@ export async function createQuestionAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
     const parsed = questionSchema.safeParse({
       code: formData.get("code"),
@@ -269,8 +265,7 @@ export async function uploadQuestionSetAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase, appUserId } = await getServerAuthContext();
+    const { supabase, appUserId } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsedName = questionSetUploadSchema.safeParse({ name: formData.get("name") });
@@ -377,8 +372,7 @@ export async function uploadQuestionSetAction(
 
 export async function updateMatchAction(_: ActionState, formData: FormData): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = z
@@ -609,8 +603,7 @@ export async function updateMatchQuestionSetsAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const rawSetIds = formData
@@ -693,8 +686,7 @@ export async function updateMatchPlayersOrderAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const rawPlayerOrder = formData.getAll("playerOrder[]");
@@ -764,8 +756,7 @@ export async function createMatchRoundsAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = createMatchRoundsSchema.safeParse({ matchId: formData.get("matchId") });
@@ -867,8 +858,7 @@ export async function createParticipantAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = participantSchema.safeParse({
@@ -923,8 +913,7 @@ export async function updateParticipantAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = updateParticipantSchema.safeParse({
@@ -962,8 +951,7 @@ export async function deleteParticipantAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const userId = formData.get("userId") as string;
@@ -989,8 +977,7 @@ export async function createTournamentAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = tournamentSchema.safeParse({
@@ -1028,8 +1015,7 @@ export async function updateTournamentAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const parsed = z
@@ -1085,8 +1071,7 @@ export async function deleteTournamentAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await ensureOlympiaAdminAccess();
-    const { supabase } = await getServerAuthContext();
+    const { supabase } = await requireOlympiaAdminContext();
     const olympia = supabase.schema("olympia");
 
     const tournamentId = formData.get("tournamentId") as string;

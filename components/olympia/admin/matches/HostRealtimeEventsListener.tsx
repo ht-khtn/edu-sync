@@ -8,44 +8,12 @@ import { useRouter } from 'next/navigation'
 import getSupabase from '@/lib/supabase'
 import { dispatchHostBuzzerUpdate, dispatchHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import {
+    estimateJsonPayloadBytes,
+    getReceiveLagMs,
+    traceHostReceive,
+} from "@/lib/olympia/olympia-client-trace";
 
-const OLYMPIA_CLIENT_TRACE = process.env.NEXT_PUBLIC_OLYMPIA_TRACE === '1'
-
-type OlympiaHostTraceFields = Record<string, string | number | boolean | null>
-
-function utf8ByteLength(text: string): number {
-    return new TextEncoder().encode(text).length
-}
-
-function estimateJsonPayloadBytes(value: object | null): number {
-    if (!value) return 0
-    try {
-        return utf8ByteLength(JSON.stringify(value))
-    } catch {
-        return 0
-    }
-}
-
-function getReceiveLagMs(commitTimestamp: string | null | undefined): number | null {
-    if (!commitTimestamp) return null
-    const commitMs = Date.parse(commitTimestamp)
-    if (!Number.isFinite(commitMs)) return null
-    const lag = Date.now() - commitMs
-    return lag >= 0 ? lag : 0
-}
-
-function traceHostReceive(params: { event: string; fields: OlympiaHostTraceFields }): void {
-    if (!OLYMPIA_CLIENT_TRACE) return
-    const payload = {
-        layer: 'client-receive',
-        action: 'postgres_changes',
-        event: params.event,
-        ts: new Date().toISOString(),
-        payloadBytes: typeof params.fields.payloadBytes === 'number' ? params.fields.payloadBytes : 0,
-        ...params.fields,
-    }
-    console.info('[Olympia][Trace]', JSON.stringify(payload))
-}
 
 type Props = {
     matchId: string

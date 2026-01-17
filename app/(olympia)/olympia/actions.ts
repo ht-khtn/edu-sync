@@ -1,13 +1,11 @@
-"use server";
-
 export * from "@/actions/olympia/match.actions";
 export * from "@/actions/olympia/permissions.actions";
 export * from "@/actions/olympia/realtime.actions";
 export * from "@/actions/olympia/scoring.actions";
 
-/* Legacy code đã được tách sang actions/olympia/*.actions.ts
+/* Legacy code đã được tách sang actions/olympia/*.actions.ts (xóa vì chỉ giữ re-export)
 
-import { createHash, randomBytes } from "crypto";
+// import { createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {

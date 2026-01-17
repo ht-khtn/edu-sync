@@ -13,6 +13,12 @@ import {
     getReceiveLagMs,
     traceHostReceive,
 } from "@/lib/olympia/olympia-client-trace";
+import {
+    createInitialGuardState,
+    handleRealtimeEvent,
+    IGuardState,
+    IRealtimeEvent
+} from '@/lib/olympia/realtime-guard'
 
 
 type Props = {
@@ -75,6 +81,7 @@ export function HostRealtimeEventsListener({
 }: Props) {
     const router = useRouter()
     const supabaseRef = useRef<SupabaseClient | null>(null)
+    const guardStateRef = useRef<IGuardState>(createInitialGuardState())
 
     const channelRef = useRef<RealtimeChannel | null>(null)
     const queuedReasonsRef = useRef<Set<string>>(new Set())
@@ -284,10 +291,18 @@ export function HostRealtimeEventsListener({
                         },
                         (payload: RealtimePostgresChangesPayload<RealtimeEventRow>) => {
                             const evt = (payload.new as RealtimeEventRow | null) ?? null
-                            if (!evt || evt.match_id !== matchId) return
+                            if (!evt) return
 
+                            // Prepare generic event for Guard
+                            // Priority: commit_timestamp (server time) -> created_at (db time) -> local time
                             const commitTs = payload.commit_timestamp ?? null
+                            const occurredAt = commitTs
+                                ? new Date(commitTs).getTime()
+                                : (evt.created_at ? Date.parse(evt.created_at) : Date.now())
+
                             const receiveLagMs = getReceiveLagMs(commitTs)
+
+                            // Audit/Trace (always runs, bypasses guard for logging purposes)
                             traceHostReceive({
                                 event: `receive:realtime_events:${evt.entity}`,
                                 fields: {
@@ -300,106 +315,124 @@ export function HostRealtimeEventsListener({
                                 },
                             })
 
-                            if (evt.entity === 'live_sessions') {
-                                if (sessionId && evt.session_id && evt.session_id !== sessionId) return
-
-                                trackReason('live_sessions')
-                                const liveSessionRow: LiveSessionRow = {
-                                    id: payloadString(evt.payload, 'id') ?? (evt.session_id ?? ''),
-                                    current_round_id: payloadString(evt.payload, 'currentRoundId'),
-                                    current_round_type: payloadString(evt.payload, 'currentRoundType'),
-                                    current_round_question_id: payloadString(evt.payload, 'currentRoundQuestionId'),
-                                    question_state: payloadString(evt.payload, 'questionState'),
-                                    timer_deadline: payloadString(evt.payload, 'timerDeadline'),
-                                    buzzer_enabled: payloadBoolean(evt.payload, 'buzzerEnabled'),
-                                    show_scoreboard_overlay: payloadBoolean(evt.payload, 'showScoreboardOverlay'),
-                                    show_answers_overlay: payloadBoolean(evt.payload, 'showAnswersOverlay'),
-                                }
-
-                                const prevRoundId = currentRoundIdRef.current
-                                const prevRoundType = currentRoundTypeRef.current
-
-                                const hadBaseline = hasSeenLiveSessionRef.current
-                                hasSeenLiveSessionRef.current = true
-
-                                currentRoundIdRef.current = liveSessionRow.current_round_id
-                                currentRoundTypeRef.current = liveSessionRow.current_round_type
-
-                                dispatchHostSessionUpdate({
-                                    currentRoundId: liveSessionRow.current_round_id,
-                                    currentRoundType: liveSessionRow.current_round_type,
-                                    currentRoundQuestionId: liveSessionRow.current_round_question_id,
-                                    questionState: liveSessionRow.question_state,
-                                    timerDeadline: liveSessionRow.timer_deadline,
-                                    buzzerEnabled: liveSessionRow.buzzer_enabled,
-                                    showScoreboardOverlay: liveSessionRow.show_scoreboard_overlay,
-                                    showAnswersOverlay: liveSessionRow.show_answers_overlay,
-                                    source: 'realtime',
-                                })
-
-                                const roundChanged =
-                                    (prevRoundId ?? null) !== (liveSessionRow.current_round_id ?? null) ||
-                                    (prevRoundType ?? null) !== (liveSessionRow.current_round_type ?? null)
-                                if (hadBaseline && roundChanged) {
-                                    scheduleRefresh('live_sessions:round_changed')
-                                }
-                                return
+                            // Construct Generic Event
+                            const genericEvent: IRealtimeEvent = {
+                                id: evt.id,
+                                intent: 'MUTATION', // Default assumption: DB events are important mutations
+                                target_entity_id: evt.match_id,
+                                occurred_at: occurredAt,
+                                // Pass the whole row as payload to preserve access to entity/metadata in the callback
+                                payload: evt as unknown as Record<string, unknown>
                             }
 
-                            if (evt.entity === 'star_uses') {
-                                trackReason('star_uses')
-                                if (currentRoundTypeRef.current === 've_dich') {
-                                    scheduleRefresh('star_uses')
-                                }
-                                return
-                            }
+                            // Update Scope Awareness (JIT)
+                            guardStateRef.current.activeEntityId = matchId
 
-                            if (evt.entity === 'answers') {
-                                trackReason('answers')
-                                return
-                            }
+                            // EXECUTE GUARD
+                            handleRealtimeEvent(genericEvent, guardStateRef.current, (data) => {
+                                const safeEvt = data as RealtimeEventRow
 
-                            if (evt.entity === 'buzzer_events') {
-                                trackReason('buzzer_events')
+                                if (safeEvt.entity === 'live_sessions') {
+                                    if (sessionId && safeEvt.session_id && safeEvt.session_id !== sessionId) return
 
-                                const buzzerRow: BuzzerEventRow = {
-                                    id: payloadString(evt.payload, 'id') ?? '',
-                                    match_id: evt.match_id,
-                                    round_question_id: payloadString(evt.payload, 'roundQuestionId'),
-                                    player_id: payloadString(evt.payload, 'playerId'),
-                                    result: payloadString(evt.payload, 'result'),
-                                    event_type: payloadString(evt.payload, 'eventType'),
-                                    occurred_at: payloadString(evt.payload, 'occurredAt'),
-                                }
-
-                                const activeQ = currentRoundQuestionIdRef.current
-                                const sameQuestion = Boolean(activeQ && buzzerRow.round_question_id === activeQ)
-
-                                if (sameQuestion && (evt.event_type === 'INSERT' || evt.event_type === 'UPDATE')) {
-                                    if (evt.event_type === 'INSERT' && buzzerRow.event_type === 'reset') {
-                                        dispatchHostBuzzerUpdate({
-                                            roundQuestionId: activeQ,
-                                            winnerPlayerId: null,
-                                            source: 'realtime',
-                                        })
+                                    trackReason('live_sessions')
+                                    const liveSessionRow: LiveSessionRow = {
+                                        id: payloadString(safeEvt.payload, 'id') ?? (safeEvt.session_id ?? ''),
+                                        current_round_id: payloadString(safeEvt.payload, 'currentRoundId'),
+                                        current_round_type: payloadString(safeEvt.payload, 'currentRoundType'),
+                                        current_round_question_id: payloadString(safeEvt.payload, 'currentRoundQuestionId'),
+                                        question_state: payloadString(safeEvt.payload, 'questionState'),
+                                        timer_deadline: payloadString(safeEvt.payload, 'timerDeadline'),
+                                        buzzer_enabled: payloadBoolean(safeEvt.payload, 'buzzerEnabled'),
+                                        show_scoreboard_overlay: payloadBoolean(safeEvt.payload, 'showScoreboardOverlay'),
+                                        show_answers_overlay: payloadBoolean(safeEvt.payload, 'showAnswersOverlay'),
                                     }
 
-                                    if (
-                                        buzzerRow.result === 'win' &&
-                                        (buzzerRow.event_type === 'buzz' || buzzerRow.event_type === 'steal')
-                                    ) {
-                                        dispatchHostBuzzerUpdate({
-                                            roundQuestionId: activeQ,
-                                            winnerPlayerId: buzzerRow.player_id ?? null,
-                                            source: 'realtime',
-                                        })
+                                    const prevRoundId = currentRoundIdRef.current
+                                    const prevRoundType = currentRoundTypeRef.current
+
+                                    const hadBaseline = hasSeenLiveSessionRef.current
+                                    hasSeenLiveSessionRef.current = true
+
+                                    currentRoundIdRef.current = liveSessionRow.current_round_id
+                                    currentRoundTypeRef.current = liveSessionRow.current_round_type
+
+                                    dispatchHostSessionUpdate({
+                                        currentRoundId: liveSessionRow.current_round_id,
+                                        currentRoundType: liveSessionRow.current_round_type,
+                                        currentRoundQuestionId: liveSessionRow.current_round_question_id,
+                                        questionState: liveSessionRow.question_state,
+                                        timerDeadline: liveSessionRow.timer_deadline,
+                                        buzzerEnabled: liveSessionRow.buzzer_enabled,
+                                        showScoreboardOverlay: liveSessionRow.show_scoreboard_overlay,
+                                        showAnswersOverlay: liveSessionRow.show_answers_overlay,
+                                        source: 'realtime',
+                                    })
+
+                                    const roundChanged =
+                                        (prevRoundId ?? null) !== (liveSessionRow.current_round_id ?? null) ||
+                                        (prevRoundType ?? null) !== (liveSessionRow.current_round_type ?? null)
+                                    if (hadBaseline && roundChanged) {
+                                        scheduleRefresh('live_sessions:round_changed')
                                     }
+                                    return
                                 }
 
-                                if (buzzerRow.result !== 'win') return
-                                if (!activeQ || buzzerRow.round_question_id !== activeQ) return
-                                toastWinnerOnce(buzzerRow)
-                            }
+                                if (safeEvt.entity === 'star_uses') {
+                                    trackReason('star_uses')
+                                    if (currentRoundTypeRef.current === 've_dich') {
+                                        scheduleRefresh('star_uses')
+                                    }
+                                    return
+                                }
+
+                                if (safeEvt.entity === 'answers') {
+                                    trackReason('answers')
+                                    return
+                                }
+
+                                if (safeEvt.entity === 'buzzer_events') {
+                                    trackReason('buzzer_events')
+
+                                    const buzzerRow: BuzzerEventRow = {
+                                        id: payloadString(safeEvt.payload, 'id') ?? '',
+                                        match_id: safeEvt.match_id,
+                                        round_question_id: payloadString(safeEvt.payload, 'roundQuestionId'),
+                                        player_id: payloadString(safeEvt.payload, 'playerId'),
+                                        result: payloadString(safeEvt.payload, 'result'),
+                                        event_type: payloadString(safeEvt.payload, 'eventType'),
+                                        occurred_at: payloadString(safeEvt.payload, 'occurredAt'),
+                                    }
+
+                                    const activeQ = currentRoundQuestionIdRef.current
+                                    const sameQuestion = Boolean(activeQ && buzzerRow.round_question_id === activeQ)
+
+                                    if (sameQuestion && (safeEvt.event_type === 'INSERT' || safeEvt.event_type === 'UPDATE')) {
+                                        if (safeEvt.event_type === 'INSERT' && buzzerRow.event_type === 'reset') {
+                                            dispatchHostBuzzerUpdate({
+                                                roundQuestionId: activeQ,
+                                                winnerPlayerId: null,
+                                                source: 'realtime',
+                                            })
+                                        }
+
+                                        if (
+                                            buzzerRow.result === 'win' &&
+                                            (buzzerRow.event_type === 'buzz' || buzzerRow.event_type === 'steal')
+                                        ) {
+                                            dispatchHostBuzzerUpdate({
+                                                roundQuestionId: activeQ,
+                                                winnerPlayerId: buzzerRow.player_id ?? null,
+                                                source: 'realtime',
+                                            })
+                                        }
+                                    }
+
+                                    if (buzzerRow.result !== 'win') return
+                                    if (!activeQ || buzzerRow.round_question_id !== activeQ) return
+                                    toastWinnerOnce(buzzerRow)
+                                }
+                            })
                         }
                     )
 

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import getSupabaseServer from "@/lib/supabase-server";
+import { cache } from "react";
 
 export type ServerAuthContext = {
   supabase: SupabaseClient;
@@ -13,50 +14,48 @@ export const getServerSupabase = async () => {
   return supabase;
 };
 
-export const getServerAuthContext = async (): Promise<ServerAuthContext> => {
+export const getServerAuthContext = cache(async (): Promise<ServerAuthContext> => {
   const supabase = await getSupabaseServer();
 
-  const tryGetAuthUidFromCookie = async (): Promise<string | null> => {
-    const cookieStore = await cookies();
-    const token =
-      cookieStore.get("sb-access-token")?.value ?? cookieStore.get("sb-access-token-public")?.value;
-    if (!token) return null;
+  const cookieStore = await cookies();
+  const token =
+    cookieStore.get("sb-access-token")?.value ??
+    cookieStore.get("sb-access-token-public")?.value ??
+    null;
 
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1];
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  let authUid: string | null = null;
 
+  if (token) {
     try {
-      const json = Buffer.from(padded, "base64").toString("utf8");
-      const parsed: unknown = JSON.parse(json);
-      if (!parsed || typeof parsed !== "object") return null;
-      const sub = (parsed as Record<string, unknown>)["sub"];
-      return typeof sub === "string" && sub.length > 0 ? sub : null;
-    } catch {
-      return null;
-    }
-  };
+      const payload = token.split(".")[1];
+      const json = Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString(
+        "utf8"
+      );
+      const parsed = JSON.parse(json);
+      authUid = typeof parsed?.sub === "string" ? parsed.sub : null;
+    } catch {}
+  }
 
-  let authUid: string | null = await tryGetAuthUidFromCookie();
+  // ❗ fallback cực hạn chế
   if (!authUid) {
-    const { data: userRes } = await supabase.auth.getUser();
-    authUid = userRes?.user?.id ?? null;
+    const { data } = await supabase.auth.getUser();
+    authUid = data?.user?.id ?? null;
   }
 
   let appUserId: string | null = null;
+
   if (authUid) {
-    const { data: appUser } = await supabase
+    const { data } = await supabase
       .from("users")
       .select("id")
       .eq("auth_uid", authUid)
       .maybeSingle();
-    appUserId = (appUser?.id as string | undefined) ?? null;
+
+    appUserId = (data?.id as string | undefined) ?? null;
   }
 
   return { supabase, authUid, appUserId };
-};
+});
 
 export type RoleRow = {
   role_id: string | null;
@@ -70,18 +69,17 @@ const normalizeScope = (scope?: string | null) => (scope ?? "").trim().toLowerCa
 export const normalizeRoleId = (roleId: string | null | undefined) =>
   (roleId ?? "").trim().toUpperCase();
 
-export const getServerRoles = async (): Promise<RoleRow[]> => {
+export const getServerRoles = cache(async (): Promise<RoleRow[]> => {
   const { supabase, authUid } = await getServerAuthContext();
   if (!authUid) return [];
-  const { data: roles, error } = await supabase
+
+  const { data } = await supabase
     .from("user_roles")
     .select("role_id, target, permissions(scope), users!inner(auth_uid)")
     .eq("users.auth_uid", authUid);
 
-  if (error) return [];
-  if (!Array.isArray(roles)) return [];
-  return roles as RoleRow[];
-};
+  return Array.isArray(data) ? (data as RoleRow[]) : [];
+});
 
 export type RoleSummary = {
   roleIds: string[];

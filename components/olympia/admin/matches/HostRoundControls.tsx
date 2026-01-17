@@ -103,6 +103,7 @@ function CountdownControls({
   const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
   const [countdownTick, setCountdownTick] = useState<number>(0)
   const [, startTimerTransition] = useTransition()
+
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const effectiveTimerDeadline = useMemo(() => {
@@ -336,6 +337,7 @@ export function HostRoundControls({
   const [, startTargetTransition] = useTransition()
   const [, startRoundTransition] = useTransition()
   const [, startBuzzerTransition] = useTransition()
+  const [, startViewModeTransition] = useTransition()
 
   const [effectiveCurrentRoundQuestionId, setEffectiveCurrentRoundQuestionId] = useState<string | null>(() => currentRoundQuestionId ?? null)
   const [effectiveCurrentQuestionState, setEffectiveCurrentQuestionState] = useState<string | null>(() => currentQuestionState ?? null)
@@ -440,12 +442,20 @@ export function HostRoundControls({
   const [optimisticBuzzerChecked, setOptimisticBuzzerChecked] = useState<boolean>(() => serverBuzzerChecked)
   const buzzerChecked = buzzerPending ? optimisticBuzzerChecked : serverBuzzerChecked
 
-  const submitToggleAction = (dispatch: FormActionDispatch, enabled: boolean) => {
+  const submitToggleAction = (
+    start: React.TransitionStartFunction,
+    dispatch: FormActionDispatch,
+    enabled: boolean
+  ) => {
     const fd = new FormData()
     fd.set('matchId', matchId)
     fd.set('enabled', enabled ? '1' : '0')
-    dispatch(fd)
+
+    start(() => {
+      dispatch(fd)
+    })
   }
+
 
   const replaceQueryParams = useCallback((params: URLSearchParams) => {
     const qs = params.toString()
@@ -633,11 +643,11 @@ export function HostRoundControls({
 
     setViewModeOverride(next)
 
-    // Dispatch trực tiếp để tránh submit form gây navigation/refresh
-    submitToggleAction(waitingAction, nextWaiting)
-    submitToggleAction(scoreboardAction, nextScoreboard)
-    submitToggleAction(answersAction, nextAnswers)
+    submitToggleAction(startViewModeTransition, waitingAction, nextWaiting)
+    submitToggleAction(startViewModeTransition, scoreboardAction, nextScoreboard)
+    submitToggleAction(startViewModeTransition, answersAction, nextAnswers)
   }
+
 
   return (
     <div className="grid gap-3">
@@ -920,13 +930,12 @@ export function HostRoundControls({
             onCheckedChange={(v) => {
               const next = Boolean(v)
               setOptimisticBuzzerChecked(next)
-              queueMicrotask(() => {
-                submitToggleAction(buzzerAction, next)
-              })
+
+              submitToggleAction(startBuzzerTransition, buzzerAction, next)
             }}
             disabled={!effectiveCurrentRoundType || buzzerPending}
-            aria-label="Bấm chuông"
           />
+
         </div>
         {buzzerMessage && !buzzerState.error ? <p className="text-xs text-green-600">{buzzerMessage}</p> : null}
       </form>

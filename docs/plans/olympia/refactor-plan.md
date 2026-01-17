@@ -108,6 +108,12 @@ Với mỗi module tạo mới, report sẽ ghi:
 - Export public gồm những gì.
 - Xác nhận preserve logic: chỉ di chuyển/cập nhật import, không đổi control-flow.
 
+## Tiến độ hiện tại
+
+- [x] Tách actions Olympia theo 4 module: match, permissions, realtime, scoring.
+- [x] Chuẩn hoá app/(olympia)/olympia/actions.ts thành file re-export tối giản (giữ tương thích import cũ).
+- [x] Cập nhật refactor-report.md với mapping line-range + xác nhận preserve behavior.
+
 ## Checklist an toàn realtime
 
 - [ ] Không đổi channel

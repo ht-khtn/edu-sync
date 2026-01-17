@@ -1079,3 +1079,30 @@ export async function updateTournamentAction(
     return { error: err instanceof Error ? err.message : "Không thể cập nhật giải đấu." };
   }
 }
+
+export async function deleteTournamentAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const tournamentId = formData.get("tournamentId") as string;
+
+    if (!tournamentId || !tournamentId.match(/^[0-9a-f\-]+$/i)) {
+      return { error: "ID giải không hợp lệ." };
+    }
+
+    const { error } = await olympia.from("tournaments").delete().eq("id", tournamentId);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/olympia/admin/matches");
+    revalidatePath("/olympia/admin");
+    return { success: "Đã xóa giải đấu thành công." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể xóa giải đấu." };
+  }
+}

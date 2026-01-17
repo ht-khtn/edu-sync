@@ -8,6 +8,7 @@ import { CreateTournamentDialog } from '@/components/olympia/admin/matches/Creat
 import { EditTournamentDialog } from '@/components/olympia/admin/matches/EditTournamentDialog'
 import { EditMatchDialog } from '@/components/olympia/admin/matches/EditMatchDialog'
 import { DeleteMatchButton } from '@/components/olympia/admin/matches/DeleteMatchButton'
+import { DeleteTournamentButton } from '@/components/olympia/admin/matches/DeleteTournamentButton'
 import { LiveSessionControls } from '@/components/olympia/admin/matches/LiveSessionControls'
 import { getServerAuthContext } from '@/lib/server-auth'
 
@@ -143,13 +144,16 @@ export default async function OlympiaMatchesAdminPage() {
                       {formatDate(tournament.ends_at)}
                     </TableCell>
                     <TableCell>
-                      <EditTournamentDialog
-                        tournamentId={tournament.id}
-                        currentName={tournament.name}
-                        currentStatus={tournament.status}
-                        currentStartsAt={tournament.starts_at}
-                        currentEndsAt={tournament.ends_at}
-                      />
+                      <div className="flex items-center gap-1">
+                        <EditTournamentDialog
+                          tournamentId={tournament.id}
+                          currentName={tournament.name}
+                          currentStatus={tournament.status}
+                          currentStartsAt={tournament.starts_at}
+                          currentEndsAt={tournament.ends_at}
+                        />
+                        <DeleteTournamentButton tournamentId={tournament.id} tournamentName={tournament.name} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

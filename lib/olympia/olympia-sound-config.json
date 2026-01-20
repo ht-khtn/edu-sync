@@ -1,0 +1,152 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "default": {
+      "autoStopWhenOtherPlays": false,
+      "loop": false,
+      "volume": 1.0
+    }
+  },
+
+  "sounds": {
+    "tong_ket_diem": {
+      "file": "tong ket diem",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "chuong": {
+      "file": "4. chuong",
+      "autoStopWhenOtherPlays": false
+    },
+
+    "kd_bat_dau_choi": {
+      "file": "1 bat dau choi"
+    },
+
+    "kd_hien_cau_hoi": {
+      "file": "1 hien cau hoi"
+    },
+
+    "kd_dung": {
+      "file": "1 tra loi dung",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "kd_sai": {
+      "file": "1 tra loi sai",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "kd_dem_gio_5s": {
+      "file": "4 5s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "kd_hoan_thanh": {
+      "file": "1 hoan thanh",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_mo_o_chu": {
+      "file": "2 mo o chu",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_chon_hang_ngang": {
+      "file": "2 chon hang ngang (new)",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_mo_cau_hoi": {
+      "file": "2 mo cau hoi"
+    },
+
+    "vcnv_dem_gio_15s": {
+      "file": "2 15s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_xem_dap_an": {
+      "file": "2 xem dap an",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_dung": {
+      "file": "2 tra loi dung(moi)",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vcnv_mo_hinh_anh": {
+      "file": "2 mo hinh anh",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "tt_mo_cau_hoi": {
+      "file": "3 mo cau hoi",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "tt_dem_gio_20s": {
+      "file": "3 20s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "tt_dem_gio_30s": {
+      "file": "3 30s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "tt_mo_dap_an": {
+      "file": "3 mo dap an"
+    },
+
+    "vd_bat_dau_choi": {
+      "file": "4 bat dau choi",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_cac_goi": {
+      "file": "4 cac goi cau hoi",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_lua_chon_goi": {
+      "file": "4 lua chon goi cau hoi"
+    },
+
+    "vd_dung": {
+      "file": "4 tra loi dung",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_sai": {
+      "file": "4 tra loi sai",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_ngoi_sao": {
+      "file": "ngoi sao hi vong",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_hoan_thanh": {
+      "file": "4 hoan thanh",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_dem_gio_15s": {
+      "file": "4 15s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "vd_dem_gio_20s": {
+      "file": "4 20s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "tong_ket_ket_qua": {
+      "file": "tongketketqua",
+      "autoStopWhenOtherPlays": true
+    }
+  }
+}

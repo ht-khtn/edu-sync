@@ -1,20 +1,20 @@
-import type { GameEventPayload, RoundType } from './SoundTypes';
-import { GameEvent, TIMING_CONFIG } from './SoundTypes';
-import { SoundController } from './SoundController';
+import type { GameEventPayload, RoundType } from "./SoundTypes";
+import { GameEvent, TIMING_CONFIG } from "./SoundTypes";
+import { SoundController } from "./SoundController";
 
 export class SoundEventRouter {
   private soundController: SoundController;
   private timingMap: Map<RoundType, string> = new Map([
-    ['khoi_dong', 'kd_dem_gio_5s'],
-    ['vcnv', 'vcnv_dem_gio_15s'],
-    ['tang_toc', 'tt_dem_gio_20s'],
-    ['ve_dich', 'vd_dem_gio_15s'],
+    ["khoi_dong", "kd_dem_gio_5s"],
+    ["vcnv", "vcnv_dem_gio_15s"],
+    ["tang_toc", "tt_dem_gio_20s"],
+    ["ve_dich", "vd_dem_gio_15s"],
   ]);
   private roundBackgroundMap: Map<RoundType, string> = new Map([
-    ['khoi_dong', 'kd_bat_dau_choi'],
-    ['vcnv', 'vcnv_mo_cau_hoi'],
-    ['tang_toc', 'tt_mo_cau_hoi'],
-    ['ve_dich', 'vd_cac_goi'],
+    ["khoi_dong", "kd_bat_dau_choi"],
+    ["vcnv", "vcnv_mo_cau_hoi"],
+    ["tang_toc", "tt_mo_cau_hoi"],
+    ["ve_dich", "vd_cac_goi"],
   ]);
   private timeoutIds: Map<string, NodeJS.Timeout> = new Map();
 
@@ -23,7 +23,7 @@ export class SoundEventRouter {
   }
 
   async routeEvent(event: GameEvent | string, payload?: GameEventPayload): Promise<void> {
-    const eventKey = typeof event === 'string' ? event : event;
+    const eventKey = typeof event === "string" ? event : event;
 
     switch (eventKey) {
       case GameEvent.ROUND_STARTED:
@@ -70,26 +70,27 @@ export class SoundEventRouter {
   private async handleRoundStarted(payload?: GameEventPayload): Promise<void> {
     const roundType = payload?.roundType as RoundType;
     if (!roundType) {
-      console.warn('[SoundRouter] No roundType in ROUND_STARTED');
+      console.warn("[SoundRouter] No roundType in ROUND_STARTED");
       return;
     }
 
     this.soundController.stopAll();
 
-    const startSound = roundType === 'khoi_dong' ? 'kd_bat_dau_choi' : this.roundBackgroundMap.get(roundType);
+    const startSound =
+      roundType === "khoi_dong" ? "kd_bat_dau_choi" : this.roundBackgroundMap.get(roundType);
     if (startSound) {
       await this.soundController.play(startSound);
     }
 
-    if (roundType === 'khoi_dong') {
+    if (roundType === "khoi_dong") {
       const timeoutId = setTimeout(() => {
-        this.soundController.play('kd_hien_cau_hoi', {
+        this.soundController.play("kd_hien_cau_hoi", {
           onEnd: () => {
             // UI can now show question
           },
         });
       }, TIMING_CONFIG.ROUND_START_DELAY_MS);
-      this.timeoutIds.set('kd_question_reveal', timeoutId);
+      this.timeoutIds.set("kd_question_reveal", timeoutId);
     }
   }
 
@@ -103,7 +104,7 @@ export class SoundEventRouter {
 
     if (!roundType) return;
 
-    if (roundType === 'tang_toc' && hasVideo) {
+    if (roundType === "tang_toc" && hasVideo) {
       // NO timer sound for video
       return;
     }
@@ -126,10 +127,10 @@ export class SoundEventRouter {
 
     // Play correct answer sound
     const correctSoundMap: Record<RoundType, string> = {
-      khoi_dong: 'kd_dung',
-      vcnv: 'vcnv_dung',
-      tang_toc: 'vcnv_dung',
-      ve_dich: 'vd_dung',
+      khoi_dong: "kd_dung",
+      vcnv: "vcnv_dung",
+      tang_toc: "vcnv_dung",
+      ve_dich: "vd_dung",
     };
 
     const correctSound = correctSoundMap[roundType];
@@ -150,8 +151,8 @@ export class SoundEventRouter {
 
     // Play wrong answer sound
     const wrongSoundMap: Partial<Record<RoundType, string>> = {
-      khoi_dong: 'kd_sai',
-      ve_dich: 'vd_sai',
+      khoi_dong: "kd_sai",
+      ve_dich: "vd_sai",
     };
 
     const wrongSound = wrongSoundMap[roundType];
@@ -179,8 +180,8 @@ export class SoundEventRouter {
     if (!roundType) return;
 
     const endSoundMap: Partial<Record<RoundType, string>> = {
-      khoi_dong: 'kd_hoan_thanh',
-      ve_dich: 'vd_hoan_thanh',
+      khoi_dong: "kd_hoan_thanh",
+      ve_dich: "vd_hoan_thanh",
     };
 
     const endSound = endSoundMap[roundType];
@@ -191,31 +192,31 @@ export class SoundEventRouter {
 
   private async handleStarRevealed(): Promise<void> {
     this.soundController.stopAll();
-    await this.soundController.play('vd_ngoi_sao');
+    await this.soundController.play("vd_ngoi_sao");
   }
 
   private async handleSelectRow(): Promise<void> {
-    await this.soundController.play('vcnv_chon_hang_ngang', {
+    await this.soundController.play("vcnv_chon_hang_ngang", {
       onEnd: () => {
-        this.soundController.play('vcnv_mo_cau_hoi');
+        this.soundController.play("vcnv_mo_cau_hoi");
       },
     });
   }
 
   private async handleSelectCategory(): Promise<void> {
-    await this.soundController.play('vd_lua_chon_goi');
+    await this.soundController.play("vd_lua_chon_goi");
   }
 
   private async handleRevealAnswer(): Promise<void> {
     // Play tt_mo_dap_an
-    await this.soundController.play('tt_mo_dap_an');
+    await this.soundController.play("tt_mo_dap_an");
 
     // After delay, play vcnv_xem_dap_an (allow overlap)
     const timeoutId = setTimeout(() => {
-      this.soundController.play('vcnv_xem_dap_an');
+      this.soundController.play("vcnv_xem_dap_an");
     }, TIMING_CONFIG.REVEAL_ANSWER_OVERLAP_MS);
 
-    this.timeoutIds.set('reveal_answer_overlap', timeoutId);
+    this.timeoutIds.set("reveal_answer_overlap", timeoutId);
   }
 
   private async handleSessionEnded(): Promise<void> {

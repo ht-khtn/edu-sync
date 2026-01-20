@@ -1,7 +1,7 @@
-import type { PlayOptions, PlayResult, SoundState, SoundGroup } from './SoundTypes';
-import { SOUND_GROUPS } from './SoundTypes';
-import { SoundRegistry } from './SoundRegistry';
-import { SoundCacheManager } from './SoundCacheManager';
+import type { PlayOptions, PlayResult, SoundState, SoundGroup } from "./SoundTypes";
+import { SOUND_GROUPS } from "./SoundTypes";
+import { SoundRegistry } from "./SoundRegistry";
+import { SoundCacheManager } from "./SoundCacheManager";
 
 export class SoundController {
   private playbackState = new Map<string, SoundState>();
@@ -18,22 +18,22 @@ export class SoundController {
   async play(soundKey: string, options?: PlayOptions): Promise<PlayResult> {
     if (!this.registry.exists(soundKey)) {
       console.warn(`[Sound] Sound "${soundKey}" not found in config`);
-      return { success: false, error: 'Sound not found' };
+      return { success: false, error: "Sound not found" };
     }
 
     if (!this.cacheManager.isReady(soundKey)) {
       console.warn(`[Sound] Sound "${soundKey}" not cached`);
-      return { success: false, error: 'Sound not cached' };
+      return { success: false, error: "Sound not cached" };
     }
 
     const audioContext = this.cacheManager.getAudioContext();
     if (!audioContext) {
-      console.warn('[Sound] No AudioContext');
-      return { success: false, error: 'No AudioContext' };
+      console.warn("[Sound] No AudioContext");
+      return { success: false, error: "No AudioContext" };
     }
 
-    if (audioContext.state === 'suspended') {
-      console.warn('[Sound] AudioContext suspended, resuming...');
+    if (audioContext.state === "suspended") {
+      console.warn("[Sound] AudioContext suspended, resuming...");
       await audioContext.resume();
     }
 
@@ -45,13 +45,13 @@ export class SoundController {
 
     // Apply delay if specified
     if (options?.delay) {
-      await new Promise(resolve => setTimeout(resolve, options.delay));
+      await new Promise((resolve) => setTimeout(resolve, options.delay));
     }
 
     try {
       const buffer = this.cacheManager.getAudioBuffer(soundKey);
       if (!buffer) {
-        return { success: false, error: 'Buffer not available' };
+        return { success: false, error: "Buffer not available" };
       }
 
       const source = audioContext.createBufferSource();
@@ -74,7 +74,7 @@ export class SoundController {
       source.start(0);
 
       this.playbackState.set(soundKey, {
-        state: 'playing',
+        state: "playing",
         sourceNode: source,
         gainNode: gainNode,
         startTime: audioContext.currentTime,
@@ -90,7 +90,7 @@ export class SoundController {
 
   stop(soundKey: string): void {
     const state = this.playbackState.get(soundKey);
-    if (!state || state.state === 'stopped') {
+    if (!state || state.state === "stopped") {
       return;
     }
 
@@ -121,7 +121,7 @@ export class SoundController {
 
   pause(soundKey: string): void {
     const state = this.playbackState.get(soundKey);
-    if (!state || state.state !== 'playing') {
+    if (!state || state.state !== "playing") {
       return;
     }
 
@@ -129,7 +129,7 @@ export class SoundController {
       if (state.sourceNode && state.sourceNode.stop) {
         state.sourceNode.stop(0);
       }
-      state.state = 'paused';
+      state.state = "paused";
       console.log(`[Sound] Paused: ${soundKey}`);
     } catch (error) {
       console.warn(`[Sound] Error pausing ${soundKey}:`, error);
@@ -138,12 +138,12 @@ export class SoundController {
 
   isPlaying(soundKey: string): boolean {
     const state = this.playbackState.get(soundKey);
-    return state?.state === 'playing';
+    return state?.state === "playing";
   }
 
   getPlayingKeys(): string[] {
     return Array.from(this.playbackState.entries())
-      .filter(([, state]) => state.state === 'playing')
+      .filter(([, state]) => state.state === "playing")
       .map(([key]) => key);
   }
 
@@ -158,8 +158,8 @@ export class SoundController {
     const mustStop: string[] = [];
 
     // Star sound (vd_ngoi_sao) stops everything
-    if (soundKeyToPlay === 'vd_ngoi_sao') {
-      return Array.from(this.playbackState.keys()).filter(k => this.isPlaying(k));
+    if (soundKeyToPlay === "vd_ngoi_sao") {
+      return Array.from(this.playbackState.keys()).filter((k) => this.isPlaying(k));
     }
 
     // Auto-stop sounds (autoStopWhenOtherPlays=true)

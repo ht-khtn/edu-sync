@@ -1,8 +1,14 @@
 // Sound system type definitions and interfaces
 
-export type PlaybackState = 'playing' | 'paused' | 'stopped';
-export type RoundType = 'khoi_dong' | 'vcnv' | 'tang_toc' | 've_dich';
-export type SoundGroup = 'BACKGROUND' | 'COUNTDOWN' | 'SCORING' | 'QUESTION_REVEAL' | 'INTERACTION' | 'ROUND_END';
+export type PlaybackState = "playing" | "paused" | "stopped";
+export type RoundType = "khoi_dong" | "vcnv" | "tang_toc" | "ve_dich";
+export type SoundGroup =
+  | "BACKGROUND"
+  | "COUNTDOWN"
+  | "SCORING"
+  | "QUESTION_REVEAL"
+  | "INTERACTION"
+  | "ROUND_END";
 
 export interface SoundDef {
   file: string;
@@ -53,20 +59,20 @@ export interface PreloadBatchResult {
 }
 
 export enum GameEvent {
-  ROUND_STARTED = 'ROUND_STARTED',
-  QUESTION_REVEALED = 'QUESTION_REVEALED',
-  TIMER_STARTED = 'TIMER_STARTED',
-  CORRECT_ANSWER = 'CORRECT_ANSWER',
-  WRONG_ANSWER = 'WRONG_ANSWER',
-  TIMER_ENDED = 'TIMER_ENDED',
-  ROUND_ENDED = 'ROUND_ENDED',
-  STAR_REVEALED = 'STAR_REVEALED',
-  SELECT_ROW = 'SELECT_ROW',
-  SELECT_CATEGORY = 'SELECT_CATEGORY',
-  REVEAL_ANSWER = 'REVEAL_ANSWER',
-  OPEN_IMAGE = 'OPEN_IMAGE',
-  OPEN_TILE = 'OPEN_TILE',
-  SESSION_ENDED = 'SESSION_ENDED',
+  ROUND_STARTED = "ROUND_STARTED",
+  QUESTION_REVEALED = "QUESTION_REVEALED",
+  TIMER_STARTED = "TIMER_STARTED",
+  CORRECT_ANSWER = "CORRECT_ANSWER",
+  WRONG_ANSWER = "WRONG_ANSWER",
+  TIMER_ENDED = "TIMER_ENDED",
+  ROUND_ENDED = "ROUND_ENDED",
+  STAR_REVEALED = "STAR_REVEALED",
+  SELECT_ROW = "SELECT_ROW",
+  SELECT_CATEGORY = "SELECT_CATEGORY",
+  REVEAL_ANSWER = "REVEAL_ANSWER",
+  OPEN_IMAGE = "OPEN_IMAGE",
+  OPEN_TILE = "OPEN_TILE",
+  SESSION_ENDED = "SESSION_ENDED",
 }
 
 export interface GameEventPayload {
@@ -85,12 +91,25 @@ export const PRIORITY = {
 } as const;
 
 export const SOUND_GROUPS: Record<SoundGroup, string[]> = {
-  BACKGROUND: ['kd_bat_dau_choi'],
-  COUNTDOWN: ['kd_dem_gio_5s', 'vcnv_dem_gio_15s', 'tt_dem_gio_20s', 'tt_dem_gio_30s', 'vd_dem_gio_15s', 'vd_dem_gio_20s'],
-  SCORING: ['kd_dung', 'kd_sai', 'vcnv_dung', 'vd_dung', 'vd_sai', 'vd_ngoi_sao'],
-  QUESTION_REVEAL: ['kd_hien_cau_hoi', 'vcnv_mo_cau_hoi', 'tt_mo_cau_hoi', 'vd_lua_chon_goi'],
-  INTERACTION: ['vcnv_mo_o_chu', 'vcnv_chon_hang_ngang', 'vcnv_mo_hinh_anh', 'tt_mo_dap_an', 'vd_cac_goi'],
-  ROUND_END: ['kd_hoan_thanh', 'vd_hoan_thanh', 'tong_ket_ket_qua'],
+  BACKGROUND: ["kd_bat_dau_choi"],
+  COUNTDOWN: [
+    "kd_dem_gio_5s",
+    "vcnv_dem_gio_15s",
+    "tt_dem_gio_20s",
+    "tt_dem_gio_30s",
+    "vd_dem_gio_15s",
+    "vd_dem_gio_20s",
+  ],
+  SCORING: ["kd_dung", "kd_sai", "vcnv_dung", "vd_dung", "vd_sai", "vd_ngoi_sao"],
+  QUESTION_REVEAL: ["kd_hien_cau_hoi", "vcnv_mo_cau_hoi", "tt_mo_cau_hoi", "vd_lua_chon_goi"],
+  INTERACTION: [
+    "vcnv_mo_o_chu",
+    "vcnv_chon_hang_ngang",
+    "vcnv_mo_hinh_anh",
+    "tt_mo_dap_an",
+    "vd_cac_goi",
+  ],
+  ROUND_END: ["kd_hoan_thanh", "vd_hoan_thanh", "tong_ket_ket_qua"],
 };
 
 export const TIMING_CONFIG = {

@@ -1,5 +1,5 @@
-import type { CacheStatus, PreloadBatchResult } from './SoundTypes';
-import { SoundRegistry } from './SoundRegistry';
+import type { CacheStatus, PreloadBatchResult } from "./SoundTypes";
+import { SoundRegistry } from "./SoundRegistry";
 
 const PRELOAD_BATCH_SIZE = 5;
 const PRELOAD_TIMEOUT_MS = 10000;
@@ -18,7 +18,7 @@ export class SoundCacheManager {
   }
 
   private initAudioContext(): void {
-    if (typeof window !== 'undefined' && !this.audioContext) {
+    if (typeof window !== "undefined" && !this.audioContext) {
       const AudioCtx =
         window.AudioContext ||
         (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -30,7 +30,7 @@ export class SoundCacheManager {
 
   async preloadAllSounds(): Promise<PreloadBatchResult> {
     if (!this.audioContext) {
-      console.warn('[Sound] AudioContext not initialized');
+      console.warn("[Sound] AudioContext not initialized");
       return { loaded: [], failed: [] };
     }
 
@@ -44,9 +44,7 @@ export class SoundCacheManager {
 
     for (let i = 0; i < soundKeys.length; i += PRELOAD_BATCH_SIZE) {
       const batch = soundKeys.slice(i, i + PRELOAD_BATCH_SIZE);
-      const results = await Promise.all(
-        batch.map(key => this.preloadSound(key))
-      );
+      const results = await Promise.all(batch.map((key) => this.preloadSound(key)));
 
       results.forEach((success, idx) => {
         if (success) {
@@ -71,10 +69,10 @@ export class SoundCacheManager {
     }
 
     if (this.loadingPromises.has(soundKey)) {
-      return this.loadingPromises.get(soundKey)!.then(buf => buf !== null);
+      return this.loadingPromises.get(soundKey)!.then((buf) => buf !== null);
     }
 
-    const promise = this.fetchAndDecode(soundKey).then(buffer => {
+    const promise = this.fetchAndDecode(soundKey).then((buffer) => {
       if (buffer) {
         this.cache.set(soundKey, buffer);
         this.loadingPromises.delete(soundKey);
@@ -86,7 +84,10 @@ export class SoundCacheManager {
       }
     });
 
-    this.loadingPromises.set(soundKey, promise.then(success => success ? (this.cache.get(soundKey) || null) : null));
+    this.loadingPromises.set(
+      soundKey,
+      promise.then((success) => (success ? this.cache.get(soundKey) || null : null))
+    );
     return promise;
   }
 
@@ -98,7 +99,7 @@ export class SoundCacheManager {
     }
 
     if (!this.audioContext) {
-      console.warn('[Sound] No AudioContext');
+      console.warn("[Sound] No AudioContext");
       return null;
     }
 
@@ -121,7 +122,7 @@ export class SoundCacheManager {
       } catch (error) {
         console.warn(`[Sound] Preload attempt ${attempt + 1} failed for ${soundKey}:`, error);
         if (attempt < PRELOAD_MAX_RETRIES) {
-          await new Promise(r => setTimeout(r, 100));
+          await new Promise((r) => setTimeout(r, 100));
         }
       }
     }
@@ -144,9 +145,9 @@ export class SoundCacheManager {
   getStatus(): CacheStatus {
     const allKeys = this.registry.getAllSoundKeys();
     return {
-      loaded: allKeys.filter(k => this.cache.has(k)),
+      loaded: allKeys.filter((k) => this.cache.has(k)),
       failed: Array.from(this.failedSounds),
-      pending: allKeys.filter(k => !this.cache.has(k) && !this.failedSounds.has(k)),
+      pending: allKeys.filter((k) => !this.cache.has(k) && !this.failedSounds.has(k)),
     };
   }
 

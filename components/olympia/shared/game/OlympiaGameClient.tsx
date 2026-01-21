@@ -1018,6 +1018,14 @@ export function OlympiaGameClient({
       const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
       if (cmdId <= lastMediaCmdRef.current[mediaType]) return
       const action = cmd.action
+
+      // Ignore tombstone/non-action objects left in DB by server clear operation.
+      // Advance lastMediaCmdRef so subsequent commands with higher ids are accepted.
+      if (action !== 'play' && action !== 'pause' && action !== 'restart' && action !== 'stop') {
+        lastMediaCmdRef.current = { ...lastMediaCmdRef.current, [mediaType]: cmdId }
+        console.info('[Olympia][GuestMedia] ignoring non-action tombstone', { mediaType, cmdId, action })
+        return
+      }
       let element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
 
       let cmdSrcs: string[] | undefined

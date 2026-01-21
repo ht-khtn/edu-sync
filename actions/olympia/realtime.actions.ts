@@ -1753,8 +1753,8 @@ export async function clearGuestMediaCommandAction(
       return;
     }
 
-    const nextControl = { ...prevControl };
-    delete nextControl[mediaType];
+    // Keep a tombstone with the last seen commandId so IDs remain monotonic.
+    const nextControl = { ...prevControl, [mediaType]: { commandId: currentCmd.commandId } };
 
     const { error: updateErr } = await olympia
       .from("live_sessions")

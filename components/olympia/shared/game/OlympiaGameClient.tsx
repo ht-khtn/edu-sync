@@ -770,7 +770,7 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return
-    if (!prevTimerExpiredRef.current && timer.isExpired) {
+    if (!prevTimerExpiredRef.current) {
       void emitSoundEvent(GameEvent.TIMER_ENDED, { roundType: resolvedRoundType })
     }
     prevTimerExpiredRef.current = timer.isExpired

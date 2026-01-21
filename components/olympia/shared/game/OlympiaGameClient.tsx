@@ -18,6 +18,14 @@ import {
   estimateFormDataPayloadBytes,
   traceClient,
 } from "@/lib/olympia/olympia-client-trace";
+import {
+  GameEvent,
+  SoundCacheManager,
+  SoundController,
+  SoundEventRouter,
+  SoundRegistry,
+} from '@/lib/olympia/sound'
+import type { GameEventPayload, RoundType } from '@/lib/olympia/sound'
 
 import { cn } from '@/utils/cn'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
@@ -86,6 +94,7 @@ export function OlympiaGameClient({
     starUses,
     vcnvRevealByRoundQuestionId,
     vcnvLockedWrongByRoundQuestionId,
+    timer,
     timerLabel,
     questionState,
     roundType,
@@ -271,6 +280,71 @@ export function OlympiaGameClient({
   const isGuest = resolvedViewerMode === 'guest'
   const isMc = resolvedViewerMode === 'mc'
   const disableInteractions = isGuest || isMc
+
+  const isRoundTypeValue = (value: string): value is RoundType =>
+    value === 'khoi_dong' || value === 'vcnv' || value === 'tang_toc' || value === 've_dich'
+
+  const resolvedRoundType = useMemo<RoundType | null>(
+    () => (isRoundTypeValue(roundType) ? roundType : null),
+    [roundType]
+  )
+
+  const soundRegistryRef = useRef<SoundRegistry | null>(null)
+  const soundCacheRef = useRef<SoundCacheManager | null>(null)
+  const soundControllerRef = useRef<SoundController | null>(null)
+  const soundRouterRef = useRef<SoundEventRouter | null>(null)
+  const soundPreloadedRef = useRef(false)
+  const soundDebounceRef = useRef<{ key: GameEvent; ts: number } | null>(null)
+  const prevRoundTypeRef = useRef<RoundType | null>(null)
+  const prevQuestionStateRef = useRef<string | null>(null)
+  const prevTimerDeadlineRef = useRef<string | null>(null)
+  const prevTimerExpiredRef = useRef(false)
+  const prevAnswerIdRef = useRef<string | null>(null)
+  const prevStarUseIdRef = useRef<string | null>(null)
+  const prevQuestionIdRef = useRef<string | null>(null)
+
+  const emitSoundEvent = useCallback(
+    async (event: GameEvent, payload?: GameEventPayload) => {
+      if (!isGuest) return
+      const router = soundRouterRef.current
+      if (!router) return
+      const now = Date.now()
+      const last = soundDebounceRef.current
+      if (last && last.key === event && now - last.ts < 300) return
+      soundDebounceRef.current = { key: event, ts: now }
+      await router.routeEvent(event, payload)
+    },
+    [isGuest]
+  )
+
+  useEffect(() => {
+    if (!isGuest) return
+    if (!soundRegistryRef.current) {
+      const registry = new SoundRegistry()
+      const cache = new SoundCacheManager(registry)
+      const controller = new SoundController(cache, registry)
+      const router = new SoundEventRouter(controller)
+      soundRegistryRef.current = registry
+      soundCacheRef.current = cache
+      soundControllerRef.current = controller
+      soundRouterRef.current = router
+    }
+
+    if (!soundPreloadedRef.current) {
+      soundPreloadedRef.current = true
+      void soundCacheRef.current?.preloadAllSounds().then((result) => {
+        if (result.failed.length > 0) {
+          console.warn('[Olympia][Sound] preload fail', { failed: result.failed })
+        }
+      })
+    }
+
+    return () => {
+      soundRouterRef.current?.cleanup()
+      soundControllerRef.current?.stopAll()
+      soundCacheRef.current?.clear()
+    }
+  }, [isGuest])
 
   const resolvedMcScoreboardSlotId = mcScoreboardSlotId ?? 'olympia-mc-scoreboard-slot'
   const [mcScoreboardSlotEl, setMcScoreboardSlotEl] = useState<HTMLElement | null>(null)
@@ -603,6 +677,103 @@ export function OlympiaGameClient({
     // Fallback: cột này có thể là link Ảnh/Video nhưng không có extension
     return 'link'
   }, [mediaUrl])
+
+  useEffect(() => {
+    if (!isGuest || !resolvedRoundType) {
+      prevRoundTypeRef.current = null
+      return
+    }
+
+    const prev = prevRoundTypeRef.current
+    if (prev && prev !== resolvedRoundType) {
+      void emitSoundEvent(GameEvent.ROUND_ENDED, { roundType: prev })
+    }
+    if (prev !== resolvedRoundType) {
+      void emitSoundEvent(GameEvent.ROUND_STARTED, { roundType: resolvedRoundType })
+    }
+    prevRoundTypeRef.current = resolvedRoundType
+  }, [emitSoundEvent, isGuest, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest) return
+    const prev = prevQuestionStateRef.current
+
+    if (questionState === 'showing' && prev !== 'showing') {
+      void emitSoundEvent(GameEvent.QUESTION_REVEALED, {
+        roundType: resolvedRoundType ?? undefined,
+      })
+    }
+
+    if (questionState === 'answer_revealed' && prev !== 'answer_revealed' && resolvedRoundType === 'tang_toc') {
+      void emitSoundEvent(GameEvent.REVEAL_ANSWER, { roundType: resolvedRoundType })
+    }
+
+    prevQuestionStateRef.current = questionState
+  }, [emitSoundEvent, isGuest, questionState, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest || !resolvedRoundType) {
+      prevTimerDeadlineRef.current = session.timer_deadline ?? null
+      return
+    }
+
+    const prev = prevTimerDeadlineRef.current
+    const next = session.timer_deadline ?? null
+
+    if (!prev && next) {
+      const hasVideo = mediaKind === 'video' || mediaKind === 'youtube'
+      void emitSoundEvent(GameEvent.TIMER_STARTED, { roundType: resolvedRoundType, hasVideo })
+    }
+
+    if (prev && !next) {
+      void emitSoundEvent(GameEvent.TIMER_ENDED, { roundType: resolvedRoundType })
+    }
+
+    prevTimerDeadlineRef.current = next
+  }, [emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline])
+
+  useEffect(() => {
+    if (!isGuest || !resolvedRoundType) return
+    if (!prevTimerExpiredRef.current && timer.isExpired) {
+      void emitSoundEvent(GameEvent.TIMER_ENDED, { roundType: resolvedRoundType })
+    }
+    prevTimerExpiredRef.current = timer.isExpired
+  }, [emitSoundEvent, isGuest, resolvedRoundType, timer.isExpired])
+
+  useEffect(() => {
+    if (!isGuest || !resolvedRoundType) return
+    const latest = answers[0]
+    if (!latest?.id) return
+    if (prevAnswerIdRef.current === latest.id) return
+    prevAnswerIdRef.current = latest.id
+
+    // [GIẢ ĐỊNH]: answers[0] phản ánh kết quả chấm mới nhất cho câu hiện tại.
+    if (typeof latest.is_correct === 'boolean') {
+      void emitSoundEvent(
+        latest.is_correct ? GameEvent.CORRECT_ANSWER : GameEvent.WRONG_ANSWER,
+        { roundType: resolvedRoundType }
+      )
+    }
+  }, [answers, emitSoundEvent, isGuest, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest || resolvedRoundType !== 've_dich') return
+    const latest = starUses[0]
+    if (!latest?.id) return
+    if (prevStarUseIdRef.current === latest.id) return
+    prevStarUseIdRef.current = latest.id
+    void emitSoundEvent(GameEvent.STAR_REVEALED, { roundType: resolvedRoundType })
+  }, [emitSoundEvent, isGuest, resolvedRoundType, starUses])
+
+  useEffect(() => {
+    if (!isGuest || resolvedRoundType !== 'vcnv') return
+    const nextId = currentQuestionId ?? null
+    const prevId = prevQuestionIdRef.current
+    if (nextId && nextId !== prevId) {
+      void emitSoundEvent(GameEvent.SELECT_ROW, { roundType: resolvedRoundType })
+    }
+    prevQuestionIdRef.current = nextId
+  }, [currentQuestionId, emitSoundEvent, isGuest, resolvedRoundType])
 
   const youtubeEmbedUrl = useMemo(() => {
     if (!mediaUrl || mediaKind !== 'youtube') return null

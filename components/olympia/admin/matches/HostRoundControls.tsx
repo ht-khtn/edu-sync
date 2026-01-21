@@ -1070,7 +1070,7 @@ export function HostRoundControls({
               formData.set('mediaType', 'video')
               formData.set('command', 'play')
               formData.set('mediaSrcs', JSON.stringify(mediaSrcs.filter(Boolean)))
-              mediaAction(formData)
+              startTargetTransition(() => mediaAction(formData))
             }}
             className="flex-1"
           >
@@ -1095,7 +1095,7 @@ export function HostRoundControls({
               formData.set('matchId', matchId)
               formData.set('mediaType', 'video')
               formData.set('command', 'pause')
-              mediaAction(formData)
+              startTargetTransition(() => mediaAction(formData))
             }}
             className="flex-1"
           >
@@ -1120,7 +1120,7 @@ export function HostRoundControls({
               formData.set('matchId', matchId)
               formData.set('mediaType', 'video')
               formData.set('command', 'stop')
-              mediaAction(formData)
+              startTargetTransition(() => mediaAction(formData))
             }}
             className="flex-1"
           >

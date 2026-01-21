@@ -2086,8 +2086,9 @@ export async function advanceCurrentQuestionAction(
 
       // Nếu đang ở thi riêng (personal) và sang câu không cùng thí sinh, ép bật màn chờ.
       // Áp dụng cả khi autoShow=1 (chấm & chuyển) theo đúng luật/UX yêu cầu.
-      // Tuy nhiên, nếu câu tiếp theo là thi chung (common/DKA-), không ép màn chờ, để auto-show bình thường.
-      if ((switchingPersonalToNonPersonal || switchingBetweenPersonalPlayers) && nextIsPersonal) {
+      // Trường hợp này bao gồm cả khi chuyển sang câu thi chung (DKA-) —
+      // tránh tự nhảy sang câu khác khi đã kết thúc lượt của thí sinh.
+      if (switchingPersonalToNonPersonal || switchingBetweenPersonalPlayers) {
         // Theo UX: hết câu của thí sinh hiện tại thì không tự nhảy sang thí sinh khác.
         // Chỉ bật màn chờ để host chủ động chọn thí sinh/câu tiếp theo.
         const { error: waitErr } = await olympia

@@ -386,6 +386,7 @@ export function HostRoundControls({
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
+  const hostAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const roundById = useMemo(() => {
     const map = new Map<string, MatchRound>()
@@ -459,6 +460,14 @@ export function HostRoundControls({
       dispatch(fd)
     })
   }
+
+  const playKhuyet = useCallback(() => {
+    try {
+      hostAudioRef.current?.play()
+    } catch (err) {
+      // Ignore play errors (user gesture required) — user can click again
+    }
+  }, [])
 
 
   const replaceQueryParams = useCallback((params: URLSearchParams) => {
@@ -993,6 +1002,28 @@ export function HostRoundControls({
         </div>
         {buzzerMessage && !buzzerState.error ? <p className="text-xs text-green-600">{buzzerMessage}</p> : null}
       </form>
+      <div className="grid gap-2">
+        <Label className="text-xs">Âm thanh</Label>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => playKhuyet()}
+            title="Phát âm thanh khuyết trên trình duyệt của host"
+            aria-label="Phát khuyết"
+          >
+            Phát khuyết
+          </Button>
+        </div>
+        <audio
+          ref={hostAudioRef}
+          src="https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia/Olympia%20Sound/khuyet.mp3"
+          preload="auto"
+          hidden
+        />
+      </div>
     </div>
   )
 }

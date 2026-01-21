@@ -14,8 +14,18 @@ export type LiveSessionRow = {
   show_answers_overlay?: boolean;
   guest_media_control?: {
     version?: number;
-    audio?: { commandId: number; action: "play" | "pause" | "restart"; issuedAt: string };
-    video?: { commandId: number; action: "play" | "pause" | "restart"; issuedAt: string };
+    audio?: {
+      commandId: number;
+      action: "play" | "pause" | "restart";
+      issuedAt: string;
+      src?: string | string[];
+    };
+    video?: {
+      commandId: number;
+      action: "play" | "pause" | "restart";
+      issuedAt: string;
+      src?: string | string[];
+    };
   };
 };
 

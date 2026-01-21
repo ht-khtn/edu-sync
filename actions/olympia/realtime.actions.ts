@@ -104,12 +104,14 @@ const guestMediaControlSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   mediaType: z.enum(["audio", "video"]),
   command: z.enum(["play", "pause", "restart"]),
+  src: z.preprocess((v) => (typeof v === "string" ? v.trim() : v), z.string().optional()),
 });
 
 type GuestMediaCommand = {
   commandId: number;
   action: "play" | "pause" | "restart";
   issuedAt: string;
+  src?: string | string[];
 };
 
 type GuestMediaControl = {
@@ -1588,13 +1590,14 @@ export async function setGuestMediaControlAction(
       matchId: formData.get("matchId"),
       mediaType: formData.get("mediaType"),
       command: formData.get("command"),
+      src: formData.get("src"),
     });
 
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin điều khiển media." };
     }
 
-    const { matchId, mediaType, command } = parsed.data;
+    const { matchId, mediaType, command, src } = parsed.data;
 
     const { data: sessionRow, error: sessionErr } = await olympia
       .from("live_sessions")
@@ -1636,6 +1639,11 @@ export async function setGuestMediaControlAction(
       action: command,
       issuedAt: new Date().toISOString(),
     };
+
+    if (typeof src === "string" && src.length > 0) {
+      // store raw string; guest may parse JSON array if needed
+      nextCmd.src = src;
+    }
 
     const nextControl: GuestMediaControl = {
       ...prevControl,

@@ -22,7 +22,6 @@ import { requireOlympiaAdminContext } from "@/lib/olympia/olympia-auth";
 import type { ActionState } from "./match.actions";
 import { advanceCurrentQuestionAction } from "./realtime.actions";
 
-
 function parseKhoiDongCodeInfoFromMeta(
   meta: unknown
 ): { kind: "personal"; seat: number } | { kind: "common" } | null {
@@ -655,7 +654,9 @@ export async function confirmDecisionAction(
     const { sessionId, playerId, decision } = parsed.data;
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
-      .select("id, match_id, join_code, current_round_type, current_round_question_id")
+      .select(
+        "id, match_id, join_code, current_round_id, current_round_type, current_round_question_id"
+      )
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -684,14 +685,16 @@ export async function confirmDecisionAction(
     let currentTargetPlayerId: string | null = null;
     let isKhoiDongCommonRound: boolean = false;
     let currentVeDichValue: 20 | 30 | null = null;
+    let currentMatchRoundId = session.current_round_id ?? null;
     if (session.current_round_question_id) {
       const { data: rqRow, error: rqErr } = await olympia
         .from("round_questions")
-        .select("id, target_player_id, meta")
+        .select("id, target_player_id, meta, match_round_id")
         .eq("id", session.current_round_question_id)
         .maybeSingle();
       if (rqErr) return { error: rqErr.message };
       currentTargetPlayerId = (rqRow?.target_player_id as string | null) ?? null;
+      currentMatchRoundId = rqRow?.match_round_id ?? currentMatchRoundId;
 
       traceInfo({
         traceId,
@@ -911,6 +914,25 @@ export async function confirmDecisionAction(
           })
           .eq("id", latestAnswer.id);
         if (updateAnswerError) return { error: updateAnswerError.message };
+      } else {
+        if (!currentMatchRoundId) {
+          return { error: "Không xác định được vòng thi để ghi đáp án." };
+        }
+        const { data: insertedAnswer, error: insertAnswerError } = await olympia
+          .from("answers")
+          .insert({
+            match_id: session.match_id,
+            match_round_id: currentMatchRoundId,
+            round_question_id: session.current_round_question_id,
+            player_id: playerId,
+            answer_text: null,
+            is_correct: decision === "correct",
+            points_awarded: appliedDelta,
+          })
+          .select("id")
+          .maybeSingle();
+        if (insertAnswerError) return { error: insertAnswerError.message };
+        answerId = insertedAnswer?.id ?? null;
       }
     }
 

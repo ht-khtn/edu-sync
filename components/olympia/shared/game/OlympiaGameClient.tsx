@@ -242,6 +242,10 @@ export function OlympiaGameClient({
   const prevTimerDeadlineRef = useRef<string | null>(null)
   const prevTimerExpiredRef = useRef(false)
   const prevAnswerIdRef = useRef<string | null>(null)
+  const prevAnswerDecisionRef = useRef<{ id: string | null; isCorrect: boolean | null }>({
+    id: null,
+    isCorrect: null,
+  })
   const prevStarUseIdRef = useRef<string | null>(null)
   const prevQuestionIdRef = useRef<string | null>(null)
 
@@ -739,6 +743,11 @@ export function OlympiaGameClient({
       void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
     }
 
+    // For Khởi động thi riêng (KD{seat}-): emit TURN_ENDED when question_state -> hidden (end of turn)
+    if (questionState === 'hidden' && prev !== 'hidden' && resolvedRoundType === 'khoi_dong') {
+      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
+    }
+
     prevQuestionStateRef.current = questionState
   }, [emitSoundEvent, isGuest, questionState, resolvedRoundType])
 
@@ -781,15 +790,30 @@ export function OlympiaGameClient({
     if (resolvedRoundType === 'vcnv') return
     const latest = answers[0]
     if (!latest?.id) return
-    if (prevAnswerIdRef.current === latest.id) return
-    prevAnswerIdRef.current = latest.id
+    const latestIsCorrect = typeof latest.is_correct === 'boolean' ? latest.is_correct : null
+    const prevAnswerId = prevAnswerIdRef.current
+    const prevDecision = prevAnswerDecisionRef.current
 
-    // [GIẢ ĐỊNH]: answers[0] phản ánh kết quả chấm mới nhất cho câu hiện tại.
-    if (typeof latest.is_correct === 'boolean') {
+    if (prevAnswerId !== latest.id) {
+      prevAnswerIdRef.current = latest.id
+      prevAnswerDecisionRef.current = { id: latest.id, isCorrect: latestIsCorrect }
+      if (latestIsCorrect === null) return
       void emitSoundEvent(
-        latest.is_correct ? GameEvent.CORRECT_ANSWER : GameEvent.WRONG_ANSWER,
+        latestIsCorrect ? GameEvent.CORRECT_ANSWER : GameEvent.WRONG_ANSWER,
         { roundType: resolvedRoundType }
       )
+      return
+    }
+
+    // Khi có answer mới được cập nhật, phát âm thanh đúng/sai ngay
+    if (latestIsCorrect !== null && prevDecision.isCorrect !== latestIsCorrect) {
+      prevAnswerDecisionRef.current = { id: latest.id, isCorrect: latestIsCorrect }
+      void emitSoundEvent(
+        latestIsCorrect ? GameEvent.CORRECT_ANSWER : GameEvent.WRONG_ANSWER,
+        { roundType: resolvedRoundType }
+      )
+    } else if (latestIsCorrect === null) {
+      prevAnswerDecisionRef.current = { id: latest.id, isCorrect: null }
     }
   }, [answers, emitSoundEvent, isGuest, resolvedRoundType])
 

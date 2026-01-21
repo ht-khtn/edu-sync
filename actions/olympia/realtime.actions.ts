@@ -1976,7 +1976,37 @@ export async function advanceCurrentQuestionAction(
       if (typeof currentOrderIndex !== "number" || !Number.isFinite(currentOrderIndex)) {
         nextQuestion = await fetchFirstQuestion();
       } else if (direction === "next") {
-        nextQuestion = (await fetchNextByOrder(currentOrderIndex)) ?? (await fetchLastQuestion());
+        nextQuestion = await fetchNextByOrder(currentOrderIndex);
+        // Nếu ở KD thi riêng (personal) và hết câu, không fallback sang câu khác - dừng lại.
+        // Tránh nhảy sang câu DKA- hoặc thí sinh khác.
+        if (!nextQuestion && session.current_round_type === "khoi_dong" && currentQuestion) {
+          const currentRow = currentQuestion as unknown as {
+            target_player_id?: string | null;
+            meta?: unknown;
+          };
+          const currentInfo = parseKhoiDongCodeInfoFromMeta(
+            (currentRow as { meta?: unknown })?.meta
+          );
+          const currentIsPersonal = Boolean(
+            currentRow?.target_player_id || currentInfo?.kind === "personal"
+          );
+          if (currentIsPersonal) {
+            // Hết câu KD thi riêng - ép màn chờ, không lấy câu khác
+            const { error: endErr } = await olympia
+              .from("live_sessions")
+              .update({
+                question_state: "hidden",
+                timer_deadline: null,
+                buzzer_enabled: false,
+              })
+              .eq("id", session.id);
+            if (endErr) return { error: endErr.message };
+            revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+            return { success: "Đã hết câu của thí sinh này. Đã bật màn chờ." };
+          }
+        }
+        // Nếu không ở KD personal, fallback sang câu cuối (dành cho KD chung hoặc vòng khác)
+        nextQuestion = nextQuestion ?? (await fetchLastQuestion());
       } else {
         nextQuestion = (await fetchPrevByOrder(currentOrderIndex)) ?? (await fetchFirstQuestion());
       }
@@ -2054,9 +2084,10 @@ export async function advanceCurrentQuestionAction(
         ) ||
           Boolean(currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
 
-      // Nếu đang ở thi riêng và sang câu không cùng thí sinh (hoặc sang thi chung), ép bật màn chờ.
+      // Nếu đang ở thi riêng (personal) và sang câu không cùng thí sinh, ép bật màn chờ.
       // Áp dụng cả khi autoShow=1 (chấm & chuyển) theo đúng luật/UX yêu cầu.
-      if (switchingPersonalToNonPersonal || switchingBetweenPersonalPlayers) {
+      // Tuy nhiên, nếu câu tiếp theo là thi chung (common/DKA-), không ép màn chờ, để auto-show bình thường.
+      if ((switchingPersonalToNonPersonal || switchingBetweenPersonalPlayers) && nextIsPersonal) {
         // Theo UX: hết câu của thí sinh hiện tại thì không tự nhảy sang thí sinh khác.
         // Chỉ bật màn chờ để host chủ động chọn thí sinh/câu tiếp theo.
         const { error: waitErr } = await olympia
@@ -2076,6 +2107,9 @@ export async function advanceCurrentQuestionAction(
 
         return { success: "Đã hết câu của thí sinh hiện tại. Đã bật màn chờ." };
       }
+
+      // Khởi động thi chung (DKA- → DKA-): luôn auto-advance như bình thường
+      // (không ép màn chờ, để autoShow logic áp dụng bình thường).
     }
 
     // Không auto-start timer khi chuyển câu, kể cả autoShow; Host sẽ bấm Start riêng.

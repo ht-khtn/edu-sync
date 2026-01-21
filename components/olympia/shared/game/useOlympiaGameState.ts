@@ -15,11 +15,11 @@ import type {
   StarUseRow,
 } from "@/types/olympia/game";
 import {
-    createInitialGuardState,
-    handleRealtimeEvent,
-    IGuardState,
-    IRealtimeEvent
-} from '@/lib/olympia/realtime-guard'
+  createInitialGuardState,
+  handleRealtimeEvent,
+  IGuardState,
+  IRealtimeEvent,
+} from "@/lib/olympia/realtime-guard";
 
 type UseOlympiaGameStateArgs = {
   sessionId: string;
@@ -154,7 +154,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
   const vcnvTrackedRqIdsRef = useRef<string[]>([]);
-  const guardStateRef = useRef<IGuardState>(createInitialGuardState())
+  const guardStateRef = useRef<IGuardState>(createInitialGuardState());
 
   useEffect(() => {
     sessionRef.current = session;
@@ -549,242 +549,243 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           channelRef.current = null;
         }
 
-        const channel = supabase
-          .channel(`olympia-game-${sessionId}`)
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "olympia",
-              table: "realtime_events",
-              filter: `match_id=eq.${matchId}`,
-            },
-              (payload: RealtimePostgresChangesPayload<RealtimeEventRow>) => {
-                const commitTs = payload.commit_timestamp ?? null;
-                const receiveLagMs = getReceiveLagMs(commitTs);
-                const evt = (payload.new as RealtimeEventRow | null) ?? null;
-                traceClientReceive({
-                  event: `receive:realtime_events:${evt?.entity ?? "unknown"}`,
-                  fields: {
-                    sessionId,
-                    matchId,
-                    eventType: evt?.event_type ?? null,
-                    commitTs,
-                    receiveLagMs,
-                    payloadBytes: estimateJsonPayloadBytes(evt?.payload ?? null),
-                  },
+        const channel = supabase.channel(`olympia-game-${sessionId}`).on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "olympia",
+            table: "realtime_events",
+            filter: `match_id=eq.${matchId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<RealtimeEventRow>) => {
+            const commitTs = payload.commit_timestamp ?? null;
+            const receiveLagMs = getReceiveLagMs(commitTs);
+            const evt = (payload.new as RealtimeEventRow | null) ?? null;
+            traceClientReceive({
+              event: `receive:realtime_events:${evt?.entity ?? "unknown"}`,
+              fields: {
+                sessionId,
+                matchId,
+                eventType: evt?.event_type ?? null,
+                commitTs,
+                receiveLagMs,
+                payloadBytes: estimateJsonPayloadBytes(evt?.payload ?? null),
+              },
+            });
+
+            if (!evt) return;
+
+            // --- REALTIME GUARD ---
+            const occurredAt = commitTs
+              ? new Date(commitTs).getTime()
+              : evt.created_at
+                ? Date.parse(evt.created_at)
+                : Date.now();
+
+            const genericEvent: IRealtimeEvent = {
+              id: evt.id,
+              intent: "MUTATION",
+              target_entity_id: evt.match_id,
+              occurred_at: occurredAt,
+              payload: evt as unknown as Record<string, unknown>,
+            };
+
+            // Ensure scope
+            guardStateRef.current.activeEntityId = matchId;
+
+            handleRealtimeEvent(genericEvent, guardStateRef.current, (data) => {
+              const evt = data as RealtimeEventRow;
+              // Logic below is unchanged, just wrapped
+              // evt.match_id check is redundant due to guard but harmless
+
+              if (evt.match_id !== matchId) return;
+
+              if (evt.entity === "live_sessions") {
+                if (evt.session_id && evt.session_id !== sessionId) return;
+
+                const guestMediaControlObj = payloadObject(evt.payload, "guestMediaControl");
+                const guestMediaControl = guestMediaControlObj
+                  ? (guestMediaControlObj as GameSessionPayload["session"]["guest_media_control"])
+                  : undefined;
+
+                setSession((prev) => ({
+                  ...prev,
+                  status: payloadString(evt.payload, "status") ?? prev.status,
+                  join_code: payloadString(evt.payload, "joinCode") ?? prev.join_code,
+                  question_state: payloadString(evt.payload, "questionState"),
+                  current_round_id: payloadString(evt.payload, "currentRoundId"),
+                  current_round_type: payloadString(evt.payload, "currentRoundType"),
+                  current_round_question_id: payloadString(evt.payload, "currentRoundQuestionId"),
+                  timer_deadline: payloadString(evt.payload, "timerDeadline"),
+                  buzzer_enabled:
+                    payloadBoolean(evt.payload, "buzzerEnabled") ?? prev.buzzer_enabled,
+                  show_scoreboard_overlay:
+                    payloadBoolean(evt.payload, "showScoreboardOverlay") ??
+                    prev.show_scoreboard_overlay,
+                  show_answers_overlay:
+                    payloadBoolean(evt.payload, "showAnswersOverlay") ?? prev.show_answers_overlay,
+                  guest_media_control: guestMediaControl ?? prev.guest_media_control,
+                }));
+                return;
+              }
+
+              if (evt.entity === "match_scores") {
+                const id = payloadString(evt.payload, "id");
+                const playerId = payloadString(evt.payload, "playerId");
+                const roundTypeValue = payloadString(evt.payload, "roundType");
+                const points = payloadNumber(evt.payload, "points");
+                if (!id || !playerId) return;
+
+                setScores((prev) => {
+                  const next = [...prev];
+                  const idx = next.findIndex((row) => (row.id ?? "") === id);
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    next.splice(idx, 1);
+                    return next;
+                  }
+
+                  const nextScore: ScoreRow = {
+                    id,
+                    match_id: matchId,
+                    player_id: playerId,
+                    round_type: roundTypeValue,
+                    points,
+                  };
+                  if (idx === -1) next.push(nextScore);
+                  else next[idx] = { ...next[idx], ...nextScore };
+                  return next;
                 });
+                return;
+              }
 
-                if (!evt) return;
-                
-                // --- REALTIME GUARD ---
-                const occurredAt = commitTs 
-                    ? new Date(commitTs).getTime() 
-                    : (evt.created_at ? Date.parse(evt.created_at) : Date.now());
+              if (evt.entity === "star_uses") {
+                const id = payloadString(evt.payload, "id");
+                const playerId = payloadString(evt.payload, "playerId");
+                const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
+                const declaredAt = payloadString(evt.payload, "declaredAt");
+                if (!id || !playerId || !roundQuestionId) return;
+                if (!declaredAt) return;
 
-                const genericEvent: IRealtimeEvent = {
-                    id: evt.id,
-                    intent: 'MUTATION',
-                    target_entity_id: evt.match_id,
-                    occurred_at: occurredAt,
-                    payload: evt as unknown as Record<string, unknown>
+                const row: StarUseRow = {
+                  id,
+                  match_id: matchId,
+                  player_id: playerId,
+                  round_question_id: roundQuestionId,
+                  outcome: payloadString(evt.payload, "outcome"),
+                  declared_at: declaredAt,
                 };
 
-                // Ensure scope
-                guardStateRef.current.activeEntityId = matchId;
+                setStarUses((prev) => {
+                  const idx = prev.findIndex(
+                    (s) =>
+                      s.id === row.id ||
+                      (s.round_question_id === row.round_question_id &&
+                        s.player_id === row.player_id)
+                  );
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    const next = [...prev];
+                    next.splice(idx, 1);
+                    return next;
+                  }
 
-                handleRealtimeEvent(genericEvent, guardStateRef.current, (data) => {
-                    const evt = data as RealtimeEventRow;
-                    // Logic below is unchanged, just wrapped
-                    // evt.match_id check is redundant due to guard but harmless
-
-                    if (evt.match_id !== matchId) return;
-
-                    if (evt.entity === "live_sessions") {
-                        if (evt.session_id && evt.session_id !== sessionId) return;
-
-                        const guestMediaControlObj = payloadObject(evt.payload, "guestMediaControl");
-                        const guestMediaControl = guestMediaControlObj
-                        ? (guestMediaControlObj as GameSessionPayload["session"]["guest_media_control"])
-                        : undefined;
-
-                        setSession((prev) => ({
-                        ...prev,
-                        status: payloadString(evt.payload, "status") ?? prev.status,
-                        join_code: payloadString(evt.payload, "joinCode") ?? prev.join_code,
-                        question_state: payloadString(evt.payload, "questionState"),
-                        current_round_id: payloadString(evt.payload, "currentRoundId"),
-                        current_round_type: payloadString(evt.payload, "currentRoundType"),
-                        current_round_question_id: payloadString(evt.payload, "currentRoundQuestionId"),
-                        timer_deadline: payloadString(evt.payload, "timerDeadline"),
-                        buzzer_enabled:
-                            payloadBoolean(evt.payload, "buzzerEnabled") ?? prev.buzzer_enabled,
-                        show_scoreboard_overlay:
-                            payloadBoolean(evt.payload, "showScoreboardOverlay") ??
-                            prev.show_scoreboard_overlay,
-                        show_answers_overlay:
-                            payloadBoolean(evt.payload, "showAnswersOverlay") ?? prev.show_answers_overlay,
-                        guest_media_control: guestMediaControl ?? prev.guest_media_control,
-                        }));
-                        return;
-                    }
-
-                    if (evt.entity === "match_scores") {
-                        const id = payloadString(evt.payload, "id");
-                        const playerId = payloadString(evt.payload, "playerId");
-                        const roundTypeValue = payloadString(evt.payload, "roundType");
-                        const points = payloadNumber(evt.payload, "points");
-                        if (!id || !playerId) return;
-
-                        setScores((prev) => {
-                        const next = [...prev];
-                        const idx = next.findIndex((row) => (row.id ?? "") === id);
-                        if (evt.event_type === "DELETE") {
-                            if (idx === -1) return prev;
-                            next.splice(idx, 1);
-                            return next;
-                        }
-
-                        const nextScore: ScoreRow = {
-                            id,
-                            match_id: matchId,
-                            player_id: playerId,
-                            round_type: roundTypeValue,
-                            points,
-                        };
-                        if (idx === -1) next.push(nextScore);
-                        else next[idx] = { ...next[idx], ...nextScore };
-                        return next;
-                        });
-                        return;
-                    }
-
-                    if (evt.entity === "star_uses") {
-                        const id = payloadString(evt.payload, "id");
-                        const playerId = payloadString(evt.payload, "playerId");
-                        const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
-                        const declaredAt = payloadString(evt.payload, "declaredAt");
-                        if (!id || !playerId || !roundQuestionId) return;
-                        if (!declaredAt) return;
-
-                        const row: StarUseRow = {
-                        id,
-                        match_id: matchId,
-                        player_id: playerId,
-                        round_question_id: roundQuestionId,
-                        outcome: payloadString(evt.payload, "outcome"),
-                        declared_at: declaredAt,
-                        };
-
-                        setStarUses((prev) => {
-                        const idx = prev.findIndex(
-                            (s) =>
-                            s.id === row.id ||
-                            (s.round_question_id === row.round_question_id &&
-                                s.player_id === row.player_id)
-                        );
-                        if (evt.event_type === "DELETE") {
-                            if (idx === -1) return prev;
-                            const next = [...prev];
-                            next.splice(idx, 1);
-                            return next;
-                        }
-
-                        if (idx === -1) return [row, ...prev];
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], ...row };
-                        return next;
-                        });
-                        return;
-                    }
-
-                    if (evt.entity === "buzzer_events") {
-                        const id = payloadString(evt.payload, "id");
-                        if (!id) return;
-                        const row: BuzzerEvent = {
-                        id,
-                        match_id: matchId,
-                        round_question_id: payloadString(evt.payload, "roundQuestionId"),
-                        player_id: payloadString(evt.payload, "playerId"),
-                        event_type: payloadString(evt.payload, "eventType"),
-                        result: payloadString(evt.payload, "result"),
-                        occurred_at: payloadString(evt.payload, "occurredAt"),
-                        };
-
-                        setBuzzerEvents((prev) => {
-                        const idx = prev.findIndex((e) => e.id === row.id);
-                        if (evt.event_type === "DELETE") {
-                            if (idx === -1) return prev;
-                            const next = prev.slice();
-                            next.splice(idx, 1);
-                            return next;
-                        }
-                        if (idx === -1) return [row, ...prev].slice(0, 20);
-                        const next = prev.slice();
-                        next[idx] = { ...next[idx], ...row };
-                        return next;
-                        });
-                        return;
-                    }
-
-                    if (evt.entity === "answers") {
-                        const id = payloadString(evt.payload, "id");
-                        const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
-                        const playerId = payloadString(evt.payload, "playerId");
-                        const submittedAt = payloadString(evt.payload, "submittedAt");
-                        if (!id || !roundQuestionId || !playerId || !submittedAt) return;
-
-                        const row: AnswerRow = {
-                        id,
-                        match_id: matchId,
-                        round_question_id: roundQuestionId,
-                        player_id: playerId,
-                        answer_text: payloadString(evt.payload, "answerText"),
-                        is_correct: payloadBoolean(evt.payload, "isCorrect"),
-                        points_awarded: payloadNumber(evt.payload, "pointsAwarded"),
-                        submitted_at: submittedAt,
-                        response_time_ms: payloadNumber(evt.payload, "responseTimeMs"),
-                        };
-
-                        const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
-                        const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
-                        const currentRqId = sessionRef.current.current_round_question_id;
-                        const isCurrentQuestion = Boolean(
-                        currentRqId && row.round_question_id === currentRqId
-                        );
-                        const isVcnvRound = sessionRef.current.current_round_type === "vcnv";
-
-                        if (!isTrackedVcnv && !isCurrentQuestion && !isVcnvRound) return;
-
-                        if (isTrackedVcnv || isVcnvRound) {
-                        const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : computeVcnvRowQuestionIds();
-                        if (rqIdsToCheck.length > 0) {
-                            void fetchVcnvRevealSnapshot(rqIdsToCheck);
-                        }
-                        }
-
-                        if (isCurrentQuestion) {
-                        setAnswers((prev) => {
-                            if (evt.event_type === "DELETE") {
-                            return prev.filter((a) => a.id !== row.id);
-                            }
-
-                            const next = [row, ...prev.filter((a) => a.id !== row.id)];
-                            const parsed = next
-                            .slice()
-                            .sort((a, b) => {
-                                const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
-                                const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
-                                return bt - at;
-                            })
-                            .slice(0, 20);
-                            return parsed;
-                        });
-                        }
-                    }
+                  if (idx === -1) return [row, ...prev];
+                  const next = [...prev];
+                  next[idx] = { ...next[idx], ...row };
+                  return next;
                 });
+                return;
               }
-          );
+
+              if (evt.entity === "buzzer_events") {
+                const id = payloadString(evt.payload, "id");
+                if (!id) return;
+                const row: BuzzerEvent = {
+                  id,
+                  match_id: matchId,
+                  round_question_id: payloadString(evt.payload, "roundQuestionId"),
+                  player_id: payloadString(evt.payload, "playerId"),
+                  event_type: payloadString(evt.payload, "eventType"),
+                  result: payloadString(evt.payload, "result"),
+                  occurred_at: payloadString(evt.payload, "occurredAt"),
+                };
+
+                setBuzzerEvents((prev) => {
+                  const idx = prev.findIndex((e) => e.id === row.id);
+                  if (evt.event_type === "DELETE") {
+                    if (idx === -1) return prev;
+                    const next = prev.slice();
+                    next.splice(idx, 1);
+                    return next;
+                  }
+                  if (idx === -1) return [row, ...prev].slice(0, 20);
+                  const next = prev.slice();
+                  next[idx] = { ...next[idx], ...row };
+                  return next;
+                });
+                return;
+              }
+
+              if (evt.entity === "answers") {
+                const id = payloadString(evt.payload, "id");
+                const roundQuestionId = payloadString(evt.payload, "roundQuestionId");
+                const playerId = payloadString(evt.payload, "playerId");
+                const submittedAt = payloadString(evt.payload, "submittedAt");
+                if (!id || !roundQuestionId || !playerId || !submittedAt) return;
+
+                const row: AnswerRow = {
+                  id,
+                  match_id: matchId,
+                  round_question_id: roundQuestionId,
+                  player_id: playerId,
+                  answer_text: payloadString(evt.payload, "answerText"),
+                  is_correct: payloadBoolean(evt.payload, "isCorrect"),
+                  points_awarded: payloadNumber(evt.payload, "pointsAwarded"),
+                  submitted_at: submittedAt,
+                  response_time_ms: payloadNumber(evt.payload, "responseTimeMs"),
+                };
+
+                const trackedVcnvIds = vcnvTrackedRqIdsRef.current;
+                const isTrackedVcnv = trackedVcnvIds.includes(row.round_question_id);
+                const currentRqId = sessionRef.current.current_round_question_id;
+                const isCurrentQuestion = Boolean(
+                  currentRqId && row.round_question_id === currentRqId
+                );
+                const isVcnvRound = sessionRef.current.current_round_type === "vcnv";
+
+                // Ưu tiên: nếu là câu hiện tại, luôn update answers ngay (đã filter bằng isCurrentQuestion ở dưới)
+                // Nếu là VCNV tracked, fetch snapshot để update VCNV reveal/lock state
+
+                if (isTrackedVcnv || isVcnvRound) {
+                  const rqIdsToCheck = isTrackedVcnv ? trackedVcnvIds : computeVcnvRowQuestionIds();
+                  if (rqIdsToCheck.length > 0) {
+                    void fetchVcnvRevealSnapshot(rqIdsToCheck);
+                  }
+                }
+
+                if (isCurrentQuestion) {
+                  setAnswers((prev) => {
+                    if (evt.event_type === "DELETE") {
+                      return prev.filter((a) => a.id !== row.id);
+                    }
+
+                    const next = [row, ...prev.filter((a) => a.id !== row.id)];
+                    const parsed = next
+                      .slice()
+                      .sort((a, b) => {
+                        const at = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                        const bt = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                        return bt - at;
+                      })
+                      .slice(0, 20);
+                    return parsed;
+                  });
+                }
+              }
+            });
+          }
+        );
         channel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);

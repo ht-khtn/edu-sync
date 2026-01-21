@@ -210,11 +210,14 @@ export class SoundEventRouter {
   private async handleTimerEnded(payload?: GameEventPayload): Promise<void> {
     const roundType = payload?.roundType as RoundType;
     if (!roundType) return;
-
+    /*
     const timerSound = this.timingMap.get(roundType);
     if (timerSound) {
       this.soundController.stop(timerSound);
     }
+      */
+    // Không dừng timer sound - để nó phát cho đến kết thúc (âm thanh có thể dài hơn timer).
+    // Timer sound sẽ tự dừng khi phát xong, hoặc bị interrupt khi có scoring sound phát.
   }
 
   private async handleRoundEnded(payload?: GameEventPayload): Promise<void> {

@@ -1065,8 +1065,12 @@ export function HostRoundControls({
                 introMode === 'common'
                   ? [introCommon]
                   : [introRounds[selectedRound - 1], introRules[selectedRound - 1]]
+              if (!matchId) {
+                toast.error('ID trận không hợp lệ.')
+                return
+              }
               const formData = new FormData(e.currentTarget)
-              formData.set('matchId', matchId)
+              formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')
               formData.set('command', 'play')
               formData.set('mediaSrcs', JSON.stringify(mediaSrcs.filter(Boolean)))
@@ -1091,8 +1095,12 @@ export function HostRoundControls({
           <form
             onSubmit={(e) => {
               e.preventDefault()
+              if (!matchId) {
+                toast.error('ID trận không hợp lệ.')
+                return
+              }
               const formData = new FormData(e.currentTarget)
-              formData.set('matchId', matchId)
+              formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')
               formData.set('command', 'pause')
               startTargetTransition(() => mediaAction(formData))
@@ -1116,8 +1124,12 @@ export function HostRoundControls({
           <form
             onSubmit={(e) => {
               e.preventDefault()
+              if (!matchId) {
+                toast.error('ID trận không hợp lệ.')
+                return
+              }
               const formData = new FormData(e.currentTarget)
-              formData.set('matchId', matchId)
+              formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')
               formData.set('command', 'stop')
               startTargetTransition(() => mediaAction(formData))

@@ -1721,6 +1721,54 @@ export async function setGuestMediaControlFormAction(formData: FormData): Promis
   await setGuestMediaControlAction({}, formData);
 }
 
+// Xóa command khỏi guest_media_control khi guest đã xử lý
+export async function clearGuestMediaCommandAction(
+  matchId: string,
+  mediaType: "audio" | "video",
+  commandId: number
+): Promise<void> {
+  try {
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const { data: sessionRow, error: fetchErr } = await olympia
+      .from("live_sessions")
+      .select("id, guest_media_control")
+      .eq("match_id", matchId)
+      .maybeSingle();
+
+    if (fetchErr || !sessionRow?.id) {
+      console.error("[clearGuestMediaCommandAction] fetch error", fetchErr);
+      return;
+    }
+
+    const rawControl = (sessionRow as unknown as { guest_media_control?: unknown })
+      .guest_media_control;
+    const prevControl: GuestMediaControl =
+      rawControl && typeof rawControl === "object" ? (rawControl as GuestMediaControl) : {};
+
+    const currentCmd = prevControl[mediaType];
+    if (!currentCmd || currentCmd.commandId !== commandId) {
+      // Command khác hoặc đã bị xóa
+      return;
+    }
+
+    const nextControl = { ...prevControl };
+    delete nextControl[mediaType];
+
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({ guest_media_control: nextControl })
+      .eq("id", sessionRow.id);
+
+    if (updateErr) {
+      console.error("[clearGuestMediaCommandAction] update error", updateErr);
+    }
+  } catch (err) {
+    console.error("[clearGuestMediaCommandAction] error", err);
+  }
+}
+
 export async function setCurrentQuestionAction(
   _: ActionState,
   formData: FormData

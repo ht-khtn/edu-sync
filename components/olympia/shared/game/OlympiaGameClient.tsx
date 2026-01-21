@@ -26,6 +26,7 @@ import {
   SoundRegistry,
 } from '@/lib/olympia/sound'
 import type { GameEventPayload, RoundType } from '@/lib/olympia/sound'
+import { clearGuestMediaCommandAction } from '@/actions/olympia/realtime.actions'
 
 import { cn } from '@/utils/cn'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
@@ -378,6 +379,7 @@ export function OlympiaGameClient({
 
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
+  const guestHiddenVideoRef = useRef<HTMLVideoElement | null>(null)
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
   const mediaPlaylistRef = useRef<Record<'audio' | 'video', { srcs: string[]; idx: number } | null>>({
     audio: null,
@@ -1010,7 +1012,7 @@ export function OlympiaGameClient({
       const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
       if (cmdId <= lastMediaCmdRef.current[mediaType]) return
       const action = cmd.action
-      const element = mediaType === 'audio' ? guestAudioRef.current : syncedVideoRef.current
+      const element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
 
       let cmdSrcs: string[] | undefined
       try {
@@ -1021,28 +1023,19 @@ export function OlympiaGameClient({
         cmdSrcs = undefined
       }
 
-      // Nếu media element chưa mount xong, thử lại sau một khoảng nhỏ.
+      // Nếu media element chưa mount xong, bỏ qua command này
       if (!element) {
-        console.info('[Olympia][GuestMedia] element not mounted yet — scheduling retry', {
+        console.info('[Olympia][GuestMedia] element not mounted, skipping command', {
           mediaType,
           action,
           cmdId,
           isWaitingScreen,
           resolvedViewerMode,
         })
-        // Retry once after short delay; this covers the case where realtime event
-        // arrives before the hidden media element is mounted.
-        setTimeout(() => {
-          try {
-            void applyCommand(mediaType)
-          } catch {
-            // ignore
-          }
-        }, 250)
         return
       }
 
-      console.info('[Olympia][GuestMedia] received command', {
+      console.info('[Olympia][GuestMedia] applying command', {
         mediaType,
         action,
         cmdId,
@@ -1146,6 +1139,10 @@ export function OlympiaGameClient({
             } catch { }
           } catch { }
           console.info('[Olympia][GuestMedia] applied stop', { mediaType, cmdId })
+          // Xóa command khỏi DB sau khi apply
+          if (match?.id) {
+            void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+          }
           return
         }
 
@@ -1189,6 +1186,10 @@ export function OlympiaGameClient({
           // start first
           void playIndex(0)
           console.info('[Olympia][GuestMedia] applied play with srcs', { mediaType, cmdId, srcs: cmdSrcs })
+          // Xóa command khỏi DB sau khi apply
+          if (match?.id) {
+            void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+          }
           return
         }
 
@@ -1200,6 +1201,10 @@ export function OlympiaGameClient({
             paused: element.paused,
             currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
           })
+          // Xóa command khỏi DB sau khi apply
+          if (match?.id) {
+            void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+          }
           return
         }
 
@@ -1213,6 +1218,10 @@ export function OlympiaGameClient({
           readyState: element.readyState,
           muted: element.muted,
         })
+        // Xóa command khỏi DB sau khi apply
+        if (match?.id) {
+          void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+        }
       } catch {
         // Trình duyệt có thể chặn autoplay; bỏ qua để tránh spam toast.
       }
@@ -1220,7 +1229,7 @@ export function OlympiaGameClient({
 
     void applyCommand('audio')
     void applyCommand('video')
-  }, [audioUrl, isGuest, isWaitingScreen, mediaUrl, resolvedViewerMode, session.guest_media_control])
+  }, [audioUrl, isGuest, isWaitingScreen, mediaUrl, resolvedViewerMode, session.guest_media_control, match?.id])
 
   // Toast notification for session state
   useEffect(() => {
@@ -1778,18 +1787,8 @@ export function OlympiaGameClient({
                   ) : null}
                 </div>
               ) : null}
-
-              {audioUrl && isGuest ? (
-                // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
-                <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
-              ) : null}
-
-              {/* Hidden video element for host-driven media (intro, rules, etc.) */}
-              {isGuest ? (
-                <video ref={syncedVideoRef} preload="auto" className="hidden" aria-hidden="true" />
-              ) : null}
-
-              {isMc && (answerText || noteText) ? (
+            </div>
+          ) : null}
                 <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
                   {answerText ? (
                     <p className="text-sm whitespace-pre-wrap">
@@ -1805,6 +1804,16 @@ export function OlympiaGameClient({
               ) : null}
             </div>
           )}
+
+          {/* Hidden video & audio elements for host-driven media (always mounted when isGuest) */}
+          {audioUrl && isGuest ? (
+            // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
+            <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
+          ) : null}
+
+          {isGuest ? (
+            <video ref={guestHiddenVideoRef} preload="auto" className="hidden" aria-hidden="true" />
+          ) : null}
 
           {/* Top scoreboard mini (MC): đã chuyển ra ngoài khung game qua portal */}
 

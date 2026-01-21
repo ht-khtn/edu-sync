@@ -300,6 +300,7 @@ type Props = {
   setAnswersOverlayAction: HostControlAction
   setBuzzerEnabledAction: HostControlAction
   setRoundQuestionTargetPlayerAction: HostControlAction
+  endKhoiDongTurnAction: HostControlAction
 
   startSessionTimerAutoAction: HostControlAction
   expireSessionTimerAction: HostControlAction
@@ -327,6 +328,7 @@ export function HostRoundControls({
   setAnswersOverlayAction,
   setBuzzerEnabledAction,
   setRoundQuestionTargetPlayerAction,
+  endKhoiDongTurnAction,
   startSessionTimerAutoAction,
   expireSessionTimerAction,
 }: Props) {
@@ -368,6 +370,7 @@ export function HostRoundControls({
   const [answersState, answersAction, answersPending] = useActionState(setAnswersOverlayAction, initialState)
   const [buzzerState, buzzerAction, buzzerPending] = useActionState(setBuzzerEnabledAction, initialState)
   const [targetState, targetAction, targetPending] = useActionState(setRoundQuestionTargetPlayerAction, initialState)
+  const [endTurnState, endTurnAction, endTurnPending] = useActionState(endKhoiDongTurnAction, initialState)
   const [timerStartState, timerStartAction, timerStartPending] = useActionState(startSessionTimerAutoAction, initialState)
   const [timerExpireState, timerExpireAction, timerExpirePending] = useActionState(expireSessionTimerAction, initialState)
   const lastRoundToastRef = useRef<string | null>(null)
@@ -376,6 +379,7 @@ export function HostRoundControls({
   const lastAnswersToastRef = useRef<string | null>(null)
   const lastBuzzerToastRef = useRef<string | null>(null)
   const lastTargetToastRef = useRef<string | null>(null)
+  const lastEndTurnToastRef = useRef<string | null>(null)
   const lastTimerStartToastRef = useRef<string | null>(null)
   const lastTimerExpireToastRef = useRef<string | null>(null)
 
@@ -470,9 +474,16 @@ export function HostRoundControls({
   const scoreboardMessage = scoreboardState.error ?? scoreboardState.success
   const answersMessage = answersState.error ?? answersState.success
   const buzzerMessage = buzzerState.error ?? buzzerState.success
+  const endTurnMessage = endTurnState.error ?? endTurnState.success
 
   const canPickTarget = Boolean(
     allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId || isKhoiDong)
+  )
+  const canEndKhoiDongTurn = Boolean(
+    isKhoiDong &&
+    effectiveCurrentRoundQuestionId &&
+    effectiveCurrentQuestionState &&
+    effectiveCurrentQuestionState !== 'hidden'
   )
 
   // Show toasts for messages
@@ -578,6 +589,19 @@ export function HostRoundControls({
       })
     }
   }, [targetState.error, targetState.success, router])
+
+  useEffect(() => {
+    const message = endTurnState.error ?? endTurnState.success
+    if (!message) return
+    if (lastEndTurnToastRef.current === message) return
+    lastEndTurnToastRef.current = message
+
+    if (endTurnState.error) {
+      toast.error(message)
+    } else {
+      toast.success(message)
+    }
+  }, [endTurnState.error, endTurnState.success])
 
   // Chỉ update query params sau khi server action thành công (tránh navigation/refresh trước khi action chạy xong).
   useEffect(() => {
@@ -853,6 +877,36 @@ export function HostRoundControls({
             </div>
           </form>
         )
+      ) : null}
+
+      {isKhoiDong ? (
+        <form
+          className="grid gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const formData = new FormData(e.currentTarget)
+            endTurnAction(formData)
+          }}
+        >
+          <input type="hidden" name="matchId" value={matchId} />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Kết thúc lượt thí sinh</Label>
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={!canEndKhoiDongTurn || endTurnPending}
+              aria-label="Kết thúc lượt thí sinh"
+              title="Kết thúc lượt (reset câu đang live về màn chờ)"
+            >
+              Kết thúc lượt
+            </Button>
+          </div>
+          {endTurnMessage && !endTurnState.error ? (
+            <p className="text-xs text-green-600">{endTurnMessage}</p>
+          ) : null}
+        </form>
       ) : null}
 
       <div className="grid gap-2">

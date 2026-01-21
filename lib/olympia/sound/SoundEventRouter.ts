@@ -10,12 +10,6 @@ export class SoundEventRouter {
     ["tang_toc", "tt_dem_gio_20s"],
     ["ve_dich", "vd_dem_gio_15s"],
   ]);
-  private roundBackgroundMap: Map<RoundType, string> = new Map([
-    ["khoi_dong", "kd_bat_dau_choi"],
-    ["vcnv", "vcnv_mo_cau_hoi"],
-    ["tang_toc", "tt_mo_cau_hoi"],
-    ["ve_dich", "vd_cac_goi"],
-  ]);
   private timeoutIds: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(soundController: SoundController) {
@@ -30,7 +24,7 @@ export class SoundEventRouter {
         await this.handleRoundStarted(payload);
         break;
       case GameEvent.QUESTION_REVEALED:
-        await this.handleQuestionRevealed();
+        await this.handleQuestionRevealed(payload);
         break;
       case GameEvent.TIMER_STARTED:
         await this.handleTimerStarted(payload);
@@ -47,6 +41,9 @@ export class SoundEventRouter {
       case GameEvent.ROUND_ENDED:
         await this.handleRoundEnded(payload);
         break;
+      case GameEvent.TURN_ENDED:
+        await this.handleTurnEnded(payload);
+        break;
       case GameEvent.STAR_REVEALED:
         await this.handleStarRevealed();
         break;
@@ -57,7 +54,16 @@ export class SoundEventRouter {
         await this.handleSelectCategory();
         break;
       case GameEvent.REVEAL_ANSWER:
-        await this.handleRevealAnswer();
+        await this.handleRevealAnswer(payload);
+        break;
+      case GameEvent.OPEN_IMAGE:
+        await this.handleOpenImage();
+        break;
+      case GameEvent.BUZZER_PRESSED:
+        await this.handleBuzzerPressed();
+        break;
+      case GameEvent.SCOREBOARD_OPENED:
+        await this.handleScoreboardOpened();
         break;
       case GameEvent.SESSION_ENDED:
         await this.handleSessionEnded();
@@ -75,27 +81,40 @@ export class SoundEventRouter {
     }
 
     this.soundController.stopAll();
+    this.clearTimeouts();
 
-    const startSound =
-      roundType === "khoi_dong" ? "kd_bat_dau_choi" : this.roundBackgroundMap.get(roundType);
-    if (startSound) {
-      await this.soundController.play(startSound);
+    if (roundType === "vcnv") {
+      await this.soundController.play("vcnv_mo_o_chu");
     }
 
-    if (roundType === "khoi_dong") {
-      const timeoutId = setTimeout(() => {
-        this.soundController.play("kd_hien_cau_hoi", {
-          onEnd: () => {
-            // UI can now show question
-          },
-        });
-      }, TIMING_CONFIG.ROUND_START_DELAY_MS);
-      this.timeoutIds.set("kd_question_reveal", timeoutId);
+    if (roundType === "ve_dich") {
+      await this.soundController.play("vd_bat_dau_choi");
     }
   }
 
-  private async handleQuestionRevealed(): Promise<void> {
-    // UI event only, no sound action needed
+  private async handleQuestionRevealed(payload?: GameEventPayload): Promise<void> {
+    const roundType = payload?.roundType as RoundType | undefined;
+    if (!roundType) return;
+
+    if (roundType === "khoi_dong") {
+      await this.soundController.play("kd_bat_dau_choi");
+
+      const timeoutId = setTimeout(() => {
+        this.soundController.play("kd_hien_cau_hoi");
+      }, TIMING_CONFIG.ROUND_START_DELAY_MS);
+      this.timeoutIds.set("kd_question_reveal", timeoutId);
+      return;
+    }
+
+    if (roundType === "tang_toc") {
+      await this.soundController.play("tt_mo_cau_hoi");
+      return;
+    }
+
+    if (roundType === "ve_dich") {
+      await this.soundController.play("vd_lua_chon_goi");
+      return;
+    }
   }
 
   private async handleTimerStarted(payload?: GameEventPayload): Promise<void> {
@@ -106,6 +125,23 @@ export class SoundEventRouter {
 
     if (roundType === "tang_toc" && hasVideo) {
       // NO timer sound for video
+      return;
+    }
+
+    if (roundType === "tang_toc") {
+      const orderIndexRaw = payload?.questionOrderIndex;
+      const orderIndex =
+        typeof orderIndexRaw === "number" && Number.isFinite(orderIndexRaw) ? orderIndexRaw : null;
+      const isFirstTwo = orderIndex == null ? true : orderIndex <= 2;
+      const timerSound = isFirstTwo ? "tt_dem_gio_20s" : "tt_dem_gio_30s";
+      await this.soundController.play(timerSound);
+      return;
+    }
+
+    if (roundType === "ve_dich") {
+      const value = payload?.veDichValue;
+      const timerSound = value === 30 ? "vd_dem_gio_20s" : "vd_dem_gio_15s";
+      await this.soundController.play(timerSound);
       return;
     }
 
@@ -135,6 +171,15 @@ export class SoundEventRouter {
 
     const correctSound = correctSoundMap[roundType];
     if (correctSound) {
+      if (roundType === "vcnv") {
+        await this.soundController.play(correctSound, {
+          onEnd: () => {
+            this.soundController.play("vcnv_mo_hinh_anh");
+          },
+        });
+        return;
+      }
+
       await this.soundController.play(correctSound);
     }
   }
@@ -152,6 +197,7 @@ export class SoundEventRouter {
     // Play wrong answer sound
     const wrongSoundMap: Partial<Record<RoundType, string>> = {
       khoi_dong: "kd_sai",
+      vcnv: "kd_sai",
       ve_dich: "vd_sai",
     };
 
@@ -190,6 +236,21 @@ export class SoundEventRouter {
     }
   }
 
+  private async handleTurnEnded(payload?: GameEventPayload): Promise<void> {
+    const roundType = payload?.roundType as RoundType | undefined;
+    if (!roundType) return;
+
+    const endSoundMap: Partial<Record<RoundType, string>> = {
+      khoi_dong: "kd_hoan_thanh",
+      ve_dich: "vd_hoan_thanh",
+    };
+
+    const endSound = endSoundMap[roundType];
+    if (endSound) {
+      await this.soundController.play(endSound);
+    }
+  }
+
   private async handleStarRevealed(): Promise<void> {
     this.soundController.stopAll();
     await this.soundController.play("vd_ngoi_sao");
@@ -204,14 +265,19 @@ export class SoundEventRouter {
   }
 
   private async handleSelectCategory(): Promise<void> {
-    await this.soundController.play("vd_lua_chon_goi");
+    await this.soundController.play("vd_cac_goi");
   }
 
-  private async handleRevealAnswer(): Promise<void> {
-    // Play tt_mo_dap_an
+  private async handleRevealAnswer(payload?: GameEventPayload): Promise<void> {
+    const roundType = payload?.roundType as RoundType | undefined;
+
+    if (roundType !== "tang_toc") {
+      await this.soundController.play("vcnv_xem_dap_an");
+      return;
+    }
+
     await this.soundController.play("tt_mo_dap_an");
 
-    // After delay, play vcnv_xem_dap_an (allow overlap)
     const timeoutId = setTimeout(() => {
       this.soundController.play("vcnv_xem_dap_an");
     }, TIMING_CONFIG.REVEAL_ANSWER_OVERLAP_MS);
@@ -219,9 +285,22 @@ export class SoundEventRouter {
     this.timeoutIds.set("reveal_answer_overlap", timeoutId);
   }
 
+  private async handleOpenImage(): Promise<void> {
+    await this.soundController.play("vcnv_mo_hinh_anh");
+  }
+
+  private async handleBuzzerPressed(): Promise<void> {
+    await this.soundController.play("chuong");
+  }
+
+  private async handleScoreboardOpened(): Promise<void> {
+    await this.soundController.play("tong_ket_diem");
+  }
+
   private async handleSessionEnded(): Promise<void> {
     this.soundController.stopAll();
     this.clearTimeouts();
+    await this.soundController.play("tong_ket_ket_qua");
   }
 
   private clearTimeouts(): void {

@@ -20,11 +20,13 @@
     },
 
     "kd_bat_dau_choi": {
-      "file": "1 bat dau choi"
+      "file": "1 bat dau choi",
+      "autoStopWhenOtherPlays": false
     },
 
     "kd_hien_cau_hoi": {
-      "file": "1 hien cau hoi"
+      "file": "1 hien cau hoi",
+      "autoStopWhenOtherPlays": false
     },
 
     "kd_dung": {
@@ -58,7 +60,8 @@
     },
 
     "vcnv_mo_cau_hoi": {
-      "file": "2 mo cau hoi"
+      "file": "2 mo cau hoi",
+      "autoStopWhenOtherPlays": false
     },
 
     "vcnv_dem_gio_15s": {
@@ -97,7 +100,8 @@
     },
 
     "tt_mo_dap_an": {
-      "file": "3 mo dap an"
+      "file": "3 mo dap an",
+      "autoStopWhenOtherPlays": false
     },
 
     "vd_bat_dau_choi": {
@@ -111,7 +115,8 @@
     },
 
     "vd_lua_chon_goi": {
-      "file": "4 lua chon goi cau hoi"
+      "file": "4 lua chon goi cau hoi",
+      "autoStopWhenOtherPlays": false
     },
 
     "vd_dung": {

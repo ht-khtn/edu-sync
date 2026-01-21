@@ -167,64 +167,6 @@ export function OlympiaGameClient({
 
   const veDichNotifiedBySeatRef = useRef<Map<number, string>>(new Map())
 
-  useEffect(() => {
-    if (roundType !== 've_dich') {
-      veDichNotifiedBySeatRef.current.clear()
-      return
-    }
-
-    const currentRoundId = session.current_round_id
-    if (!currentRoundId) return
-
-    const rqs = roundQuestions.filter((rq) => rq.match_round_id === currentRoundId)
-    if (rqs.length === 0) return
-
-    const getSeatFromOrderIndex = (orderIndex: unknown): number | null => {
-      const n = typeof orderIndex === 'number' ? orderIndex : Number(orderIndex)
-      if (!Number.isFinite(n)) return null
-      if (n < 1 || n > 12) return null
-      const seat = Math.floor((n - 1) / 3) + 1
-      return seat >= 1 && seat <= 4 ? seat : null
-    }
-
-    const seatBlocks = new Map<number, typeof rqs>()
-    for (const rq of rqs) {
-      const seat = getSeatFromOrderIndex(rq.order_index)
-      if (!seat) continue
-      const list = seatBlocks.get(seat) ?? []
-      list.push(rq)
-      seatBlocks.set(seat, list)
-    }
-
-    for (const [seat, list] of seatBlocks) {
-      const top3 = list.slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)).slice(0, 3)
-      if (top3.length < 3) continue
-
-      const confirmed = top3.every((rq) => Boolean(rq.question_set_item_id))
-      if (!confirmed) continue
-
-      const values = top3.map((rq) => {
-        const meta = rq.meta
-        const raw = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).ve_dich_value : undefined
-        const v = typeof raw === 'number' ? raw : raw ? Number(raw) : NaN
-        return v === 20 || v === 30 ? v : null
-      })
-      if (values.some((v) => v == null)) continue
-      const summary = (values as Array<20 | 30>).join('-')
-
-      const last = veDichNotifiedBySeatRef.current.get(seat) ?? null
-      if (last === summary) continue
-      veDichNotifiedBySeatRef.current.set(seat, summary)
-
-      const ownerPlayerId =
-        top3.find((rq) => typeof rq.target_player_id === 'string' && rq.target_player_id)?.target_player_id ?? null
-      const owner = ownerPlayerId ? players.find((p) => p.id === ownerPlayerId) ?? null : null
-      const ownerName = owner?.display_name ? ` · ${owner.display_name}` : ''
-
-      toast.info(`Ghế ${seat}${ownerName} đã chọn gói Về đích: ${summary}`)
-    }
-  }, [players, roundQuestions, roundType, session.current_round_id])
-
   // Toast notifications for feedback
   useEffect(() => {
     const answerFeedback = answerState.error ?? answerState.success
@@ -318,6 +260,68 @@ export function OlympiaGameClient({
   )
 
   useEffect(() => {
+    if (roundType !== 've_dich') {
+      veDichNotifiedBySeatRef.current.clear()
+      return
+    }
+
+    if (!isGuest) return
+
+    const currentRoundId = session.current_round_id
+    if (!currentRoundId) return
+
+    const rqs = roundQuestions.filter((rq) => rq.match_round_id === currentRoundId)
+    if (rqs.length === 0) return
+
+    const getSeatFromOrderIndex = (orderIndex: unknown): number | null => {
+      const n = typeof orderIndex === 'number' ? orderIndex : Number(orderIndex)
+      if (!Number.isFinite(n)) return null
+      if (n < 1 || n > 12) return null
+      const seat = Math.floor((n - 1) / 3) + 1
+      return seat >= 1 && seat <= 4 ? seat : null
+    }
+
+    const seatBlocks = new Map<number, typeof rqs>()
+    for (const rq of rqs) {
+      const seat = getSeatFromOrderIndex(rq.order_index)
+      if (!seat) continue
+      const list = seatBlocks.get(seat) ?? []
+      list.push(rq)
+      seatBlocks.set(seat, list)
+    }
+
+    for (const [seat, list] of seatBlocks) {
+      const top3 = list.slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)).slice(0, 3)
+      if (top3.length < 3) continue
+
+      const confirmed = top3.every((rq) => Boolean(rq.question_set_item_id))
+      if (!confirmed) continue
+
+      const values = top3.map((rq) => {
+        const meta = rq.meta
+        const raw = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).ve_dich_value : undefined
+        const v = typeof raw === 'number' ? raw : raw ? Number(raw) : NaN
+        return v === 20 || v === 30 ? v : null
+      })
+      if (values.some((v) => v == null)) continue
+      const summary = (values as Array<20 | 30>).join('-')
+
+      const last = veDichNotifiedBySeatRef.current.get(seat) ?? null
+      if (last === summary) continue
+      veDichNotifiedBySeatRef.current.set(seat, summary)
+
+      void emitSoundEvent(GameEvent.SELECT_CATEGORY, { roundType: 've_dich' })
+
+      const ownerPlayerId =
+        top3.find((rq) => typeof rq.target_player_id === 'string' && rq.target_player_id)?.target_player_id ?? null
+      const owner = ownerPlayerId ? players.find((p) => p.id === ownerPlayerId) ?? null : null
+      const ownerName = owner?.display_name ? ` · ${owner.display_name}` : ''
+
+      toast.info(`Ghế ${seat}${ownerName} đã chọn gói Về đích: ${summary}`)
+    }
+  }, [emitSoundEvent, isGuest, players, roundQuestions, roundType, session.current_round_id])
+
+  useEffect(() => {
     if (!isGuest) return
     if (!soundRegistryRef.current) {
       const registry = new SoundRegistry()
@@ -371,6 +375,14 @@ export function OlympiaGameClient({
     roundQuestionId: null,
     key: null,
   })
+  const lastBuzzerSoundRef = useRef<string | null>(null)
+  const prevScoreboardRef = useRef<boolean | null>(null)
+  const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
+  const prevEndQuestionIdRef = useRef<string | null>(null)
+  const prevEndQuestionStateRef = useRef<string | null>(null)
+  const prevVcnvRevealRef = useRef<Record<string, boolean>>({})
+  const prevVcnvLockedRef = useRef<Record<string, boolean>>({})
+  const vcnvRevealInitRef = useRef<boolean>(false)
 
   const formatPlayerLabel = useCallback((playerId: string | null | undefined) => {
     if (!playerId) return '—'
@@ -449,6 +461,19 @@ export function OlympiaGameClient({
     const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
     return trimmed || null
   }, [metaQuestionCode, questionRecord?.code, questionSetItemRecord?.code])
+
+  const currentQuestionOrderIndex = useMemo(() => {
+    const oi = currentRoundQuestion?.order_index
+    return typeof oi === 'number' && Number.isFinite(oi) ? oi : null
+  }, [currentRoundQuestion?.order_index])
+
+  const currentVeDichValue = useMemo(() => {
+    const meta = currentRoundQuestion?.meta
+    if (!meta || typeof meta !== 'object') return null
+    const raw = (meta as Record<string, unknown>).ve_dich_value
+    const value = typeof raw === 'number' ? raw : raw ? Number(raw) : Number.NaN
+    return value === 20 || value === 30 ? value : null
+  }, [currentRoundQuestion?.meta])
 
   // Chỉ hiển thị UI chướng ngại vật khi câu hiện tại là CNV (không áp dụng cho VCNV-1..4/OTT).
   const isCnvQuestion = useMemo(() => {
@@ -704,8 +729,14 @@ export function OlympiaGameClient({
       })
     }
 
-    if (questionState === 'answer_revealed' && prev !== 'answer_revealed' && resolvedRoundType === 'tang_toc') {
-      void emitSoundEvent(GameEvent.REVEAL_ANSWER, { roundType: resolvedRoundType })
+    if (questionState === 'answer_revealed' && prev !== 'answer_revealed') {
+      if (resolvedRoundType === 'tang_toc' || resolvedRoundType === 'vcnv') {
+        void emitSoundEvent(GameEvent.REVEAL_ANSWER, { roundType: resolvedRoundType })
+      }
+    }
+
+    if (questionState === 'completed' && prev !== 'completed' && resolvedRoundType === 've_dich') {
+      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
     }
 
     prevQuestionStateRef.current = questionState
@@ -722,7 +753,12 @@ export function OlympiaGameClient({
 
     if (!prev && next) {
       const hasVideo = mediaKind === 'video' || mediaKind === 'youtube'
-      void emitSoundEvent(GameEvent.TIMER_STARTED, { roundType: resolvedRoundType, hasVideo })
+      void emitSoundEvent(GameEvent.TIMER_STARTED, {
+        roundType: resolvedRoundType,
+        hasVideo,
+        questionOrderIndex: currentQuestionOrderIndex ?? undefined,
+        veDichValue: currentVeDichValue ?? undefined,
+      })
     }
 
     if (prev && !next) {
@@ -730,7 +766,7 @@ export function OlympiaGameClient({
     }
 
     prevTimerDeadlineRef.current = next
-  }, [emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline])
+  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return
@@ -742,6 +778,7 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return
+    if (resolvedRoundType === 'vcnv') return
     const latest = answers[0]
     if (!latest?.id) return
     if (prevAnswerIdRef.current === latest.id) return
@@ -755,6 +792,43 @@ export function OlympiaGameClient({
       )
     }
   }, [answers, emitSoundEvent, isGuest, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest || resolvedRoundType !== 'vcnv') {
+      prevVcnvRevealRef.current = vcnvRevealByRoundQuestionId
+      prevVcnvLockedRef.current = vcnvLockedWrongByRoundQuestionId
+      vcnvRevealInitRef.current = false
+      return
+    }
+
+    if (!vcnvRevealInitRef.current) {
+      prevVcnvRevealRef.current = vcnvRevealByRoundQuestionId
+      prevVcnvLockedRef.current = vcnvLockedWrongByRoundQuestionId
+      vcnvRevealInitRef.current = true
+      return
+    }
+
+    const prevReveal = prevVcnvRevealRef.current
+    const nextReveal = vcnvRevealByRoundQuestionId
+    for (const [rqId, opened] of Object.entries(nextReveal)) {
+      if (opened && !prevReveal[rqId]) {
+        void emitSoundEvent(GameEvent.CORRECT_ANSWER, { roundType: resolvedRoundType })
+        break
+      }
+    }
+
+    const prevLocked = prevVcnvLockedRef.current
+    const nextLocked = vcnvLockedWrongByRoundQuestionId
+    for (const [rqId, locked] of Object.entries(nextLocked)) {
+      if (locked && !prevLocked[rqId]) {
+        void emitSoundEvent(GameEvent.WRONG_ANSWER, { roundType: resolvedRoundType })
+        break
+      }
+    }
+
+    prevVcnvRevealRef.current = nextReveal
+    prevVcnvLockedRef.current = nextLocked
+  }, [emitSoundEvent, isGuest, resolvedRoundType, vcnvLockedWrongByRoundQuestionId, vcnvRevealByRoundQuestionId])
 
   useEffect(() => {
     if (!isGuest || resolvedRoundType !== 've_dich') return
@@ -774,6 +848,80 @@ export function OlympiaGameClient({
     }
     prevQuestionIdRef.current = nextId
   }, [currentQuestionId, emitSoundEvent, isGuest, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest || resolvedRoundType !== 'khoi_dong') {
+      prevEndQuestionIdRef.current = currentQuestionId ?? null
+      prevEndQuestionStateRef.current = questionState
+      return
+    }
+
+    const prevId = prevEndQuestionIdRef.current
+    const prevState = prevEndQuestionStateRef.current
+
+    if (prevId && !currentQuestionId && prevState && prevState !== 'hidden') {
+      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
+    }
+
+    prevEndQuestionIdRef.current = currentQuestionId ?? null
+    prevEndQuestionStateRef.current = questionState
+  }, [currentQuestionId, emitSoundEvent, isGuest, questionState, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest) return
+    const prev = prevScoreboardRef.current
+    if (prev === null) {
+      prevScoreboardRef.current = showBigScoreboard
+      return
+    }
+
+    if (!prev && showBigScoreboard) {
+      void emitSoundEvent(GameEvent.SCOREBOARD_OPENED, { roundType: resolvedRoundType ?? undefined })
+    }
+
+    prevScoreboardRef.current = showBigScoreboard
+  }, [emitSoundEvent, isGuest, resolvedRoundType, showBigScoreboard])
+
+  useEffect(() => {
+    if (!isGuest) return
+    const prev = prevSessionStatusRef.current
+    const next = session.status ?? null
+    if (prev !== next && next === 'ended') {
+      void emitSoundEvent(GameEvent.SESSION_ENDED, { roundType: resolvedRoundType ?? undefined })
+    }
+    prevSessionStatusRef.current = next
+  }, [emitSoundEvent, isGuest, resolvedRoundType, session.status])
+
+  useEffect(() => {
+    if (!isGuest || !currentQuestionId) {
+      lastBuzzerSoundRef.current = null
+      return
+    }
+
+    const relevant = currentQuestionBuzzerEvents.filter((e) => {
+      const type = (e.event_type ?? '').toLowerCase()
+      return type === 'buzz' || type === 'steal'
+    })
+
+    if (relevant.length === 0) return
+
+    const latest = relevant
+      .slice()
+      .sort((a, b) => {
+        const ta = a.occurred_at ? Date.parse(a.occurred_at) : Number.NEGATIVE_INFINITY
+        const tb = b.occurred_at ? Date.parse(b.occurred_at) : Number.NEGATIVE_INFINITY
+        return ta - tb
+      })
+      .at(-1)
+
+    if (!latest) return
+
+    const key = latest.id ?? `${latest.player_id ?? 'unknown'}|${latest.occurred_at ?? ''}|${latest.event_type ?? ''}`
+    if (lastBuzzerSoundRef.current === key) return
+    lastBuzzerSoundRef.current = key
+
+    void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: resolvedRoundType ?? undefined })
+  }, [currentQuestionBuzzerEvents, currentQuestionId, emitSoundEvent, isGuest, resolvedRoundType])
 
   const youtubeEmbedUrl = useMemo(() => {
     if (!mediaUrl || mediaKind !== 'youtube') return null

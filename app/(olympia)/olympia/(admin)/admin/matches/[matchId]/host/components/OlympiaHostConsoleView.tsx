@@ -32,6 +32,7 @@ import {
     setScoreboardOverlayAction,
     setAnswersOverlayAction,
     setBuzzerEnabledAction,
+    endKhoiDongTurnAction,
     setWaitingScreenAction,
     setGuestMediaControlAction,
     resetMatchScoresAction,
@@ -722,6 +723,7 @@ export function OlympiaHostConsoleView(props: {
                                 setAnswersOverlayAction={setAnswersOverlayAction}
                                 setBuzzerEnabledAction={setBuzzerEnabledAction}
                                 setRoundQuestionTargetPlayerAction={setRoundQuestionTargetPlayerAction}
+                                endKhoiDongTurnAction={endKhoiDongTurnAction}
                                 startSessionTimerAutoAction={startSessionTimerAutoAction}
                                 expireSessionTimerAction={expireSessionTimerAction}
                                 allowTargetSelection={allowTargetSelection}

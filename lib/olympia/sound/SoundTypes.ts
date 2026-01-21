@@ -66,12 +66,15 @@ export enum GameEvent {
   WRONG_ANSWER = "WRONG_ANSWER",
   TIMER_ENDED = "TIMER_ENDED",
   ROUND_ENDED = "ROUND_ENDED",
+  TURN_ENDED = "TURN_ENDED",
   STAR_REVEALED = "STAR_REVEALED",
   SELECT_ROW = "SELECT_ROW",
   SELECT_CATEGORY = "SELECT_CATEGORY",
   REVEAL_ANSWER = "REVEAL_ANSWER",
   OPEN_IMAGE = "OPEN_IMAGE",
   OPEN_TILE = "OPEN_TILE",
+  BUZZER_PRESSED = "BUZZER_PRESSED",
+  SCOREBOARD_OPENED = "SCOREBOARD_OPENED",
   SESSION_ENDED = "SESSION_ENDED",
 }
 
@@ -80,6 +83,8 @@ export interface GameEventPayload {
   playerId?: string;
   hasVideo?: boolean;
   durationMs?: number;
+  questionOrderIndex?: number;
+  veDichValue?: number;
   [key: string]: unknown;
 }
 
@@ -103,6 +108,8 @@ export const SOUND_GROUPS: Record<SoundGroup, string[]> = {
   SCORING: ["kd_dung", "kd_sai", "vcnv_dung", "vd_dung", "vd_sai", "vd_ngoi_sao"],
   QUESTION_REVEAL: ["kd_hien_cau_hoi", "vcnv_mo_cau_hoi", "tt_mo_cau_hoi", "vd_lua_chon_goi"],
   INTERACTION: [
+    "tong_ket_diem",
+    "chuong",
     "vcnv_mo_o_chu",
     "vcnv_chon_hang_ngang",
     "vcnv_mo_hinh_anh",
@@ -116,5 +123,5 @@ export const TIMING_CONFIG = {
   ROUND_START_DELAY_MS: 3000,
   CORRECT_ANSWER_WAIT_MS: 2000,
   WRONG_ANSWER_WAIT_MS: 2000,
-  REVEAL_ANSWER_OVERLAP_MS: 1000,
+  REVEAL_ANSWER_OVERLAP_MS: 2000,
 } as const;

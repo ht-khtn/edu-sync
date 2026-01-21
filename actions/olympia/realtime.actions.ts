@@ -16,7 +16,6 @@ import {
 import { requireOlympiaAdminContext } from "@/lib/olympia/olympia-auth";
 import type { ActionState } from "./match.actions";
 
-
 const advanceQuestionSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   direction: z.enum(["next", "prev"]).default("next"),
@@ -57,6 +56,10 @@ const answersOverlaySchema = z.object({
     .string()
     .optional()
     .transform((val) => val === "1"),
+});
+
+const endKhoiDongTurnSchema = z.object({
+  matchId: z.string().uuid("ID trận không hợp lệ."),
 });
 
 const roundControlSchema = z.object({
@@ -685,6 +688,58 @@ export async function setWaitingScreenAction(
     return { success: enabled ? "Đã bật màn chờ." : "Đã tắt màn chờ." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể cập nhật màn chờ." };
+  }
+}
+
+export async function endKhoiDongTurnAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    await ensureOlympiaAdminAccess();
+    const { supabase } = await getServerAuthContext();
+    const olympia = supabase.schema("olympia");
+
+    const parsed = endKhoiDongTurnSchema.safeParse({
+      matchId: formData.get("matchId"),
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin kết thúc lượt." };
+    }
+
+    const { matchId } = parsed.data;
+
+    const { data: session, error: sessionErr } = await olympia
+      .from("live_sessions")
+      .select("id, status, current_round_type, current_round_question_id, question_state")
+      .eq("match_id", matchId)
+      .eq("status", "running")
+      .maybeSingle();
+    if (sessionErr) return { error: sessionErr.message };
+    if (!session) return { error: "Phòng chưa ở trạng thái running." };
+    if (session.current_round_type !== "khoi_dong") {
+      return { error: "Chỉ hỗ trợ kết thúc lượt cho vòng Khởi động." };
+    }
+    if (!session.current_round_question_id) {
+      return { error: "Chưa có câu hỏi để kết thúc lượt." };
+    }
+
+    const { error: updateErr } = await olympia
+      .from("live_sessions")
+      .update({
+        current_round_question_id: null,
+        question_state: "hidden",
+        timer_deadline: null,
+        buzzer_enabled: false,
+      })
+      .eq("id", session.id);
+    if (updateErr) return { error: updateErr.message };
+
+    revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+
+    return { success: "Đã kết thúc lượt thí sinh." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể kết thúc lượt." };
   }
 }
 

@@ -713,8 +713,8 @@ export function OlympiaGameClient({
   }, [mediaUrl])
 
   useEffect(() => {
-    // Nếu overlay đang mở thì không xử lý sự kiện vòng ở đây
-    if (overlayOpenRef.current) return
+    // Nếu overlay đáp án/bảng điểm đang mở thì bỏ qua emit vòng
+    if (showAnswersOverlay || showBigScoreboard) return
 
     if (!isGuest || !resolvedRoundType) {
       prevRoundTypeRef.current = null
@@ -729,12 +729,12 @@ export function OlympiaGameClient({
       void emitSoundEvent(GameEvent.ROUND_STARTED, { roundType: resolvedRoundType })
     }
     prevRoundTypeRef.current = resolvedRoundType
-  }, [emitSoundEvent, isGuest, resolvedRoundType])
+  }, [emitSoundEvent, isGuest, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest) return
     // Khi đang mở overlay đáp án hoặc bảng điểm, bỏ qua các sự kiện hiển thị câu/đáp án
-    if (overlayOpenRef.current) return
+    if (showAnswersOverlay || showBigScoreboard) return
     const prev = prevQuestionStateRef.current
 
     if (questionState === 'showing' && prev !== 'showing') {
@@ -759,7 +759,7 @@ export function OlympiaGameClient({
     }
 
     prevQuestionStateRef.current = questionState
-  }, [emitSoundEvent, isGuest, questionState, resolvedRoundType])
+  }, [emitSoundEvent, isGuest, questionState, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) {
@@ -768,7 +768,7 @@ export function OlympiaGameClient({
     }
 
     // Nếu overlay đáp án/bảng điểm đang mở thì không emit sự kiện timer
-    if (overlayOpenRef.current) {
+    if (showAnswersOverlay || showBigScoreboard) {
       prevTimerDeadlineRef.current = session.timer_deadline ?? null
       return
     }
@@ -791,7 +791,7 @@ export function OlympiaGameClient({
     }
 
     prevTimerDeadlineRef.current = next
-  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline])
+  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return

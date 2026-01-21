@@ -377,9 +377,15 @@ export function OlympiaGameClient({
     setMcBuzzerSlotEl(document.getElementById(resolvedMcBuzzerSlotId))
   }, [isMc, resolvedMcBuzzerSlotId, resolvedMcScoreboardSlotId])
 
+
+
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
   const guestHiddenVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [isGuestMediaVideoVisible, setIsGuestMediaVideoVisible] = useState<boolean>(false)
+  const isVideoVisibleRef = useRef<boolean>(false)
+
+  const canReceiveVideoControlTop = isGuest || resolvedViewerMode === 'player'
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
   const mediaPlaylistRef = useRef<Record<'audio' | 'video', { srcs: string[]; idx: number } | null>>({
     audio: null,
@@ -1012,7 +1018,7 @@ export function OlympiaGameClient({
       const cmdId = typeof cmd.commandId === 'number' ? cmd.commandId : 0
       if (cmdId <= lastMediaCmdRef.current[mediaType]) return
       const action = cmd.action
-      const element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
+      let element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
 
       let cmdSrcs: string[] | undefined
       try {
@@ -1023,26 +1029,43 @@ export function OlympiaGameClient({
         cmdSrcs = undefined
       }
 
-      // Nếu media element chưa mount xong, bỏ qua command này
+      // Nếu media element chưa mount xong, thử chờ vài lần (nhẹ) trước khi bỏ qua
       if (!element) {
-        console.info('[Olympia][GuestMedia] element not mounted, skipping command', {
-          mediaType,
-          action,
-          cmdId,
-          isWaitingScreen,
-          resolvedViewerMode,
-        })
-        return
+        const maxRetries = 6
+        const retryDelayMs = 100
+        let found = false
+        for (let i = 0; i < maxRetries; i++) {
+          // small delay to allow React to commit mounts
+          await new Promise((res) => setTimeout(res, retryDelayMs))
+          element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
+          if (element) {
+            found = true
+            console.info('[Olympia][GuestMedia] element mounted after retry', { mediaType, attempt: i + 1 })
+            break
+          }
+        }
+        if (!found) {
+          console.info('[Olympia][GuestMedia] element not mounted, skipping command', {
+            mediaType,
+            action,
+            cmdId,
+            isWaitingScreen,
+            resolvedViewerMode,
+          })
+          return
+        }
       }
+
+      const el = element as HTMLMediaElement
 
       console.info('[Olympia][GuestMedia] applying command', {
         mediaType,
         action,
         cmdId,
-        readyState: element.readyState,
-        paused: element.paused,
-        currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
-        muted: element.muted,
+        readyState: el.readyState,
+        paused: el.paused,
+        currentTime: Number.isFinite(el.currentTime) ? el.currentTime : null,
+        muted: el.muted,
         isWaitingScreen,
         resolvedViewerMode,
       })
@@ -1050,8 +1073,12 @@ export function OlympiaGameClient({
       lastMediaCmdRef.current = { ...lastMediaCmdRef.current, [mediaType]: cmdId }
 
       const waitForCanPlay = async (el: HTMLMediaElement) => {
-        if (el.readyState >= 2) return
+        if (el.readyState >= 2) {
+          console.info('[Olympia][GuestMedia] already ready', { readyState: el.readyState })
+          return
+        }
 
+        console.info('[Olympia][GuestMedia] waiting for canplay event', { readyState: el.readyState, currentSrc: (el as HTMLVideoElement).src })
         await new Promise<void>((resolve) => {
           let done = false
           const finish = () => {
@@ -1059,12 +1086,16 @@ export function OlympiaGameClient({
             done = true
             el.removeEventListener('canplay', finish)
             el.removeEventListener('loadeddata', finish)
+            console.info('[Olympia][GuestMedia] canplay/loadeddata event fired', { readyState: el.readyState })
             resolve()
           }
 
           el.addEventListener('canplay', finish)
           el.addEventListener('loadeddata', finish)
-          window.setTimeout(finish, 1200)
+          window.setTimeout(() => {
+            console.warn('[Olympia][GuestMedia] canplay timeout, proceeding anyway', { readyState: el.readyState })
+            finish()
+          }, 1200)
         })
       }
 
@@ -1120,12 +1151,12 @@ export function OlympiaGameClient({
         // Stop: unload and clear playlist
         if (action === 'stop') {
           try {
-            element.pause()
+            el.pause()
           } catch { }
           try {
             // clear playlist state and unload src
             mediaPlaylistRef.current[mediaType] = null
-            if ('onended' in element) (element as HTMLVideoElement).onended = null
+            if ('onended' in el) (el as HTMLVideoElement).onended = null
             try {
               if (typeof (element as HTMLMediaElement).removeAttribute === 'function') {
                 (element as HTMLMediaElement).removeAttribute('src')
@@ -1139,6 +1170,10 @@ export function OlympiaGameClient({
             } catch { }
           } catch { }
           console.info('[Olympia][GuestMedia] applied stop', { mediaType, cmdId })
+          if (mediaType === 'video') {
+            isVideoVisibleRef.current = false
+            setIsGuestMediaVideoVisible(false)
+          }
           // Xóa command khỏi DB sau khi apply
           if (match?.id) {
             void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
@@ -1153,37 +1188,58 @@ export function OlympiaGameClient({
 
           const playIndex = async (i: number) => {
             const playlist = mediaPlaylistRef.current[mediaType]
-            if (!playlist) return
+            if (!playlist) {
+              console.warn('[Olympia][GuestMedia] playlist cleared before playIndex', { i, mediaType })
+              return
+            }
             const src = playlist.srcs[i]
-            if (!src) return
+            if (!src) {
+              console.warn('[Olympia][GuestMedia] src not found at index', { i, mediaType, srcsCount: playlist.srcs.length })
+              return
+            }
             try {
               // set source and attempt play
-              try { (element as HTMLVideoElement).src = src } catch { }
-              await waitForCanPlay(element)
-              if (action === 'restart') {
-                try { element.currentTime = 0 } catch { }
+              console.info('[Olympia][GuestMedia] setting src', { src, i, mediaType })
+              try { (element as HTMLVideoElement).src = src } catch (e) {
+                console.error('[Olympia][GuestMedia] failed to set src', e)
               }
-              const p = element.play()
-              if (p && typeof (p as Promise<void>).then === 'function') await p
-            } catch {
-              // ignore autoplay block
+              console.info('[Olympia][GuestMedia] before waitForCanPlay', { readyState: el.readyState })
+              await waitForCanPlay(el)
+              console.info('[Olympia][GuestMedia] after waitForCanPlay', { readyState: el.readyState })
+              if (action === 'restart') {
+                try { el.currentTime = 0 } catch { }
+              }
+              // Use tryPlay to handle autoplay fallback (muted) uniformly
+              try {
+                await tryPlay(el)
+              } catch (err) {
+                console.error('[Olympia][GuestMedia] tryPlay failed', { i, mediaType, error: err instanceof Error ? err.message : String(err) })
+              }
+            } catch (err) {
+              console.error('[Olympia][GuestMedia] playIndex error', { i, mediaType, error: err instanceof Error ? err.message : String(err) })
             }
           }
 
           // attach ended handler to advance playlist
-          if ('onended' in element) (element as HTMLVideoElement).onended = () => {
+          if ('onended' in el) (el as HTMLVideoElement).onended = () => {
             const playlist = mediaPlaylistRef.current[mediaType]
             if (!playlist) return
             playlist.idx += 1
             if (playlist.idx >= playlist.srcs.length) {
               mediaPlaylistRef.current[mediaType] = null
-              try { (element as HTMLVideoElement).onended = null } catch { }
+              try { (el as HTMLVideoElement).onended = null } catch { }
+              // playlist finished -> hide overlay
+              isVideoVisibleRef.current = false
+              setIsGuestMediaVideoVisible(false)
               return
             }
             void playIndex(playlist.idx)
           }
 
           // start first
+          // ensure overlay visible for video playlist
+          isVideoVisibleRef.current = true
+          setIsGuestMediaVideoVisible(true)
           void playIndex(0)
           console.info('[Olympia][GuestMedia] applied play with srcs', { mediaType, cmdId, srcs: cmdSrcs })
           // Xóa command khỏi DB sau khi apply
@@ -1194,12 +1250,12 @@ export function OlympiaGameClient({
         }
 
         if (action === 'pause') {
-          element.pause()
+          el.pause()
           console.info('[Olympia][GuestMedia] applied pause', {
             mediaType,
             cmdId,
-            paused: element.paused,
-            currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
+            paused: el.paused,
+            currentTime: Number.isFinite(el.currentTime) ? el.currentTime : null,
           })
           // Xóa command khỏi DB sau khi apply
           if (match?.id) {
@@ -1209,14 +1265,18 @@ export function OlympiaGameClient({
         }
 
         // play/restart (no srcs)
-        await tryPlay(element, { restart: action === 'restart' })
+        if (mediaType === 'video') {
+          isVideoVisibleRef.current = true
+          setIsGuestMediaVideoVisible(true)
+        }
+        await tryPlay(el, { restart: action === 'restart' })
         console.info('[Olympia][GuestMedia] applied play', {
           mediaType,
           cmdId,
-          paused: element.paused,
-          currentTime: Number.isFinite(element.currentTime) ? element.currentTime : null,
-          readyState: element.readyState,
-          muted: element.muted,
+          paused: el.paused,
+          currentTime: Number.isFinite(el.currentTime) ? el.currentTime : null,
+          readyState: el.readyState,
+          muted: el.muted,
         })
         // Xóa command khỏi DB sau khi apply
         if (match?.id) {
@@ -1788,110 +1848,120 @@ export function OlympiaGameClient({
                 </div>
               ) : null}
 
-          {isMc && (answerText || noteText) && (
-            <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
-              {answerText ? (
-                <p className="text-sm whitespace-pre-wrap">
-                  <span className="text-slate-200">Đáp án:</span> {answerText}
-                </p>
-              ) : null}
-              {noteText ? (
-                <p className="mt-2 text-sm whitespace-pre-wrap">
-                  <span className="text-slate-200">Ghi chú:</span> {noteText}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </div>
-      )}
-        </main>
-
-      {/* Hidden video & audio elements for host-driven media (always mounted when isGuest) */}
-      {isGuest && (
-        <>
-          {audioUrl && (
-            // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
-            <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
-          )}
-          <video ref={guestHiddenVideoRef} preload="auto" className="hidden" aria-hidden="true" />
-        </>
-      )}
-
-      {/* Top scoreboard mini (MC): đã chuyển ra ngoài khung game qua portal */}
-
-      {/* INTERACTION BAR (ẩn ở guest) */}
-      {!isGuest ? (
-        <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
-          {disableInteractions ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-slate-200">
-                {isMc
-                  ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
-                  : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-1 md:items-center">
-              {/* Answer section - center, only show when NOT waiting screen */}
-              {!isWaitingScreen && (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex flex-wrap gap-3 justify-center">
-                    {roundType !== 'khoi_dong' && !isVeDich ? (
-                      <form action={answerAction} className="flex items-center gap-2">
-                        <input type="hidden" name="sessionId" value={session.id} />
-                        <Input
-                          name="answer"
-                          placeholder="Nhập đáp án"
-                          disabled={disableAnswerSubmit}
-                          className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
-                        />
-                        <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
-                      </form>
-                    ) : null}
-                  </div>
+              {isMc && (answerText || noteText) && (
+                <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
+                  {answerText ? (
+                    <p className="text-sm whitespace-pre-wrap">
+                      <span className="text-slate-200">Đáp án:</span> {answerText}
+                    </p>
+                  ) : null}
+                  {noteText ? (
+                    <p className="mt-2 text-sm whitespace-pre-wrap">
+                      <span className="text-slate-200">Ghi chú:</span> {noteText}
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>
           )}
+        </main>
 
-          {/* Refresh button - footer right */}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2">
-            <Button
-              size="icon"
-              variant="outline"
-              className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
-              onClick={refreshFromServer}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
+        {/* Hidden video & audio elements for host-driven media (always mounted when isGuest) */}
+        {isGuest && (
+          <>
+            {audioUrl && (
+              // Audio chỉ phát trên Guest; ẩn UI nhưng vẫn mount để host điều khiển.
+              <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
+            )}
+            {/* Video mount for guests and player viewers (used by host control commands) */}
+            {canReceiveVideoControlTop && (
+              <video
+                ref={guestHiddenVideoRef}
+                preload="auto"
+                playsInline
+                crossOrigin="anonymous"
+                aria-hidden={!isGuestMediaVideoVisible}
+                className={isGuestMediaVideoVisible ? 'fixed inset-0 w-full h-full object-contain z-50 bg-black' : 'hidden'}
+              />
+            )}
+          </>
+        )}
+
+        {/* Top scoreboard mini (MC): đã chuyển ra ngoài khung game qua portal */}
+
+        {/* INTERACTION BAR (ẩn ở guest) */}
+        {!isGuest ? (
+          <footer className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4 border-t border-slate-700 bg-slate-950/70 backdrop-blur-sm">
+            {disableInteractions ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-200">
+                  {isMc
+                    ? 'Chế độ MC: chỉ quan sát (không gửi đáp án / bấm chuông).'
+                    : 'Chế độ khách: đăng nhập để gửi đáp án / bấm chuông.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-1 md:items-center">
+                {/* Answer section - center, only show when NOT waiting screen */}
+                {!isWaitingScreen && (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-wrap gap-3 justify-center">
+                      {roundType !== 'khoi_dong' && !isVeDich ? (
+                        <form action={answerAction} className="flex items-center gap-2">
+                          <input type="hidden" name="sessionId" value={session.id} />
+                          <Input
+                            name="answer"
+                            placeholder="Nhập đáp án"
+                            disabled={disableAnswerSubmit}
+                            className="w-[220px] bg-slate-900/70 border-slate-600 text-white placeholder:text-slate-300"
+                          />
+                          <FormSubmitButton disabled={disableAnswerSubmit}>Gửi</FormSubmitButton>
+                        </form>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Refresh button - footer right */}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <Button
+                size="icon"
+                variant="outline"
+                className="bg-slate-900/70 border-slate-600 text-white hover:bg-slate-800"
+                onClick={refreshFromServer}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+          </footer>
+        ) : null}
+
+        {/* Buzzer FAB - bottom right corner */}
+        {!disableInteractions && session.buzzer_enabled !== false && (!isVeDich || isStealWindow) && (
+          <div className="fixed bottom-24 right-4 z-50">
+            <form action={buzzerAction}>
+              <input type="hidden" name="sessionId" value={session.id} />
+              <Button
+                type="submit"
+                disabled={disableBuzz}
+                size="lg"
+                className={cn(
+                  'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
+                  'bg-white hover:bg-slate-100',
+                  'text-blue-600 hover:text-blue-800',
+                  'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100',
+                  'transition-colors duration-200 ease-in-out',
+                  "[&_svg]:size-auto"
+                )}
+                variant="default"
+              >
+                <Bell className="w-36 h-36 scale-[5] origin-center stroke-current" />
+              </Button>
+            </form>
           </div>
-        </footer>
-      ) : null}
-
-      {/* Buzzer FAB - bottom right corner */}
-      {!disableInteractions && session.buzzer_enabled !== false && (!isVeDich || isStealWindow) && (
-        <div className="fixed bottom-24 right-4 z-50">
-          <form action={buzzerAction}>
-            <input type="hidden" name="sessionId" value={session.id} />
-            <Button
-              type="submit"
-              disabled={disableBuzz}
-              size="lg"
-              className={cn(
-                'w-36 h-36 rounded-full flex items-center justify-center shadow-lg border-0',
-                'bg-white hover:bg-slate-100',
-                'text-blue-600 hover:text-blue-800',
-                'disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed disabled:opacity-100',
-                'transition-colors duration-200 ease-in-out',
-                "[&_svg]:size-auto"
-              )}
-              variant="default"
-            >
-              <Bell className="w-36 h-36 scale-[5] origin-center stroke-current" />
-            </Button>
-          </form>
-        </div>
-      )}
+        )}
       </div>
 
       {isMc && mcScoreboardSlotEl && scoreboard.length > 0
@@ -1915,12 +1985,12 @@ export function OlympiaGameClient({
 
       {isMc && mcBuzzerSlotEl
         ? createPortal(
-            <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
-              <p className="text-[11px] uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
-              <p className="mt-1 text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
-            </div>,
-            mcBuzzerSlotEl
-          )
+          <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+            <p className="text-[11px] uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
+            <p className="mt-1 text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
+          </div>,
+          mcBuzzerSlotEl
+        )
         : null}
     </>
   )

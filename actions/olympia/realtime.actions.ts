@@ -101,12 +101,18 @@ const buzzerSchema = z.object({
 });
 
 const guestMediaControlSchema = z.object({
-  matchId: z.string().uuid("ID trận không hợp lệ."),
-  mediaType: z.enum(["audio", "video"]),
-  command: z.enum(["play", "pause", "restart", "stop"]),
+  matchId: z.preprocess((val) => (typeof val === "string" ? val : ""), z.string().uuid("ID trận không hợp lệ.")),
+  mediaType: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z.enum(["audio", "video"], "Loại media không hợp lệ.")
+  ),
+  command: z.preprocess(
+    (val) => (typeof val === "string" ? val : ""),
+    z.enum(["play", "pause", "restart", "stop"], "Lệnh media không hợp lệ.")
+  ),
   // Optional single src (absolute URL) or JSON encoded array string in mediaSrcs
-  mediaSrc: z.string().optional(),
-  mediaSrcs: z.string().optional(),
+  mediaSrc: z.preprocess((val) => (typeof val === "string" ? val : undefined), z.string().optional()),
+  mediaSrcs: z.preprocess((val) => (typeof val === "string" ? val : undefined), z.string().optional()),
 });
 
 type GuestMediaCommand = {

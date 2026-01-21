@@ -603,10 +603,25 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               if (evt.entity === "live_sessions") {
                 if (evt.session_id && evt.session_id !== sessionId) return;
 
-                const guestMediaControlObj = payloadObject(evt.payload, "guestMediaControl");
+                // Some realtime payloads may use camelCase keys while others use snake_case
+                // (depending on how the DB/bridge serializes JSON). Support both.
+                const guestMediaControlObj =
+                  payloadObject(evt.payload, "guestMediaControl") ??
+                  payloadObject(evt.payload, "guest_media_control");
                 const guestMediaControl = guestMediaControlObj
                   ? (guestMediaControlObj as GameSessionPayload["session"]["guest_media_control"])
                   : undefined;
+
+                if (guestMediaControl) {
+                  try {
+                    console.info(
+                      "[Olympia][Realtime] guest_media_control payload",
+                      guestMediaControl
+                    );
+                  } catch {
+                    /* ignore */
+                  }
+                }
 
                 setSession((prev) => ({
                   ...prev,

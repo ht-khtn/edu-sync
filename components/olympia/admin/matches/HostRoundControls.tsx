@@ -1069,6 +1069,9 @@ export function HostRoundControls({
                 toast.error('ID trận không hợp lệ.')
                 return
               }
+              // Debug: show what we're about to send
+              console.info('[Host][GuestMedia] send play', { matchId, mediaSrcs })
+              toast.info(`Gửi intro → ${mediaSrcs.filter(Boolean).join(', ')}`)
               const formData = new FormData(e.currentTarget)
               formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')
@@ -1099,6 +1102,8 @@ export function HostRoundControls({
                 toast.error('ID trận không hợp lệ.')
                 return
               }
+              console.info('[Host][GuestMedia] send pause', { matchId })
+              toast.info('Gửi lệnh tạm dừng intro')
               const formData = new FormData(e.currentTarget)
               formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')
@@ -1128,6 +1133,8 @@ export function HostRoundControls({
                 toast.error('ID trận không hợp lệ.')
                 return
               }
+              console.info('[Host][GuestMedia] send stop', { matchId })
+              toast.info('Gửi lệnh dừng intro')
               const formData = new FormData(e.currentTarget)
               formData.set('matchId', String(matchId))
               formData.set('mediaType', 'video')

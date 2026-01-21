@@ -249,8 +249,15 @@ export function OlympiaGameClient({
   const prevStarUseIdRef = useRef<string | null>(null)
   const prevQuestionIdRef = useRef<string | null>(null)
 
+  // Overlay flags used to suppress sound emission when overlays are open
+  const showBigScoreboard = session.show_scoreboard_overlay === true
+  const showAnswersOverlay = session.show_answers_overlay === true
+  const overlayOpenRef = useRef<boolean>(false)
+
   const emitSoundEvent = useCallback(
     async (event: GameEvent, payload?: GameEventPayload) => {
+      // Nếu đang mở overlay, chỉ cho phép một số sự kiện overlay (ví dụ: scoreboard/answer)
+      if (overlayOpenRef.current && event !== GameEvent.SCOREBOARD_OPENED && event !== GameEvent.REVEAL_ANSWER) return
       if (!isGuest) return
       const router = soundRouterRef.current
       if (!router) return
@@ -373,8 +380,6 @@ export function OlympiaGameClient({
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
 
-  const showBigScoreboard = session.show_scoreboard_overlay === true
-  const showAnswersOverlay = session.show_answers_overlay === true
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
     roundQuestionId: null,
     key: null,
@@ -708,6 +713,9 @@ export function OlympiaGameClient({
   }, [mediaUrl])
 
   useEffect(() => {
+    // Nếu overlay đang mở thì không xử lý sự kiện vòng ở đây
+    if (overlayOpenRef.current) return
+
     if (!isGuest || !resolvedRoundType) {
       prevRoundTypeRef.current = null
       return
@@ -725,6 +733,8 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     if (!isGuest) return
+    // Khi đang mở overlay đáp án hoặc bảng điểm, bỏ qua các sự kiện hiển thị câu/đáp án
+    if (overlayOpenRef.current) return
     const prev = prevQuestionStateRef.current
 
     if (questionState === 'showing' && prev !== 'showing') {
@@ -753,6 +763,12 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) {
+      prevTimerDeadlineRef.current = session.timer_deadline ?? null
+      return
+    }
+
+    // Nếu overlay đáp án/bảng điểm đang mở thì không emit sự kiện timer
+    if (overlayOpenRef.current) {
       prevTimerDeadlineRef.current = session.timer_deadline ?? null
       return
     }
@@ -896,21 +912,33 @@ export function OlympiaGameClient({
     const prev = prevScoreboardRef.current
     if (prev === null) {
       prevScoreboardRef.current = showBigScoreboard
+      overlayOpenRef.current = showBigScoreboard || showAnswersOverlay
       return
     }
 
     if (!prev && showBigScoreboard) {
+      // Opened scoreboard: set overlay ref then emit only scoreboard sound
+      overlayOpenRef.current = true
       void emitSoundEvent(GameEvent.SCOREBOARD_OPENED, { roundType: resolvedRoundType ?? undefined })
     }
 
+    if (prev && !showBigScoreboard) {
+      // Closed scoreboard: clear overlay ref and sync prev refs to avoid re-emits
+      overlayOpenRef.current = showAnswersOverlay
+      prevRoundTypeRef.current = resolvedRoundType
+      prevQuestionStateRef.current = questionState
+      prevTimerDeadlineRef.current = session.timer_deadline ?? null
+    }
+
     prevScoreboardRef.current = showBigScoreboard
-  }, [emitSoundEvent, isGuest, resolvedRoundType, showBigScoreboard])
+  }, [emitSoundEvent, isGuest, resolvedRoundType, showBigScoreboard, showAnswersOverlay, questionState, session.timer_deadline])
 
   useEffect(() => {
     if (!isGuest) return
     const prev = prevSessionStatusRef.current
     const next = session.status ?? null
     if (prev !== next && next === 'ended') {
+      // If overlay is open, still allow session ended sound (summary)
       void emitSoundEvent(GameEvent.SESSION_ENDED, { roundType: resolvedRoundType ?? undefined })
     }
     prevSessionStatusRef.current = next

@@ -464,8 +464,8 @@ export function HostRoundControls({
   const playKhuyet = useCallback(() => {
     try {
       hostAudioRef.current?.play()
-    } catch (err) {
-      // Ignore play errors (user gesture required) — user can click again
+    } catch (e) {
+      void e
     }
   }, [])
 

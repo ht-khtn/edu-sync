@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { ensureOlympiaAdminAccess } from "@/lib/olympia-access";
 import { getServerAuthContext } from "@/lib/server-auth";
@@ -14,7 +13,6 @@ import { getVeDichStealTimingMs } from "@/lib/olympia/olympia-config";
 import {
   estimateFormDataPayloadBytes,
   getOrCreateTraceId,
-  perfAction,
   readStringFormField,
   traceInfo,
 } from "@/lib/olympia/olympia-trace";

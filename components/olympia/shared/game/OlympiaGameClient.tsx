@@ -1021,15 +1021,24 @@ export function OlympiaGameClient({
         cmdSrcs = undefined
       }
 
-      // Nếu media element chưa mount xong, để effect chạy lại khi UI render xong.
+      // Nếu media element chưa mount xong, thử lại sau một khoảng nhỏ.
       if (!element) {
-        console.info('[Olympia][GuestMedia] element not mounted yet', {
+        console.info('[Olympia][GuestMedia] element not mounted yet — scheduling retry', {
           mediaType,
           action,
           cmdId,
           isWaitingScreen,
           resolvedViewerMode,
         })
+        // Retry once after short delay; this covers the case where realtime event
+        // arrives before the hidden media element is mounted.
+        setTimeout(() => {
+          try {
+            void applyCommand(mediaType)
+          } catch {
+            // ignore
+          }
+        }, 250)
         return
       }
 

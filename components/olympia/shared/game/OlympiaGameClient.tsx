@@ -30,6 +30,7 @@ import { clearGuestMediaCommandAction } from '@/actions/olympia/realtime.actions
 
 import { cn } from '@/utils/cn'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import OlympiaQuestionFrame from '@/components/olympia/shared/game/OlympiaQuestionFrame'
 
 type OlympiaGameClientProps = {
   initialData: GameSessionPayload
@@ -249,6 +250,8 @@ export function OlympiaGameClient({
   })
   const prevStarUseIdRef = useRef<string | null>(null)
   const prevQuestionIdRef = useRef<string | null>(null)
+
+  // (intro transient state removed — animations replay controlled by mount/open)
 
   // Overlay flags used to suppress sound emission when overlays are open
   const showBigScoreboard = session.show_scoreboard_overlay === true
@@ -772,6 +775,8 @@ export function OlympiaGameClient({
 
     prevQuestionStateRef.current = questionState
   }, [emitSoundEvent, isGuest, questionState, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
+
+  // (removed transient intro effect)
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) {
@@ -1805,55 +1810,59 @@ export function OlympiaGameClient({
                 })()
               ) : null}
 
-              {showQuestionText ? (
-                <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
-                  {questionText?.trim() ? questionText : '—'}
-                </p>
-              ) : null}
+              {(isMc || questionState !== 'hidden') ? (
+                <OlympiaQuestionFrame open={true} scoreboard={scoreboard}>
+                  {showQuestionText ? (
+                    <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
+                      {questionText?.trim() ? questionText : '—'}
+                    </p>
+                  ) : null}
 
-              {showQuestionMedia ? (
-                <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
-                  {mediaUrl ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-slate-300">Ảnh/Video</p>
-                      {mediaKind === 'image' ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={mediaUrl}
-                          alt="Media câu hỏi"
-                          className="w-full max-h-[420px] object-contain rounded"
-                        />
-                      ) : mediaKind === 'video' ? (
-                        <video
-                          ref={syncedVideoRef}
-                          playsInline
-                          src={mediaUrl}
-                          className="w-full max-h-[420px] rounded bg-black pointer-events-none"
-                          tabIndex={-1}
-                        />
-                      ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                        <div className="aspect-video w-full overflow-hidden rounded bg-black">
-                          <iframe
-                            src={youtubeEmbedUrl}
-                            title="Video câu hỏi"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            className="h-full w-full"
-                          />
+                  {showQuestionMedia ? (
+                    <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
+                      {mediaUrl ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-slate-300">Ảnh/Video</p>
+                          {mediaKind === 'image' ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={mediaUrl}
+                              alt="Media câu hỏi"
+                              className="w-full max-h-[420px] object-contain rounded"
+                            />
+                          ) : mediaKind === 'video' ? (
+                            <video
+                              ref={syncedVideoRef}
+                              playsInline
+                              src={mediaUrl}
+                              className="w-full max-h-[420px] rounded bg-black pointer-events-none"
+                              tabIndex={-1}
+                            />
+                          ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                            <div className="aspect-video w-full overflow-hidden rounded bg-black">
+                              <iframe
+                                src={youtubeEmbedUrl}
+                                title="Video câu hỏi"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                className="h-full w-full"
+                              />
+                            </div>
+                          ) : (
+                            <a
+                              href={mediaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-sky-300 hover:underline break-all"
+                            >
+                              {mediaUrl}
+                            </a>
+                          )}
                         </div>
-                      ) : (
-                        <a
-                          href={mediaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-sky-300 hover:underline break-all"
-                        >
-                          {mediaUrl}
-                        </a>
-                      )}
+                      ) : null}
                     </div>
                   ) : null}
-                </div>
+                </OlympiaQuestionFrame>
               ) : null}
 
               {isMc && (answerText || noteText) && (

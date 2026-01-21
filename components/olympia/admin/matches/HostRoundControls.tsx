@@ -988,7 +988,7 @@ export function HostRoundControls({
           onSubmit={(e) => {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
-            endTurnAction(formData)
+            startRoundTransition(() => endTurnAction(formData))
           }}
         >
           <input type="hidden" name="matchId" value={matchId} />

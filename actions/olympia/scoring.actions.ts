@@ -1043,6 +1043,13 @@ export async function confirmDecisionAndAdvanceAction(
     }
     fd.set("autoShow", "1");
 
+    // Thêm một khoảng delay rất nhỏ để giảm khả năng race-condition giữa
+    // bản ghi chấm điểm và sự kiện realtime/host optimistic update.
+    // Delay này không ảnh hưởng tới logic luật (không thay đổi điều kiện
+    // chuyển câu hoặc màn chờ của Khởi động thi riêng) nhưng giúp tránh
+    // trường hợp UI host nhảy sang câu mới rồi bị event khác đè ngay lập tức.
+    await new Promise((res) => setTimeout(res, 80));
+
     const advanceResult = await advanceCurrentQuestionAction({}, fd);
     if (advanceResult?.error) {
       // Nếu chấm được nhưng chuyển câu lỗi, vẫn trả success chấm + báo lỗi chuyển.

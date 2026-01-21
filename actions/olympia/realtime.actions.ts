@@ -2065,10 +2065,16 @@ export async function advanceCurrentQuestionAction(
       const currentInfo = parseKhoiDongCodeInfoFromMeta((currentRow as { meta?: unknown })?.meta);
       const nextInfo = parseKhoiDongCodeInfoFromMeta((nextRow as { meta?: unknown })?.meta);
 
-      const currentIsPersonal = Boolean(
-        currentRow?.target_player_id || currentInfo?.kind === "personal"
-      );
-      const nextIsPersonal = Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
+      // Nếu meta.code là DKA- thì luôn coi là thi chung (không phải personal),
+      // kể cả khi target_player_id đang bị set do buzzer thắng.
+      const currentIsCommon = currentInfo?.kind === "common";
+      const nextIsCommon = nextInfo?.kind === "common";
+
+      const currentIsPersonal =
+        !currentIsCommon &&
+        Boolean(currentRow?.target_player_id || currentInfo?.kind === "personal");
+      const nextIsPersonal =
+        !nextIsCommon && Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
 
       const currentSeat = currentInfo && currentInfo.kind === "personal" ? currentInfo.seat : null;
       const nextSeat = nextInfo && nextInfo.kind === "personal" ? nextInfo.seat : null;
@@ -2341,20 +2347,23 @@ export async function setRoundQuestionTargetPlayerAction(
       }
     }
 
-    // Khi đổi thí sinh/thi chung-thi riêng: luôn reset câu đang live + bật màn chờ + tắt chuông.
-    // Đây là hành vi yêu cầu để tránh UI giữ câu cũ khi đổi ghế/thí sinh.
-    // Chỉ reset nếu phòng đang running; nếu chưa mở phòng thì skip (không báo lỗi).
-    const { error: resetErr } = await olympia
-      .from("live_sessions")
-      .update({
-        current_round_question_id: null,
-        question_state: "hidden",
-        timer_deadline: null,
-        buzzer_enabled: false,
-      })
-      .eq("match_id", realMatchId)
-      .eq("status", "running");
-    if (resetErr) return { error: resetErr.message };
+    // Nếu hành động thay đổi target ở cấp vòng (không chỉ cập nhật 1 câu cụ thể),
+    // thì mới reset phiên live sang màn chờ. Nếu chỉ cập nhật `roundQuestionId`
+    // (gán target cho 1 câu), không nên reset toàn bộ phiên live vì sẽ
+    // làm mất câu đang hiển thị và bật màn chờ không mong muốn.
+    if (!parsed.data.roundQuestionId) {
+      const { error: resetErr } = await olympia
+        .from("live_sessions")
+        .update({
+          current_round_question_id: null,
+          question_state: "hidden",
+          timer_deadline: null,
+          buzzer_enabled: false,
+        })
+        .eq("match_id", realMatchId)
+        .eq("status", "running");
+      if (resetErr) return { error: resetErr.message };
+    }
     // Nếu không có phòng running, không cần báo lỗi (có thể chưa mở phòng, chỉ setup thôi)
 
     // UI client/guest/mc đã cập nhật qua Supabase Realtime + polling.

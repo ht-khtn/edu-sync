@@ -684,6 +684,28 @@ export function HostRoundControls({
 
   return (
     <div className="grid gap-3">
+      <div className="grid gap-2">
+        <Label className="text-xs">Âm thanh</Label>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => playKhuyet()}
+            title="Phát âm thanh khuyết trên trình duyệt của host"
+            aria-label="Phát khuyết"
+          >
+            Phát khuyết
+          </Button>
+        </div>
+        <audio
+          ref={hostAudioRef}
+          src="https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia/Olympia%20Sound/khuyet.mp3"
+          preload="auto"
+          hidden
+        />
+      </div>
       <CountdownControls
         key={`${effectiveCurrentRoundType ?? 'none'}:${effectiveCurrentRoundQuestionId ?? 'none'}`}
         sessionId={sessionId}
@@ -1002,28 +1024,7 @@ export function HostRoundControls({
         </div>
         {buzzerMessage && !buzzerState.error ? <p className="text-xs text-green-600">{buzzerMessage}</p> : null}
       </form>
-      <div className="grid gap-2">
-        <Label className="text-xs">Âm thanh</Label>
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8"
-            onClick={() => playKhuyet()}
-            title="Phát âm thanh khuyết trên trình duyệt của host"
-            aria-label="Phát khuyết"
-          >
-            Phát khuyết
-          </Button>
-        </div>
-        <audio
-          ref={hostAudioRef}
-          src="https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia/Olympia%20Sound/khuyet.mp3"
-          preload="auto"
-          hidden
-        />
-      </div>
+
     </div>
   )
 }

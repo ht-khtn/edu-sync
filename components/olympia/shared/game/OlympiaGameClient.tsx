@@ -258,6 +258,11 @@ export function OlympiaGameClient({
   const showAnswersOverlay = session.show_answers_overlay === true
   const overlayOpenRef = useRef<boolean>(false)
 
+  // Keep overlayOpenRef in sync with session flags so emitSoundEvent can short-circuit
+  useEffect(() => {
+    overlayOpenRef.current = Boolean(showBigScoreboard || showAnswersOverlay)
+  }, [showBigScoreboard, showAnswersOverlay])
+
   const emitSoundEvent = useCallback(
     async (event: GameEvent, payload?: GameEventPayload) => {
       // Nếu đang mở overlay, chỉ cho phép một số sự kiện overlay (ví dụ: scoreboard/answer)
@@ -1811,7 +1816,7 @@ export function OlympiaGameClient({
               ) : null}
 
               {(isMc || questionState !== 'hidden') ? (
-                <OlympiaQuestionFrame open={true} scoreboard={scoreboard}>
+                <OlympiaQuestionFrame open={!showAnswersOverlay && !showBigScoreboard} scoreboard={scoreboard}>
                   {showQuestionText ? (
                     <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
                       {questionText?.trim() ? questionText : '—'}

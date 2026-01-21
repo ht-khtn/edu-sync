@@ -16,15 +16,15 @@ export type LiveSessionRow = {
     version?: number;
     audio?: {
       commandId: number;
-      action: "play" | "pause" | "restart";
+      action: "play" | "pause" | "restart" | "stop";
       issuedAt: string;
-      src?: string | string[];
+      srcs?: string[];
     };
     video?: {
       commandId: number;
-      action: "play" | "pause" | "restart";
+      action: "play" | "pause" | "restart" | "stop";
       issuedAt: string;
-      src?: string | string[];
+      srcs?: string[];
     };
   };
 };

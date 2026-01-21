@@ -103,15 +103,18 @@ const buzzerSchema = z.object({
 const guestMediaControlSchema = z.object({
   matchId: z.string().uuid("ID trận không hợp lệ."),
   mediaType: z.enum(["audio", "video"]),
-  command: z.enum(["play", "pause", "restart"]),
-  src: z.preprocess((v) => (typeof v === "string" ? v.trim() : v), z.string().optional()),
+  command: z.enum(["play", "pause", "restart", "stop"]),
+  // Optional single src (absolute URL) or JSON encoded array string in mediaSrcs
+  mediaSrc: z.string().optional(),
+  mediaSrcs: z.string().optional(),
 });
 
 type GuestMediaCommand = {
   commandId: number;
-  action: "play" | "pause" | "restart";
+  action: "play" | "pause" | "restart" | "stop";
   issuedAt: string;
-  src?: string | string[];
+  // Optional list of sources (absolute URLs) to set/play on guest
+  srcs?: string[];
 };
 
 type GuestMediaControl = {
@@ -1590,14 +1593,17 @@ export async function setGuestMediaControlAction(
       matchId: formData.get("matchId"),
       mediaType: formData.get("mediaType"),
       command: formData.get("command"),
-      src: formData.get("src"),
+      mediaSrc: formData.get("mediaSrc"),
+      mediaSrcs: formData.get("mediaSrcs"),
     });
 
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin điều khiển media." };
     }
 
-    const { matchId, mediaType, command, src } = parsed.data;
+    const { matchId, mediaType, command } = parsed.data;
+    const rawMediaSrc = formData.get("mediaSrc") as string | null;
+    const rawMediaSrcs = formData.get("mediaSrcs") as string | null;
 
     const { data: sessionRow, error: sessionErr } = await olympia
       .from("live_sessions")
@@ -1640,9 +1646,21 @@ export async function setGuestMediaControlAction(
       issuedAt: new Date().toISOString(),
     };
 
-    if (typeof src === "string" && src.length > 0) {
-      // store raw string; guest may parse JSON array if needed
-      nextCmd.src = src;
+    // Attach optional srcs if provided (single or JSON array)
+    try {
+      let srcs: string[] | undefined = undefined;
+      if (rawMediaSrcs) {
+        const parsedArr = JSON.parse(rawMediaSrcs);
+        if (Array.isArray(parsedArr)) {
+          srcs = parsedArr.map((s) => String(s)).filter(Boolean);
+        }
+      }
+      if (!srcs && rawMediaSrc) {
+        srcs = [rawMediaSrc];
+      }
+      if (srcs && srcs.length > 0) nextCmd.srcs = srcs;
+    } catch {
+      // ignore malformed mediaSrcs
     }
 
     const nextControl: GuestMediaControl = {

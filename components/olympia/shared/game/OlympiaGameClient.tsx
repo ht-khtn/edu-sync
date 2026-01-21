@@ -6,11 +6,11 @@ import { useActionState } from 'react'
 import { useFormStatus, createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { submitAnswerAction, triggerBuzzerAction, setGuestMediaControlAction, type ActionState } from '@/app/(olympia)/olympia/actions'
+import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { AnswersOverlay } from '@/components/olympia/shared/game/AnswersOverlay'
 import type { GameSessionPayload } from '@/types/olympia/game'
-import { RefreshCw, Bell, Play, Pause, Square } from 'lucide-react'
+import { RefreshCw, Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { OlympiaQuestionsPreloadOverlay } from '@/components/olympia/shared/game/OlympiaQuestionsPreloadOverlay'
 import {
@@ -379,47 +379,10 @@ export function OlympiaGameClient({
   const guestAudioRef = useRef<HTMLAudioElement | null>(null)
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null)
   const lastMediaCmdRef = useRef<{ audio: number; video: number }>({ audio: 0, video: 0 })
-
-  // Host intro controls
-  const [introType, setIntroType] = useState<'common' | 'round'>('common')
-  const [introRound, setIntroRound] = useState<number>(1)
-  const [, mediaAction] = useActionState(setGuestMediaControlAction, actionInitialState)
-  const playFormRef = useRef<HTMLFormElement | null>(null)
-  const pauseFormRef = useRef<HTMLFormElement | null>(null)
-  const stopFormRef = useRef<HTMLFormElement | null>(null)
-
-  const buildOlympiaMediaUrl = (filename: string) =>
-    `https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia-024/media/${filename}.mp4`
-
-  const preloadVideos = async (urls: string[]) => {
-    const timeoutMs = 2000
-    for (const url of urls) {
-      try {
-        await new Promise<void>((resolve) => {
-          const v = document.createElement('video')
-          let done = false
-          const finish = () => {
-            if (done) return
-            done = true
-            v.removeEventListener('canplay', finish)
-            v.removeEventListener('loadeddata', finish)
-            try {
-              v.src = ''
-            } catch { }
-            resolve()
-          }
-          v.preload = 'auto'
-          v.addEventListener('canplay', finish)
-          v.addEventListener('loadeddata', finish)
-          v.src = url
-          v.load()
-          window.setTimeout(finish, timeoutMs)
-        })
-      } catch {
-        // ignore preload errors
-      }
-    }
-  }
+  const mediaPlaylistRef = useRef<Record<'audio' | 'video', { srcs: string[]; idx: number } | null>>({
+    audio: null,
+    video: null,
+  })
 
   const lastFastestBuzzerRef = useRef<{ roundQuestionId: string | null; key: string | null }>({
     roundQuestionId: null,
@@ -1049,6 +1012,15 @@ export function OlympiaGameClient({
       const action = cmd.action
       const element = mediaType === 'audio' ? guestAudioRef.current : syncedVideoRef.current
 
+      let cmdSrcs: string[] | undefined
+      try {
+        const maybe = (cmd as unknown) as Record<string, unknown>
+        const val = maybe?.srcs
+        if (Array.isArray(val)) cmdSrcs = val.map((v) => String(v)).filter(Boolean)
+      } catch {
+        cmdSrcs = undefined
+      }
+
       // Nếu media element chưa mount xong, để effect chạy lại khi UI render xong.
       if (!element) {
         console.info('[Olympia][GuestMedia] element not mounted yet', {
@@ -1074,75 +1046,6 @@ export function OlympiaGameClient({
       })
 
       lastMediaCmdRef.current = { ...lastMediaCmdRef.current, [mediaType]: cmdId }
-
-      // If host provided src or playlist, apply to element before playing
-      const rawSrc = (cmd as unknown as { src?: string | string[] })?.src
-      if (rawSrc !== undefined) {
-        try {
-          if (rawSrc === '') {
-            // empty src -> treat as stop: pause and unload
-            try {
-              element.pause()
-            } catch { }
-            try {
-              element.src = ''
-              element.load()
-            } catch { }
-            console.info('[Olympia][GuestMedia] cleared src per command', { mediaType, cmdId })
-            return
-          }
-
-          // normalize to playlist array
-          let playlist: string[] | null = null
-          if (Array.isArray(rawSrc)) playlist = rawSrc as string[]
-          else if (typeof rawSrc === 'string') {
-            const s = rawSrc.trim()
-            if (s.startsWith('[')) {
-              try {
-                const parsed = JSON.parse(s)
-                if (Array.isArray(parsed)) playlist = parsed.map((v) => String(v))
-              } catch {
-                playlist = [s]
-              }
-            } else {
-              playlist = [s]
-            }
-          }
-
-          if (playlist && playlist.length > 0) {
-            // Play playlist sequentially
-            let idx = 0
-            const playIndex = async (i: number) => {
-              if (!element) return
-              try {
-                element.src = playlist![i]
-                try {
-                  element.load()
-                } catch { }
-                await waitForCanPlay(element)
-                await tryPlay(element, { restart: true })
-              } catch { }
-            }
-
-            const onEnded = () => {
-              if (!element) return
-              idx += 1
-              if (idx < (playlist?.length ?? 0)) {
-                void playIndex(idx)
-              } else {
-                element.removeEventListener('ended', onEnded)
-              }
-            }
-
-            element.addEventListener('ended', onEnded)
-            void playIndex(0)
-            console.info('[Olympia][GuestMedia] playing playlist', { mediaType, cmdId, playlist })
-            return
-          }
-        } catch (err) {
-          console.info('[Olympia][GuestMedia] src handling failed', { err })
-        }
-      }
 
       const waitForCanPlay = async (el: HTMLMediaElement) => {
         if (el.readyState >= 2) return
@@ -1212,6 +1115,74 @@ export function OlympiaGameClient({
       }
 
       try {
+        // Stop: unload and clear playlist
+        if (action === 'stop') {
+          try {
+            element.pause()
+          } catch { }
+          try {
+            // clear playlist state and unload src
+            mediaPlaylistRef.current[mediaType] = null
+            if ('onended' in element) (element as HTMLVideoElement).onended = null
+            try {
+              if (typeof (element as HTMLMediaElement).removeAttribute === 'function') {
+                (element as HTMLMediaElement).removeAttribute('src')
+              }
+            } catch { }
+            // Some browsers need load() to apply removal
+            try {
+              if (typeof (element as HTMLMediaElement).load === 'function') {
+                (element as HTMLMediaElement).load()
+              }
+            } catch { }
+          } catch { }
+          console.info('[Olympia][GuestMedia] applied stop', { mediaType, cmdId })
+          return
+        }
+
+        // If command includes srcs, handle sequential play for video
+        if (cmdSrcs && mediaType === 'video') {
+          // initialize playlist
+          mediaPlaylistRef.current[mediaType] = { srcs: cmdSrcs, idx: 0 }
+
+          const playIndex = async (i: number) => {
+            const playlist = mediaPlaylistRef.current[mediaType]
+            if (!playlist) return
+            const src = playlist.srcs[i]
+            if (!src) return
+            try {
+              // set source and attempt play
+              try { (element as HTMLVideoElement).src = src } catch { }
+              await waitForCanPlay(element)
+              if (action === 'restart') {
+                try { element.currentTime = 0 } catch { }
+              }
+              const p = element.play()
+              if (p && typeof (p as Promise<void>).then === 'function') await p
+            } catch {
+              // ignore autoplay block
+            }
+          }
+
+          // attach ended handler to advance playlist
+          if ('onended' in element) (element as HTMLVideoElement).onended = () => {
+            const playlist = mediaPlaylistRef.current[mediaType]
+            if (!playlist) return
+            playlist.idx += 1
+            if (playlist.idx >= playlist.srcs.length) {
+              mediaPlaylistRef.current[mediaType] = null
+              try { (element as HTMLVideoElement).onended = null } catch { }
+              return
+            }
+            void playIndex(playlist.idx)
+          }
+
+          // start first
+          void playIndex(0)
+          console.info('[Olympia][GuestMedia] applied play with srcs', { mediaType, cmdId, srcs: cmdSrcs })
+          return
+        }
+
         if (action === 'pause') {
           element.pause()
           console.info('[Olympia][GuestMedia] applied pause', {
@@ -1223,7 +1194,7 @@ export function OlympiaGameClient({
           return
         }
 
-        // play/restart
+        // play/restart (no srcs)
         await tryPlay(element, { restart: action === 'restart' })
         console.info('[Olympia][GuestMedia] applied play', {
           mediaType,
@@ -1804,6 +1775,11 @@ export function OlympiaGameClient({
                 <audio ref={guestAudioRef} src={audioUrl} preload="auto" className="hidden" aria-hidden="true" />
               ) : null}
 
+              {/* Hidden video element for host-driven media (intro, rules, etc.) */}
+              {isGuest ? (
+                <video ref={syncedVideoRef} preload="auto" className="hidden" aria-hidden="true" />
+              ) : null}
+
               {isMc && (answerText || noteText) ? (
                 <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
                   {answerText ? (
@@ -1863,124 +1839,6 @@ export function OlympiaGameClient({
             )}
 
             {/* Refresh button - footer right */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <p className="text-[11px] text-muted-foreground">Intro video</p>
-                <label className="flex items-center gap-1">
-                  <input
-                    type="radio"
-                    name="introType"
-                    checked={introType === 'common'}
-                    onChange={() => setIntroType('common')}
-                    className="accent-sky-400"
-                  />
-                  <span className="text-sm">Chung</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  <input
-                    type="radio"
-                    name="introType"
-                    checked={introType === 'round'}
-                    onChange={() => setIntroType('round')}
-                    className="accent-sky-400"
-                  />
-                  <span className="text-sm">Vòng</span>
-                </label>
-                {introType === 'round' ? (
-                  <select
-                    value={introRound}
-                    onChange={(e) => setIntroRound(Number(e.target.value))}
-                    className="bg-slate-900/70 border-slate-600 text-white text-sm px-2 py-1 rounded"
-                  >
-                    <option value={1}>Vòng 1</option>
-                    <option value={2}>Vòng 2</option>
-                    <option value={3}>Vòng 3</option>
-                    <option value={4}>Vòng 4</option>
-                  </select>
-                ) : null}
-
-                <div className="flex items-center gap-1 ml-2">
-                  <form
-                    ref={playFormRef}
-                    action={mediaAction}
-                    className="inline-flex"
-                    onSubmit={() => {
-                      /* noop - preloaded before submit */
-                    }}
-                  >
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="mediaType" value="video" />
-                    <input type="hidden" name="command" value="play" />
-                    <input type="hidden" name="src" value="" />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label="Play intro"
-                      onClick={async () => {
-                        const files: string[] = []
-                        if (introType === 'common') {
-                          files.push('O24_intro_comp')
-                        } else {
-                          files.push(`O24_intro_game${introRound}_comp`)
-                          files.push(`NVTOT_rules_O24_game${introRound}_comp`)
-                        }
-                        const urls = files.map((f) => buildOlympiaMediaUrl(f))
-                        await preloadVideos(urls)
-                        if (playFormRef.current) {
-                          const srcInput = playFormRef.current.querySelector<HTMLInputElement>('input[name="src"]')
-                          if (srcInput) srcInput.value = urls.length > 1 ? JSON.stringify(urls) : urls[0]
-                          playFormRef.current.requestSubmit()
-                        }
-                      }}
-                    >
-                      <Play className="w-4 h-4" />
-                    </Button>
-                  </form>
-
-                  <form ref={pauseFormRef} action={mediaAction} className="inline-flex">
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="mediaType" value="video" />
-                    <input type="hidden" name="command" value="pause" />
-                    <input type="hidden" name="src" value="" />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label="Pause intro"
-                      onClick={() => {
-                        pauseFormRef.current?.requestSubmit()
-                      }}
-                    >
-                      <Pause className="w-4 h-4" />
-                    </Button>
-                  </form>
-
-                  <form ref={stopFormRef} action={mediaAction} className="inline-flex">
-                    <input type="hidden" name="matchId" value={match.id} />
-                    <input type="hidden" name="mediaType" value="video" />
-                    <input type="hidden" name="command" value="pause" />
-                    <input type="hidden" name="src" value="" />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label="Stop intro"
-                      onClick={() => {
-                        // Stop: send pause + empty src to unload
-                        if (stopFormRef.current) {
-                          const srcInput = stopFormRef.current.querySelector<HTMLInputElement>('input[name="src"]')
-                          if (srcInput) srcInput.value = ''
-                          stopFormRef.current.requestSubmit()
-                        }
-                      }}
-                    >
-                      <Square className="w-4 h-4" />
-                    </Button>
-                  </form>
-                </div>
-              </div>
-            </div>
             <div className="absolute right-4 top-1/2 -translate-y-1/2">
               <Button
                 size="icon"

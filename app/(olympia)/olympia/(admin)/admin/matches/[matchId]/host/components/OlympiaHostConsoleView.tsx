@@ -726,6 +726,7 @@ export function OlympiaHostConsoleView(props: {
                                 endKhoiDongTurnAction={endKhoiDongTurnAction}
                                 startSessionTimerAutoAction={startSessionTimerAutoAction}
                                 expireSessionTimerAction={expireSessionTimerAction}
+                                setGuestMediaControlAction={setGuestMediaControlAction}
                                 allowTargetSelection={allowTargetSelection}
                                 currentRoundQuestionId={liveSession?.current_round_question_id ?? null}
                                 currentTargetPlayerId={currentRoundQuestion?.target_player_id ?? null}

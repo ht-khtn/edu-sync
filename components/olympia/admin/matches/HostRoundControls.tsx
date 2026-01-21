@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
-import { Timer } from 'lucide-react'
+import { Timer, Play, Pause, Square } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
 
@@ -304,6 +304,7 @@ type Props = {
 
   startSessionTimerAutoAction: HostControlAction
   expireSessionTimerAction: HostControlAction
+  setGuestMediaControlAction: HostControlAction
 }
 
 export function HostRoundControls({
@@ -331,6 +332,7 @@ export function HostRoundControls({
   endKhoiDongTurnAction,
   startSessionTimerAutoAction,
   expireSessionTimerAction,
+  setGuestMediaControlAction,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
@@ -373,6 +375,62 @@ export function HostRoundControls({
   const [endTurnState, endTurnAction, endTurnPending] = useActionState(endKhoiDongTurnAction, initialState)
   const [timerStartState, timerStartAction, timerStartPending] = useActionState(startSessionTimerAutoAction, initialState)
   const [timerExpireState, timerExpireAction, timerExpirePending] = useActionState(expireSessionTimerAction, initialState)
+  const [mediaState, mediaAction, mediaPending] = useActionState(setGuestMediaControlAction, initialState)
+
+  const bucketBase = 'https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia-024/media/'
+  const introCommon = useMemo(
+    () => `${bucketBase}O24_intro_comp.mp4`,
+    []
+  )
+  const introRounds = useMemo(
+    () => [1, 2, 3, 4].map((i) => `${bucketBase}O24_intro_game${i}_comp.mp4`),
+    []
+  )
+  const introRules = useMemo(
+    () => [1, 2, 3, 4].map((i) => `${bucketBase}NVTOT_rules_O24_game${i}_comp.mp4`),
+    []
+  )
+
+  const [introMode, setIntroMode] = useState<'common' | 'round'>('common')
+  const [selectedRound, setSelectedRound] = useState<number>(1)
+
+  const preloadVideos = useCallback(
+    async (urls: string[]) => {
+      const urlsToLoad = urls.filter((u) => Boolean(u))
+      const sessionKey = `intro_videos_preloaded_${matchId}`
+      const cached = sessionStorage.getItem(sessionKey)
+      if (cached === 'true') return
+
+      await Promise.allSettled(
+        urlsToLoad.map(
+          (url) =>
+            new Promise<void>((resolve) => {
+              const bump = () => void 0
+              const timeout = setTimeout(bump, 10000)
+              const video = document.createElement('video')
+              video.src = url
+              video.preload = 'auto'
+              video.addEventListener('canplay', () => {
+                clearTimeout(timeout)
+                resolve()
+              })
+              video.addEventListener('error', () => {
+                clearTimeout(timeout)
+                resolve()
+              })
+            })
+        )
+      )
+
+      sessionStorage.setItem(sessionKey, 'true')
+    },
+    [matchId]
+  )
+
+  useEffect(() => {
+    void preloadVideos([introCommon, ...introRounds, ...introRules])
+  }, [matchId, introCommon, introRounds, introRules, preloadVideos])
+
   const lastRoundToastRef = useRef<string | null>(null)
   const lastWaitingToastRef = useRef<string | null>(null)
   const lastScoreboardToastRef = useRef<string | null>(null)
@@ -382,6 +440,7 @@ export function HostRoundControls({
   const lastEndTurnToastRef = useRef<string | null>(null)
   const lastTimerStartToastRef = useRef<string | null>(null)
   const lastTimerExpireToastRef = useRef<string | null>(null)
+  const lastMediaToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
@@ -611,6 +670,19 @@ export function HostRoundControls({
       toast.success(message)
     }
   }, [endTurnState.error, endTurnState.success])
+
+  useEffect(() => {
+    const message = mediaState.error ?? mediaState.success
+    if (!message) return
+    if (lastMediaToastRef.current === message) return
+    lastMediaToastRef.current = message
+
+    if (mediaState.error) {
+      toast.error(message)
+    } else {
+      toast.success(message)
+    }
+  }, [mediaState.error, mediaState.success])
 
   // Chỉ update query params sau khi server action thành công (tránh navigation/refresh trước khi action chạy xong).
   useEffect(() => {
@@ -939,6 +1011,134 @@ export function HostRoundControls({
           ) : null}
         </form>
       ) : null}
+
+      <div className="grid gap-2">
+        <Label className="text-xs">Intro video</Label>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="introMode"
+              value="common"
+              checked={introMode === 'common'}
+              onChange={() => setIntroMode('common')}
+              disabled={mediaPending}
+            />
+            Intro chung
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="introMode"
+              value="round"
+              checked={introMode === 'round'}
+              onChange={() => setIntroMode('round')}
+              disabled={mediaPending}
+            />
+            Intro vòng
+          </label>
+        </div>
+
+        {introMode === 'round' && (
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedRound}
+              onChange={(e) => setSelectedRound(Number(e.target.value))}
+              className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+              disabled={mediaPending}
+              aria-label="Chọn vòng"
+            >
+              {[1, 2, 3, 4].map((i) => (
+                <option key={i} value={i}>
+                  Vòng {i}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const mediaSrcs =
+                introMode === 'common'
+                  ? [introCommon]
+                  : [introRounds[selectedRound - 1], introRules[selectedRound - 1]]
+              const formData = new FormData(e.currentTarget)
+              formData.set('matchId', matchId)
+              formData.set('mediaType', 'video')
+              formData.set('command', 'play')
+              formData.set('mediaSrcs', JSON.stringify(mediaSrcs.filter(Boolean)))
+              mediaAction(formData)
+            }}
+            className="flex-1"
+          >
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full"
+              disabled={mediaPending}
+              title="Phát intro"
+              aria-label="Phát intro"
+            >
+              <Play className="h-4 w-4 mr-1" />
+              Phát
+            </Button>
+          </form>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              formData.set('matchId', matchId)
+              formData.set('mediaType', 'video')
+              formData.set('command', 'pause')
+              mediaAction(formData)
+            }}
+            className="flex-1"
+          >
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full"
+              disabled={mediaPending}
+              title="Tạm dừng intro"
+              aria-label="Tạm dừng intro"
+            >
+              <Pause className="h-4 w-4 mr-1" />
+              Tạm dừng
+            </Button>
+          </form>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              formData.set('matchId', matchId)
+              formData.set('mediaType', 'video')
+              formData.set('command', 'stop')
+              mediaAction(formData)
+            }}
+            className="flex-1"
+          >
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full"
+              disabled={mediaPending}
+              title="Dừng intro"
+              aria-label="Dừng intro"
+            >
+              <Square className="h-4 w-4 mr-1" />
+              Dừng
+            </Button>
+          </form>
+        </div>
+      </div>
 
       <div className="grid gap-2">
         <Label className="text-xs">Giao diện hiện tại</Label>

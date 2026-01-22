@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -1204,20 +1205,12 @@ export async function triggerBuzzerAction(
       }
     }
 
-    const [{ data: playerRow, error: playerError }, { data: rq, error: rqError }] =
-      await Promise.all([
-        olympia
-          .from("match_players")
-          .select("id, is_disqualified_obstacle")
-          .eq("match_id", session.match_id)
-          .eq("participant_id", appUserId)
-          .maybeSingle(),
-        olympia
-          .from("round_questions")
-          .select("id, target_player_id, meta")
-          .eq("id", session.current_round_question_id)
-          .maybeSingle(),
-      ]);
+    const { data: playerRow, error: playerError } = await olympia
+      .from("match_players")
+      .select("id, is_disqualified_obstacle")
+      .eq("match_id", session.match_id)
+      .eq("participant_id", appUserId)
+      .maybeSingle();
 
     traceInfo({
       traceId,
@@ -1225,6 +1218,56 @@ export async function triggerBuzzerAction(
       event: "db.match_players",
       fields: { msSinceStart: Date.now() - startedAt },
     });
+
+    if (playerError) return { error: playerError.message };
+    if (!playerRow) return { error: "Bạn không thuộc trận này." };
+
+    // Nếu là thử chuông (trial): phát realtime event để guest nghe chuông nhưng không lưu DB.
+    if (isTrial) {
+      const now = new Date().toISOString();
+      const trialId = randomUUID();
+      const trialPayload: {
+        id: string;
+        roundQuestionId: string | null;
+        playerId: string;
+        eventType: string;
+        result: string;
+        occurredAt: string;
+      } = {
+        id: trialId,
+        roundQuestionId: null,
+        playerId: playerRow.id,
+        eventType: "trial",
+        result: "trial",
+        occurredAt: now,
+      };
+
+      const { error: emitErr } = await olympia.from("realtime_events").insert({
+        match_id: session.match_id,
+        session_id: session.id,
+        entity: "buzzer_events",
+        entity_id: trialId,
+        event_type: "INSERT",
+        payload: trialPayload,
+      });
+
+      traceInfo({
+        traceId,
+        action: "triggerBuzzerAction",
+        event: "db.realtime_events.insert_trial",
+        fields: { msSinceStart: Date.now() - startedAt },
+      });
+
+      if (emitErr) return { error: emitErr.message };
+      return { success: "Gửi tín hiệu thử chuông." };
+    }
+
+    const { data: rq, error: rqError } = await olympia
+      .from("round_questions")
+      .select("id, target_player_id, meta")
+      .eq("id", session.current_round_question_id)
+      .maybeSingle();
+
     traceInfo({
       traceId,
       action: "triggerBuzzerAction",
@@ -1232,11 +1275,8 @@ export async function triggerBuzzerAction(
       fields: { msSinceStart: Date.now() - startedAt },
     });
 
-    if (playerError) return { error: playerError.message };
-    if (!playerRow) return { error: "Bạn không thuộc trận này." };
-
     if (rqError) return { error: rqError.message };
-    if (!rq && !isTrial) return { error: "Không tìm thấy câu hỏi hiện tại." };
+    if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
 
     if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
       return { error: "Bạn đã bị loại quyền đoán CNV ở vòng này." };
@@ -1309,12 +1349,6 @@ export async function triggerBuzzerAction(
 
     if (firstBuzz && firstBuzz.player_id === playerRow.id && firstBuzz.result === "win") {
       return { success: "Bạn đã là người bấm nhanh nhất." };
-    }
-
-    // Nếu là thử chuông (trial): chỉ phản hồi ngay mà không insert vào DB
-    // (vì round_question_id là NOT NULL và không có câu khi ở màn chờ)
-    if (isTrial) {
-      return { success: "Gửi tín hiệu thử chuông." };
     }
 
     const isWinner = !firstBuzz;

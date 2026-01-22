@@ -1423,9 +1423,9 @@ export function OlympiaGameClient({
 
     lastFastestBuzzerRef.current = { roundQuestionId: currentQuestionId, key: fastestKey }
 
-    const player = fastest.player_id ? players.find((p) => p.id === fastest.player_id) ?? null : null
-    const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
-    toast.success(`${name} bấm nhanh nhất`)
+    // const player = fastest.player_id ? players.find((p) => p.id === fastest.player_id) ?? null : null
+    // const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
+    // toast.success(`${name} bấm nhanh nhất`)
   }, [currentQuestionBuzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
 
   // Guest: khi ở màn chờ và host bật chuông như 'thử chuông', hiển thị toast cho mỗi lượt bấm (không tính nhanh nhất)
@@ -1455,9 +1455,10 @@ export function OlympiaGameClient({
       const player = ev.player_id ? players.find((p) => p.id === ev.player_id) ?? null : null
       const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
       toast.info(`${name} bấm thử chuông`)
+      void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: roundType && isRoundTypeValue(roundType) ? roundType : undefined })
       lastTrialBuzzerRef.current.id = ev.id ?? lastTrialBuzzerRef.current.id
     }
-  }, [buzzerEvents, isGuest, isWaitingScreen, players, session.buzzer_enabled])
+  }, [buzzerEvents, emitSoundEvent, isGuest, isWaitingScreen, players, roundType, session.buzzer_enabled])
 
   return (
     <>

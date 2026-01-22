@@ -85,6 +85,7 @@ export interface GameEventPayload {
   durationMs?: number;
   questionOrderIndex?: number;
   veDichValue?: number;
+  questionCode?: string;
   [key: string]: unknown;
 }
 

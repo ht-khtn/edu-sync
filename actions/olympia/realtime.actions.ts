@@ -1311,18 +1311,9 @@ export async function triggerBuzzerAction(
       return { success: "Bạn đã là người bấm nhanh nhất." };
     }
 
-    // Nếu là thử chuông (trial): chỉ insert event với result='trial' và dừng ở đây (không set winner/target)
+    // Nếu là thử chuông (trial): chỉ phản hồi ngay mà không insert vào DB
+    // (vì round_question_id là NOT NULL và không có câu khi ở màn chờ)
     if (isTrial) {
-      const now = new Date().toISOString();
-      const { error: insertError } = await olympia.from("buzzer_events").insert({
-        match_id: session.match_id,
-        round_question_id: session.current_round_question_id ?? null,
-        player_id: playerRow.id,
-        event_type: eventType,
-        result: "trial",
-        occurred_at: now,
-      });
-      if (insertError) return { error: insertError.message };
       return { success: "Gửi tín hiệu thử chuông." };
     }
 

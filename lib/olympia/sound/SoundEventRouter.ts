@@ -82,7 +82,7 @@ export class SoundEventRouter {
 
     this.soundController.stopAll();
     this.clearTimeouts();
-
+    /*
     if (roundType === "vcnv") {
       await this.soundController.play("vcnv_mo_o_chu");
     }
@@ -90,6 +90,7 @@ export class SoundEventRouter {
     if (roundType === "ve_dich") {
       await this.soundController.play("vd_bat_dau_choi");
     }
+    */
   }
 
   private async handleQuestionRevealed(payload?: GameEventPayload): Promise<void> {
@@ -259,12 +260,24 @@ export class SoundEventRouter {
     await this.soundController.play("vd_ngoi_sao");
   }
 
-  private async handleSelectRow(): Promise<void> {
-    await this.soundController.play("vcnv_chon_hang_ngang", {
-      onEnd: () => {
-        this.soundController.play("vcnv_mo_cau_hoi");
-      },
-    });
+  private async handleSelectRow(payload?: GameEventPayload): Promise<void> {
+    // Kiểm tra xem câu có code CNV không (không phải VCNV-...)
+    const questionCode = typeof payload?.questionCode === "string" ? payload.questionCode : null;
+    const isCnvQuestion = questionCode
+      ? questionCode.startsWith("CNV") && !questionCode.startsWith("VCNV")
+      : false;
+
+    if (isCnvQuestion) {
+      // Câu CNV: phát âm thanh mở ô chữ
+      await this.soundController.play("vcnv_mo_o_chu");
+    } else {
+      // Câu VCNV khác: phát âm thanh chọn hàng + mở câu hỏi
+      await this.soundController.play("vcnv_chon_hang_ngang", {
+        onEnd: () => {
+          this.soundController.play("vcnv_mo_cau_hoi");
+        },
+      });
+    }
   }
 
   private async handleSelectCategory(): Promise<void> {

@@ -8,9 +8,10 @@ type Props = {
     open?: boolean;
     playIntro?: boolean;
     scoreboard?: Array<{ id?: string; name?: string; total?: number; seat?: number }>;
+    currentSeat?: number | null;
 };
 
-export default function OlympiaQuestionFrame({ children, open = true, scoreboard }: Props) {
+export default function OlympiaQuestionFrame({ children, open = true, scoreboard, currentSeat }: Props) {
     const arrowTransition = { duration: 1.3, ease: 'easeOut' } as const;
     const frameTransition = { duration: 0.9, ease: 'easeOut' } as const;
     const contentTransition = { duration: 0.8, ease: 'easeOut' } as const;
@@ -36,12 +37,12 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
     } as const;
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center z-[1000] pointer-events-none" aria-hidden={!open}>
+        <div className="fixed inset-0 flex items-center justify-center z-10 pointer-events-none" aria-hidden={!open}>
             <div className="w-[92vw] h-[85vh] flex items-center justify-center pointer-events-auto relative">
 
                 {/* Left Chevrons: outer cyan then inner dark, adjacent (no overlap), inner edge touches frame edge */}
                 <motion.div
-                    className="absolute left-0 top-0 h-full w-[112px] flex items-center justify-end z-[1001] pointer-events-none"
+                    className="absolute left-0 top-0 h-full w-[112px] flex items-center justify-end z-20 pointer-events-none"
                     initial="initial"
                     animate={open ? 'animate' : 'initial'}
                     variants={leftVariant}
@@ -86,12 +87,13 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
                                     return parts.slice(-2).join(' ')
                                 })() : '—'
                                 const total = p && typeof p.total === 'number' ? p.total : 0
+                                const shouldShowGradient = currentSeat === i + 1
                                 return (
                                     <div
                                         key={p?.id ?? i}
                                         className={
                                             'flex justify-between items-center px-4 min-w-0 ' +
-                                            (i === 0 ? 'bg-gradient-to-r from-blue-900 via-pink-600 to-red-600' : 'border-l border-white/10')
+                                            (shouldShowGradient ? 'bg-gradient-to-r from-blue-900 via-pink-600 to-red-600' : 'border-l border-white/10')
                                         }
                                     >
                                         <span className="truncate">{`${i + 1}. ${name}`}</span>
@@ -118,7 +120,7 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
 
                 {/* Right Chevrons */}
                 <motion.div
-                    className="absolute right-0 top-0 h-full w-[112px] flex items-center justify-start z-[1001] pointer-events-none"
+                    className="absolute right-0 top-0 h-full w-[112px] flex items-center justify-start z-20 pointer-events-none"
                     initial="initial"
                     animate={open ? 'animate' : 'initial'}
                     variants={rightVariant}

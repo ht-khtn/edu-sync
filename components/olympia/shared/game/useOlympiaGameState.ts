@@ -413,6 +413,38 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     }
   }, []);
 
+  const refreshCurrentRoundQuestion = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
+    const currentRqId = sessionRef.current.current_round_question_id;
+    if (!currentRqId) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+
+    try {
+      const olympia = supabase.schema("olympia");
+      const { data: rqRow, error } = await olympia
+        .from("round_questions")
+        .select(
+          "id, match_round_id, question_id, question_set_item_id, order_index, target_player_id, meta, question_text, answer_text, note, questions(id, code, category, question_text, answer_text, note, image_url, audio_url), question_set_items(id, code, category, question_text, answer_text, note, image_url, audio_url)"
+        )
+        .eq("id", currentRqId)
+        .maybeSingle();
+
+      if (error || !rqRow) return;
+
+      setRoundQuestions((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex((row) => row.id === rqRow.id);
+        const normalized = rqRow as RoundQuestionRow;
+        if (idx === -1) next.push(normalized);
+        else next[idx] = { ...next[idx], ...normalized };
+        return next;
+      });
+    } catch {
+      // im lặng: polling nhẹ, không cần spam log
+    }
+  }, []);
+
   const fetchSnapshotOnce = useCallback(async () => {
     const supabase = supabaseRef.current;
     if (!supabase) return;
@@ -450,6 +482,16 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
       const currentRqId = (nextSession?.current_round_question_id ??
         sessionRef.current.current_round_question_id) as string | null | undefined;
+
+      // Fetch toàn bộ round_questions để cập nhật target_player_id (khi host chọn thí sinh)
+      const { data: allRoundQuestions, error: allRqError } = await olympia
+        .from("round_questions")
+        .select(
+          "id, match_round_id, target_player_id, meta, order_index, question_id, question_set_item_id, question_text, answer_text, note"
+        );
+      if (!allRqError && allRoundQuestions) {
+        setRoundQuestions(allRoundQuestions as RoundQuestionRow[]);
+      }
 
       if (currentRqId) {
         const [{ data: rqRow }, { data: buzzerRows }] = await Promise.all([
@@ -866,6 +908,17 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       void fetchAnswersForQuestion(rqId);
     });
   }, [session.current_round_question_id, fetchAnswersForQuestion]);
+
+  // Poll nhẹ để cập nhật target_player_id của câu hiện tại (khi host chọn thí sinh)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const intervalId = window.setInterval(() => {
+      void refreshCurrentRoundQuestion();
+    }, 2000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshCurrentRoundQuestion]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

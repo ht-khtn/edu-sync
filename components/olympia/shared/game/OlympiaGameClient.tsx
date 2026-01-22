@@ -521,11 +521,89 @@ export function OlympiaGameClient({
   const isViewerTarget = Boolean(viewerPlayer?.id && targetPlayerId && viewerPlayer.id === targetPlayerId)
   const isViewerDisqualifiedObstacle = roundType === 'vcnv' && viewerPlayer?.is_disqualified_obstacle === true
 
+  const effectiveBuzzerWinnerId = useMemo(() => {
+    if (!currentQuestionId) return null
+    // Chỉ lấy buzzer từ currentQuestionBuzzerEvents nếu events này thực sự match với current question
+    // (filter bằng round_question_id trong useMemo của currentQuestionBuzzerEvents)
+    const winnerBuzzId =
+      currentQuestionBuzzerEvents.length > 0 &&
+        currentQuestionBuzzerEvents[0]?.round_question_id === currentQuestionId
+        ? currentQuestionBuzzerEvents
+          .find((e) => (e.event_type ?? 'buzz') === (isStealWindow ? 'steal' : 'buzz') && e.result === 'win')
+          ?.player_id ?? null
+        : null
+    const optimisticWinnerId =
+      optimisticBuzzerWinner &&
+        optimisticBuzzerWinner.roundQuestionId === currentQuestionId &&
+        optimisticBuzzerWinner.eventType === (isStealWindow ? 'steal' : 'buzz')
+        ? optimisticBuzzerWinner.playerId
+        : null
+    return winnerBuzzId ?? optimisticWinnerId ?? null
+  }, [currentQuestionBuzzerEvents, currentQuestionId, isStealWindow, optimisticBuzzerWinner])
+
+  const khoiDongSeatFromCode = useMemo(() => {
+    if (roundType !== 'khoi_dong') return null
+    if (!questionCode) return null
+    const trimmed = questionCode.trim().toUpperCase()
+    if (!trimmed) return null
+    if (trimmed.startsWith('DKA-')) return null
+    const match = /^KD(\d+)-/i.exec(trimmed)
+    if (!match) return null
+    const seat = Number(match[1])
+    return Number.isFinite(seat) ? seat : null
+  }, [questionCode, roundType])
+
+  const veDichSeatFromOrderIndex = useMemo(() => {
+    if (roundType !== 've_dich') return null
+    const oi = currentRoundQuestion?.order_index
+    const n = typeof oi === 'number' ? oi : Number(oi)
+    if (!Number.isFinite(n)) return null
+    if (n < 1 || n > 12) return null
+    const seat = Math.floor((n - 1) / 3) + 1
+    return seat >= 1 && seat <= 4 ? seat : null
+  }, [currentRoundQuestion?.order_index, roundType])
+
+  const currentHighlightSeat = useMemo(() => {
+    if (!currentQuestionId) return null
+
+    // Ưu tiên steal/buzzer winner trong cửa sổ cướp chuông.
+    if (isStealWindow && effectiveBuzzerWinnerId) {
+      return players.find((p) => p.id === effectiveBuzzerWinnerId)?.seat_index ?? null
+    }
+
+    // Ưu tiên target_player_id nếu đã được set.
+    if (targetPlayerId) {
+      return players.find((p) => p.id === targetPlayerId)?.seat_index ?? null
+    }
+
+    // Khởi động: fallback theo code KD-<seat> (cá nhân). Nếu là DKA (chung) thì dùng buzzer winner nếu có.
+    if (roundType === 'khoi_dong') {
+      if (khoiDongSeatFromCode) return khoiDongSeatFromCode
+      // Chỉ dùng buzzer winner nếu currentQuestionBuzzerEvents không rỗng và match current question
+      if (effectiveBuzzerWinnerId && currentQuestionBuzzerEvents.length > 0 && currentQuestionBuzzerEvents[0]?.round_question_id === currentQuestionId) {
+        return players.find((p) => p.id === effectiveBuzzerWinnerId)?.seat_index ?? null
+      }
+      return null
+    }
+
+    // Về đích: fallback theo order_index (ghế của slot). Nếu đang cướp chuông thì đã xử lý ở trên.
+    if (roundType === 've_dich') {
+      return veDichSeatFromOrderIndex
+    }
+
+    // Các vòng bấm chuông khác: ưu tiên buzzer winner nếu có.
+    // Chỉ dùng buzzer winner nếu currentQuestionBuzzerEvents không rỗng và match current question
+    if (effectiveBuzzerWinnerId && currentQuestionBuzzerEvents.length > 0 && currentQuestionBuzzerEvents[0]?.round_question_id === currentQuestionId) {
+      return players.find((p) => p.id === effectiveBuzzerWinnerId)?.seat_index ?? null
+    }
+    return null
+  }, [currentQuestionBuzzerEvents, currentQuestionId, effectiveBuzzerWinnerId, isStealWindow, khoiDongSeatFromCode, players, roundType, targetPlayerId, veDichSeatFromOrderIndex])
+
   // ve_dich_value/star_uses vẫn được giữ trong state để dùng ở giai đoạn sau;
   // UI game hiện tại chưa hiển thị các badge này.
 
   const stealWinnerPlayerId =
-    isStealWindow && currentQuestionId
+    isStealWindow && currentQuestionId && currentQuestionBuzzerEvents.length > 0 && currentQuestionBuzzerEvents[0]?.round_question_id === currentQuestionId
       ? (currentQuestionBuzzerEvents
         .find((e) => (e.event_type ?? 'steal') === 'steal' && e.result === 'win')
         ?.player_id ?? null)
@@ -907,10 +985,10 @@ export function OlympiaGameClient({
     const nextId = currentQuestionId ?? null
     const prevId = prevQuestionIdRef.current
     if (nextId && nextId !== prevId) {
-      void emitSoundEvent(GameEvent.SELECT_ROW, { roundType: resolvedRoundType })
+      void emitSoundEvent(GameEvent.SELECT_ROW, { roundType: resolvedRoundType, questionCode: questionCode ?? undefined })
     }
     prevQuestionIdRef.current = nextId
-  }, [currentQuestionId, emitSoundEvent, isGuest, resolvedRoundType])
+  }, [currentQuestionId, emitSoundEvent, isGuest, questionCode, resolvedRoundType])
 
   useEffect(() => {
     if (!isGuest || resolvedRoundType !== 'khoi_dong') {
@@ -1848,7 +1926,11 @@ export function OlympiaGameClient({
               ) : null}
 
               {(isMc || questionState !== 'hidden') ? (
-                <OlympiaQuestionFrame open={!showAnswersOverlay && !showBigScoreboard} scoreboard={scoreboard}>
+                <OlympiaQuestionFrame
+                  open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
+                  scoreboard={scoreboard}
+                  currentSeat={currentHighlightSeat}
+                >
                   {showQuestionText ? (
                     <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
                       {questionText?.trim() ? questionText : '—'}

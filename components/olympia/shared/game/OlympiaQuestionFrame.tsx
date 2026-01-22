@@ -27,7 +27,7 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
 
     const frameVariant = {
         initial: { scaleX: 0 },
-        animate: { scaleX: 1, transition: { ...frameTransition, delay: 1.3 } },
+        animate: { scaleX: 1, transition: { ...frameTransition, delay: 0.4 } },
     } as const;
 
     const contentVariant = {

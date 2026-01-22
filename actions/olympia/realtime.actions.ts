@@ -1186,13 +1186,22 @@ export async function triggerBuzzerAction(
       return { error: "Host đang tắt bấm chuông." };
     }
     if (!session.match_id) return { error: "Phòng chưa gắn trận thi." };
-    if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
+    // Hỗ trợ 'trial' (thử chuông): client gửi thêm field 'trial'=1 để thử chuông trên màn chờ.
+    const rawTrial = formData.get("trial");
+    const isTrial =
+      String(rawTrial ?? "") === "1" || String(rawTrial ?? "").toLowerCase() === "true";
 
     const isVeDichStealWindow =
       session.current_round_type === "ve_dich" && session.question_state === "answer_revealed";
-    const canBuzzNow = session.question_state === "showing" || isVeDichStealWindow;
-    if (!canBuzzNow) {
-      return { error: "Host chưa mở câu hỏi/cửa cướp để nhận buzzer." };
+
+    if (!session.current_round_question_id && !isTrial)
+      return { error: "Chưa có câu hỏi đang hiển thị." };
+
+    if (!isTrial) {
+      const canBuzzNow = session.question_state === "showing" || isVeDichStealWindow;
+      if (!canBuzzNow) {
+        return { error: "Host chưa mở câu hỏi/cửa cướp để nhận buzzer." };
+      }
     }
 
     const [{ data: playerRow, error: playerError }, { data: rq, error: rqError }] =
@@ -1227,7 +1236,7 @@ export async function triggerBuzzerAction(
     if (!playerRow) return { error: "Bạn không thuộc trận này." };
 
     if (rqError) return { error: rqError.message };
-    if (!rq) return { error: "Không tìm thấy câu hỏi hiện tại." };
+    if (!rq && !isTrial) return { error: "Không tìm thấy câu hỏi hiện tại." };
 
     if (session.current_round_type === "vcnv" && playerRow.is_disqualified_obstacle === true) {
       return { error: "Bạn đã bị loại quyền đoán CNV ở vòng này." };
@@ -1241,7 +1250,7 @@ export async function triggerBuzzerAction(
 
     if (rq?.target_player_id || inferredKhoiDong?.kind === "personal") {
       if (session.current_round_type === "ve_dich" && isVeDichStealWindow) {
-        if (rq.target_player_id && rq.target_player_id === playerRow.id) {
+        if (rq && rq.target_player_id && rq.target_player_id === playerRow.id) {
           return { error: "Bạn là người đang trả lời chính, không thể bấm cướp." };
         }
       } else {
@@ -1300,6 +1309,21 @@ export async function triggerBuzzerAction(
 
     if (firstBuzz && firstBuzz.player_id === playerRow.id && firstBuzz.result === "win") {
       return { success: "Bạn đã là người bấm nhanh nhất." };
+    }
+
+    // Nếu là thử chuông (trial): chỉ insert event với result='trial' và dừng ở đây (không set winner/target)
+    if (isTrial) {
+      const now = new Date().toISOString();
+      const { error: insertError } = await olympia.from("buzzer_events").insert({
+        match_id: session.match_id,
+        round_question_id: session.current_round_question_id ?? null,
+        player_id: playerRow.id,
+        event_type: eventType,
+        result: "trial",
+        occurred_at: now,
+      });
+      if (insertError) return { error: insertError.message };
+      return { success: "Gửi tín hiệu thử chuông." };
     }
 
     const isWinner = !firstBuzz;

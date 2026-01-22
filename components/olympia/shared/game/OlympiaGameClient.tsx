@@ -404,6 +404,7 @@ export function OlympiaGameClient({
     roundQuestionId: null,
     key: null,
   })
+  const lastTrialBuzzerRef = useRef<{ id: string | null }>({ id: null })
   const lastBuzzerSoundRef = useRef<string | null>(null)
   const prevScoreboardRef = useRef<boolean | null>(null)
   const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
@@ -1349,6 +1350,37 @@ export function OlympiaGameClient({
     toast.success(`${name} bấm nhanh nhất`)
   }, [currentQuestionBuzzerEvents, currentQuestionId, isGuest, players, session.buzzer_enabled])
 
+  // Guest: khi ở màn chờ và host bật chuông như 'thử chuông', hiển thị toast cho mỗi lượt bấm (không tính nhanh nhất)
+  useEffect(() => {
+    if (!isGuest) return
+    if (!isWaitingScreen) return
+    if (session.buzzer_enabled === false) return
+
+    const trialEvents = buzzerEvents.filter((e) => e.result === 'trial' && e.player_id)
+    if (trialEvents.length === 0) return
+
+    const sorted = [...trialEvents].sort((a, b) => {
+      const ta = a.occurred_at ? Date.parse(a.occurred_at) : 0
+      const tb = b.occurred_at ? Date.parse(b.occurred_at) : 0
+      return ta - tb
+    })
+
+    const lastSeenId = lastTrialBuzzerRef.current.id
+    let startIndex = 0
+    if (lastSeenId) {
+      const idx = sorted.findIndex((s) => s.id === lastSeenId)
+      if (idx >= 0) startIndex = idx + 1
+    }
+
+    for (let i = startIndex; i < sorted.length; i++) {
+      const ev = sorted[i]
+      const player = ev.player_id ? players.find((p) => p.id === ev.player_id) ?? null : null
+      const name = player?.display_name ?? (player?.seat_index != null ? `Ghế ${player.seat_index}` : 'Một thí sinh')
+      toast.info(`${name} bấm thử chuông`)
+      lastTrialBuzzerRef.current.id = ev.id ?? lastTrialBuzzerRef.current.id
+    }
+  }, [buzzerEvents, isGuest, isWaitingScreen, players, session.buzzer_enabled])
+
   return (
     <>
       <OlympiaQuestionsPreloadOverlay
@@ -1965,6 +1997,7 @@ export function OlympiaGameClient({
           <div className="fixed bottom-24 right-4 z-50">
             <form action={buzzerAction}>
               <input type="hidden" name="sessionId" value={session.id} />
+              {isWaitingScreen ? <input type="hidden" name="trial" value="1" /> : null}
               <Button
                 type="submit"
                 disabled={disableBuzz}

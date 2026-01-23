@@ -1421,6 +1421,7 @@ export async function selectVeDichPackageAction(
     const olympia = supabase.schema("olympia");
 
     const rawValues = formData.getAll("values");
+    const isEditingFromForm = formData.get("isEditing") === "1";
 
     const parsed = veDichPackageSchema.safeParse({
       matchId: formData.get("matchId"),
@@ -1476,12 +1477,35 @@ export async function selectVeDichPackageAction(
       .sort((a, b) => ((a.order_index ?? 0) as number) - ((b.order_index ?? 0) as number))
       .slice(0, 3);
 
-    const alreadyConfirmed = slots.some((rq) => {
+    // Kiểm tra xem có đang chỉnh sửa không (từ form hoặc từ DB)
+    const isEditingFromDB = slots.some((rq) => {
       const qsi = (rq as unknown as { question_set_item_id?: string | null }).question_set_item_id;
       return Boolean(qsi);
     });
-    if (alreadyConfirmed) {
-      return { error: `Ghế ${seat} đã chốt gói Về đích rồi.` };
+    const isEditing = isEditingFromForm || isEditingFromDB;
+
+    // Nếu đang chỉnh sửa, lấy giá trị cũ để so sánh
+    const oldValues: Array<20 | 30 | null> = slots.map((rq) => {
+      const meta = (rq as unknown as { meta?: unknown }).meta;
+      const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
+      const raw = metaObj.ve_dich_value;
+      const v = typeof raw === "number" ? raw : raw ? Number(raw) : Number.NaN;
+      return v === 20 || v === 30 ? v : null;
+    });
+
+    // Kiểm tra xem có thay đổi giá trị không
+    const packageValues = parsed.data.values as VeDichPackageValue[];
+    const valuesChanged = isEditing && packageValues.some((v, idx) => v !== oldValues[idx]);
+
+    // Nếu đang chỉnh sửa và có thay đổi giá trị, cần reset câu hỏi cũ
+    // Lưu lại question_set_item_id cũ để loại bỏ khỏi pool
+    const oldQuestionSetItemIds = new Set<string>();
+    if (valuesChanged) {
+      for (const rq of slots) {
+        const qsi = (rq as unknown as { question_set_item_id?: string | null })
+          .question_set_item_id;
+        if (qsi) oldQuestionSetItemIds.add(qsi);
+      }
     }
 
     const { data: matchSets, error: matchSetsErr } = await olympia
@@ -1544,8 +1568,11 @@ export async function selectVeDichPackageAction(
       const id =
         (r as unknown as { question_set_item_id?: string | null }).question_set_item_id ?? null;
       if (id) {
-        used.add(id);
-        usedIds.push(id);
+        // Nếu đang chỉnh sửa và đổi giá trị, loại bỏ câu hỏi cũ của thí sinh này khỏi used
+        if (!valuesChanged || !oldQuestionSetItemIds.has(id)) {
+          used.add(id);
+          usedIds.push(id);
+        }
       }
     }
 
@@ -1584,9 +1611,8 @@ export async function selectVeDichPackageAction(
       return chosen;
     };
 
-    const values = parsed.data.values as VeDichPackageValue[];
     const chosenItems: PoolItem[] = [];
-    for (const v of values) {
+    for (const v of packageValues) {
       const item = pickOne(v === 20 ? normalizedPool20 : normalizedPool30);
       if (!item) {
         return {
@@ -1603,7 +1629,7 @@ export async function selectVeDichPackageAction(
       const meta = (rq as unknown as { meta?: unknown }).meta;
       const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
       const item = chosenItems[idx];
-      const nextMeta = { ...metaObj, ve_dich_value: values[idx], code: item.code };
+      const nextMeta = { ...metaObj, ve_dich_value: packageValues[idx], code: item.code };
       return olympia
         .from("round_questions")
         .update({
@@ -1621,13 +1647,30 @@ export async function selectVeDichPackageAction(
     const firstError = results.find((r) => r.error)?.error;
     if (firstError) return { error: firstError.message };
 
+    // Nếu đang chỉnh sửa và đổi giá trị, xóa answers cũ của các câu hỏi này
+    if (valuesChanged) {
+      const slotIds = slots.map((rq) => (rq as unknown as { id: string }).id);
+      const { error: deleteAnswersErr } = await olympia
+        .from("answers")
+        .delete()
+        .in("round_question_id", slotIds)
+        .eq("player_id", player.id);
+      if (deleteAnswersErr) {
+        console.warn(
+          "[selectVeDichPackageAction] Không thể xóa answers cũ:",
+          deleteAnswersErr.message
+        );
+      }
+    }
+
     revalidatePath("/olympia/client");
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);
       revalidatePath(`/olympia/client/guest/${session.join_code}`);
     }
-    const summary = values.join("-");
-    return { success: `Đã chốt gói Về đích ${summary} cho Ghế ${seat} (3 câu).` };
+    const summary = packageValues.join("-");
+    const action = isEditing ? (valuesChanged ? "đã chỉnh sửa" : "đã xác nhận lại") : "đã chốt";
+    return { success: `${action} gói Về đích ${summary} cho Ghế ${seat} (3 câu).` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể chọn gói Về đích." };
   }
@@ -1642,6 +1685,72 @@ export async function selectVeDichPackageClientAction(
   formData: FormData
 ): Promise<ActionState> {
   return await selectVeDichPackageAction({}, formData);
+}
+
+export async function resetAllVeDichPackagesAction(
+  _: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  try {
+    const { supabase } = await requireOlympiaAdminContext();
+    const olympia = supabase.schema("olympia");
+
+    const matchIdRaw = formData.get("matchId");
+    if (!matchIdRaw || typeof matchIdRaw !== "string") {
+      return { error: "Thiếu matchId." };
+    }
+
+    const { data: session, error: sessionError } = await olympia
+      .from("live_sessions")
+      .select("id, status, match_id, current_round_type, current_round_id")
+      .eq("match_id", matchIdRaw)
+      .eq("status", "running")
+      .maybeSingle();
+    if (sessionError) return { error: sessionError.message };
+    if (!session) return { error: "Trận chưa mở phòng live (running)." };
+    if (session.current_round_type !== "ve_dich") return { error: "Hiện không ở vòng Về đích." };
+    if (!session.current_round_id) return { error: "Chưa có round Về đích hiện tại." };
+
+    // Reset tất cả round_questions của vòng về đích: xóa question_set_item_id, target_player_id
+    // và reset ve_dich_value trong meta
+    const { data: allRqs, error: rqsErr } = await olympia
+      .from("round_questions")
+      .select("id, meta")
+      .eq("match_round_id", session.current_round_id);
+    if (rqsErr) return { error: rqsErr.message };
+
+    const updates = (allRqs ?? []).map((rq) => {
+      const meta = (rq as unknown as { meta?: unknown }).meta;
+      const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
+      const nextMeta = { ...metaObj };
+      delete nextMeta.ve_dich_value;
+      delete nextMeta.code;
+
+      return olympia
+        .from("round_questions")
+        .update({
+          target_player_id: null,
+          meta: nextMeta,
+          question_set_item_id: null,
+          question_text: null,
+          answer_text: null,
+          note: null,
+        })
+        .eq("id", (rq as unknown as { id: string }).id);
+    });
+
+    const results = await Promise.all(updates);
+    const firstError = results.find((r) => r.error)?.error;
+    if (firstError) return { error: firstError.message };
+
+    return { success: "Đã reset gói Về đích cho tất cả thí sinh." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Không thể reset gói Về đích." };
+  }
+}
+
+export async function resetAllVeDichPackagesFormAction(formData: FormData): Promise<void> {
+  await resetAllVeDichPackagesAction({}, formData);
 }
 
 export async function setGuestMediaControlAction(

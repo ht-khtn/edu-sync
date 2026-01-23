@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
-import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Eye, Loader2, Sparkles } from 'lucide-react'
 
 type PlayerSummary = {
     seat_index: number | null
@@ -78,6 +78,9 @@ type Props = {
     winnerBuzz: WinnerBuzzRow | null
     setCurrentQuestionFormAction: (formData: FormData) => Promise<void>
     setGuestMediaControlAction: HostControlAction
+    toggleStarUseFormAction?: (formData: FormData) => Promise<void>
+    isStarEnabled?: boolean
+    currentTargetPlayerId?: string | null
 }
 
 function normalizePlayerSummary(value: PlayerSummary | PlayerSummary[] | null | undefined): PlayerSummary | null {
@@ -252,6 +255,9 @@ export function HostQuestionPreviewCard(props: Props) {
         winnerBuzz,
         setCurrentQuestionFormAction,
         setGuestMediaControlAction,
+        toggleStarUseFormAction,
+        isStarEnabled,
+        currentTargetPlayerId,
     } = props
 
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
@@ -638,6 +644,37 @@ export function HostQuestionPreviewCard(props: Props) {
                             {previewNoteText ? (
                                 <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">Ghi chú: {previewNoteText}</p>
                             ) : null}
+                        </div>
+                    ) : null}
+
+                    {liveSession?.current_round_type === 've_dich' && toggleStarUseFormAction && previewRoundQuestion ? (
+                        <div className="mt-4 rounded-md border bg-amber-50 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <div>
+                                    <p className="text-xs font-semibold text-amber-900">Ngôi sao hy vọng</p>
+                                    <p className="mt-1 text-xs text-amber-700">
+                                        {isStarEnabled ? 'Đang bật: Nhân đôi điểm đúng, trừ điểm sai' : 'Tắt'}
+                                    </p>
+                                </div>
+                                <form action={toggleStarUseFormAction}>
+                                    <input type="hidden" name="matchId" value={matchId} />
+                                    <input type="hidden" name="roundQuestionId" value={previewRoundQuestion.id} />
+                                    <input type="hidden" name="playerId" value={currentTargetPlayerId ?? ''} />
+                                    {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        variant={isStarEnabled ? 'default' : 'outline'}
+                                        disabled={!currentTargetPlayerId}
+                                        title={isStarEnabled ? 'Tắt ngôi sao hy vọng' : 'Bật ngôi sao hy vọng'}
+                                        aria-label={isStarEnabled ? 'Tắt ngôi sao hy vọng' : 'Bật ngôi sao hy vọng'}
+                                        className="h-8"
+                                    >
+                                        <Sparkles className={`h-4 w-4 mr-1 ${isStarEnabled ? '' : 'opacity-50'}`} />
+                                        {isStarEnabled ? 'Star: Bật' : 'Star: Tắt'}
+                                    </Button>
+                                </form>
+                            </div>
                         </div>
                     ) : null}
 

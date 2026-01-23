@@ -13,7 +13,7 @@ import { HostQuickScoreSection } from '@/components/olympia/admin/matches/HostQu
 import { HostAnswersTabs } from '@/components/olympia/admin/matches/HostAnswersTabs'
 import { VeDichPackageFormComponent } from '@/components/olympia/admin/matches/VeDichPackageFormComponent'
 import { VeDichPackageListener } from '@/components/olympia/admin/matches/VeDichPackageListener'
-import { ArrowLeft, Check, Sparkles, Timer, Undo2, X } from 'lucide-react'
+import { ArrowLeft, Check, Undo2, X } from 'lucide-react'
 import {
     autoScoreTangTocFormAction,
     confirmDecisionAndAdvanceFormAction,
@@ -22,7 +22,6 @@ import {
     confirmObstacleGuessFormAction,
     confirmVcnvRowDecisionFormAction,
     confirmVeDichMainDecisionFormAction,
-    confirmVeDichStealDecisionFormAction,
     setCurrentQuestionFormAction,
     startSessionTimerFormAction,
     startSessionTimerAutoAction,
@@ -381,6 +380,9 @@ export function OlympiaHostConsoleView(props: {
                         winnerBuzz={winnerBuzz}
                         setCurrentQuestionFormAction={setCurrentQuestionFormAction}
                         setGuestMediaControlAction={setGuestMediaControlAction}
+                        toggleStarUseFormAction={toggleStarUseFormAction}
+                        isStarEnabled={isStarEnabled}
+                        currentTargetPlayerId={currentRoundQuestion?.target_player_id ?? null}
                     />
 
                     {isVcnv && obstacle ? (
@@ -773,53 +775,7 @@ export function OlympiaHostConsoleView(props: {
                                                 )}
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="flex items-center text-xs text-muted-foreground">Giá trị 20/30 được chốt theo gói (3 dropdown).</div>
 
-                                                <form action={toggleStarUseFormAction} className="flex justify-end">
-                                                    <input type="hidden" name="matchId" value={match.id} />
-                                                    <input type="hidden" name="roundQuestionId" value={liveSession?.current_round_question_id ?? ''} />
-                                                    <input type="hidden" name="playerId" value={currentRoundQuestion?.target_player_id ?? ''} />
-                                                    {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
-                                                    <Button
-                                                        type="submit"
-                                                        size="icon-sm"
-                                                        variant={isStarEnabled ? 'default' : 'outline'}
-                                                        disabled={!liveSession?.current_round_question_id || !currentRoundQuestion?.target_player_id}
-                                                        title={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
-                                                        aria-label={isStarEnabled ? 'Tắt Star' : 'Bật Star'}
-                                                    >
-                                                        <Sparkles />
-                                                    </Button>
-                                                </form>
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-2">
-                                                <form action={confirmVeDichMainDecisionFormAction} className="flex gap-1">
-                                                    <input type="hidden" name="sessionId" value={liveSession!.id} />
-                                                    <Button type="submit" size="icon-sm" name="decision" value="correct" title="Chính: Đúng" aria-label="Chính: Đúng">
-                                                        <Check />
-                                                    </Button>
-                                                    <Button type="submit" size="icon-sm" name="decision" value="wrong" variant="outline" title="Chính: Sai" aria-label="Chính: Sai">
-                                                        <X />
-                                                    </Button>
-                                                    <Button type="submit" size="icon-sm" name="decision" value="timeout" variant="outline" title="Chính: Hết giờ" aria-label="Chính: Hết giờ">
-                                                        <Timer />
-                                                    </Button>
-                                                </form>
-                                                <form action={confirmVeDichStealDecisionFormAction} className="flex gap-1">
-                                                    <input type="hidden" name="sessionId" value={liveSession!.id} />
-                                                    <Button type="submit" size="icon-sm" name="decision" value="correct" title="Cướp: Đúng" aria-label="Cướp: Đúng" variant="secondary">
-                                                        <Check />
-                                                    </Button>
-                                                    <Button type="submit" size="icon-sm" name="decision" value="wrong" title="Cướp: Sai (phạt 1/2)" aria-label="Cướp: Sai (phạt 1/2)" variant="outline">
-                                                        <X />
-                                                    </Button>
-                                                    <Button type="submit" size="icon-sm" name="decision" value="timeout" title="Cướp: Hết giờ" aria-label="Cướp: Hết giờ" variant="outline">
-                                                        <Timer />
-                                                    </Button>
-                                                </form>
-                                            </div>
                                         </div>
                                     ) : null}
 

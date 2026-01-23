@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
       const nextMeta = { ...metaObj };
       delete nextMeta.ve_dich_value;
-      delete nextMeta.code;
+      // Giữ lại code (để hiện thị câu hỏi), chỉ xóa ve_dich_value
 
       return olympia
         .from("round_questions")

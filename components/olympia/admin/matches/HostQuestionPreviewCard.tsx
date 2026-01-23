@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
-import { ArrowLeft, ArrowRight, Eye, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
 
 type PlayerSummary = {
     seat_index: number | null
@@ -650,30 +651,30 @@ export function HostQuestionPreviewCard(props: Props) {
                     {liveSession?.current_round_type === 've_dich' && toggleStarUseFormAction && previewRoundQuestion ? (
                         <div className="mt-4 rounded-md border bg-amber-50 p-3">
                             <div className="flex items-center justify-between gap-2">
-                                <div>
+                                <div className="flex-1">
                                     <p className="text-xs font-semibold text-amber-900">Ngôi sao hy vọng</p>
                                     <p className="mt-1 text-xs text-amber-700">
                                         {isStarEnabled ? 'Đang bật: Nhân đôi điểm đúng, trừ điểm sai' : 'Tắt'}
                                     </p>
                                 </div>
-                                <form action={toggleStarUseFormAction}>
-                                    <input type="hidden" name="matchId" value={matchId} />
-                                    <input type="hidden" name="roundQuestionId" value={previewRoundQuestion.id} />
-                                    <input type="hidden" name="playerId" value={currentTargetPlayerId ?? ''} />
-                                    {isStarEnabled ? null : <input type="hidden" name="enabled" value="1" />}
-                                    <Button
-                                        type="submit"
-                                        size="sm"
-                                        variant={isStarEnabled ? 'default' : 'outline'}
-                                        disabled={!currentTargetPlayerId}
-                                        title={isStarEnabled ? 'Tắt ngôi sao hy vọng' : 'Bật ngôi sao hy vọng'}
-                                        aria-label={isStarEnabled ? 'Tắt ngôi sao hy vọng' : 'Bật ngôi sao hy vọng'}
-                                        className="h-8"
-                                    >
-                                        <Sparkles className={`h-4 w-4 mr-1 ${isStarEnabled ? '' : 'opacity-50'}`} />
-                                        {isStarEnabled ? 'Star: Bật' : 'Star: Tắt'}
-                                    </Button>
-                                </form>
+                                <Switch
+                                    checked={isStarEnabled}
+                                    onCheckedChange={async (checked) => {
+                                        try {
+                                            const formData = new FormData()
+                                            formData.append('matchId', matchId)
+                                            formData.append('roundQuestionId', previewRoundQuestion.id)
+                                            formData.append('playerId', currentTargetPlayerId ?? '')
+                                            if (checked) {
+                                                formData.append('enabled', '1')
+                                            }
+                                            await toggleStarUseFormAction(formData)
+                                        } catch (err) {
+                                            console.error('Toggle star error:', err)
+                                        }
+                                    }}
+                                    aria-label="Toggle ngôi sao hy vọng"
+                                />
                             </div>
                         </div>
                     ) : null}

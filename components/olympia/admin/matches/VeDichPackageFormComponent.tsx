@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { selectVeDichPackageClientAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Undo2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -26,6 +27,7 @@ export function VeDichPackageFormComponent({
     values,
     confirmed,
 }: VeDichPackageFormComponentProps) {
+    const router = useRouter()
     const [localFormValues, setLocalFormValues] = useState<string[]>(() =>
         values.map((v) => (v === 20 || v === 30 ? String(v) : ''))
     )
@@ -77,13 +79,15 @@ export function VeDichPackageFormComponent({
                 toast.error(data.error)
             } else if (data?.success) {
                 toast.success(data.success)
+                // Refresh router để update UI ngay với dữ liệu mới
+                router.refresh()
             }
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Lỗi khi reset gói')
         } finally {
             setIsResetting(false)
         }
-    }, [matchId])
+    }, [matchId, router])
 
     return (
         <div className="mt-3 rounded-md border bg-background p-2">

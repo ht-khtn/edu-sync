@@ -145,9 +145,9 @@ export default async function OlympiaClientMcPage({ params }: PageProps) {
                         </Alert>
                     </div>
                 ) : (
-                    <div className="mx-auto max-w-7xl px-4 py-6">
-                        <div className="grid gap-6 lg:grid-cols-4">
-                            <div className="lg:col-span-3">
+                    <div className="w-full px-4 py-6">
+                        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                            <div>
                                 <OlympiaGameClient
                                     initialData={{ ...data, viewerUserId: null }}
                                     sessionId={data.session.id}
@@ -160,7 +160,12 @@ export default async function OlympiaClientMcPage({ params }: PageProps) {
                             <aside className="lg:sticky lg:top-6 lg:h-fit">
                                 <div id="olympia-mc-scoreboard-slot" className="mb-4" />
                                 <div id="olympia-mc-buzzer-slot" className="mb-4" />
-                                <SessionInfoSidebar session={data.session} match={data.match} playerCount={data.players.length} />
+                                <SessionInfoSidebar
+                                    session={data.session}
+                                    match={data.match}
+                                    playerCount={data.players.length}
+                                    variant="mc"
+                                />
                             </aside>
                         </div>
                     </div>

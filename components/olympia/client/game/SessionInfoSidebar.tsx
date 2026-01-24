@@ -11,6 +11,7 @@ type SessionInfoSidebarProps = {
   match: MatchRow
   playerCount?: number
   timerLabel?: string
+  variant?: 'default' | 'mc'
 }
 
 const roundLabelMap: Record<string, string> = {
@@ -27,7 +28,7 @@ const questionStateLabel: Record<string, string> = {
   completed: 'Hoàn tất',
 }
 
-export function SessionInfoSidebar({ session, match, playerCount = 0, timerLabel }: SessionInfoSidebarProps) {
+export function SessionInfoSidebar({ session, match, playerCount = 0, timerLabel, variant = 'default' }: SessionInfoSidebarProps) {
   const isSessionRunning = session.status === 'running'
 
   return (
@@ -65,41 +66,45 @@ export function SessionInfoSidebar({ session, match, playerCount = 0, timerLabel
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Zap className="h-4 w-4" />
-            Tình trạng
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Vòng hiện tại:</span>
-            <span className="font-semibold">
-              {session.current_round_type ? roundLabelMap[session.current_round_type] : '—'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Trạng thái câu:</span>
-            <Badge variant="outline" className="text-xs">
-              {session.question_state ? questionStateLabel[session.question_state] : '—'}
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+      {variant !== 'mc' && (
+        <>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                Tình trạng
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Vòng hiện tại:</span>
+                <span className="font-semibold">
+                  {session.current_round_type ? roundLabelMap[session.current_round_type] : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Trạng thái câu:</span>
+                <Badge variant="outline" className="text-xs">
+                  {session.question_state ? questionStateLabel[session.question_state] : '—'}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Thí sinh
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold text-center">{playerCount}</p>
-          <p className="text-xs text-muted-foreground text-center">đang tham gia</p>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Thí sinh
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-center">{playerCount}</p>
+              <p className="text-xs text-muted-foreground text-center">đang tham gia</p>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {!isSessionRunning && (
         <Alert className="bg-blue-50 border-blue-200">

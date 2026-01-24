@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
-import { Pause, Play, RotateCcw } from 'lucide-react'
+import { Pause, Play, Square } from 'lucide-react'
 
 type ActionState = {
     error?: string | null
@@ -12,7 +12,7 @@ type ActionState = {
 
 type GuestMediaType = 'audio' | 'video'
 
-type GuestMediaCommand = 'play' | 'pause' | 'restart'
+type GuestMediaCommand = 'play' | 'pause' | 'stop'
 
 type HostControlAction = (prevState: ActionState, formData: FormData) => Promise<ActionState>
 
@@ -21,14 +21,14 @@ const initialState: ActionState = { error: null, success: null, data: null }
 function getIcon(command: GuestMediaCommand) {
     if (command === 'play') return <Play className="h-4 w-4" />
     if (command === 'pause') return <Pause className="h-4 w-4" />
-    return <RotateCcw className="h-4 w-4" />
+    return <Square className="h-4 w-4" />
 }
 
 function getAriaLabel(mediaType: GuestMediaType, command: GuestMediaCommand) {
     const target = mediaType === 'audio' ? 'âm thanh' : 'video'
     if (command === 'play') return `Phát ${target} trên Guest`
     if (command === 'pause') return `Tạm dừng ${target} trên Guest`
-    return `Phát lại ${target} từ đầu trên Guest`
+    return `Dừng ${target} trên Guest`
 }
 
 export function GuestMediaControlButtons(props: {
@@ -40,7 +40,7 @@ export function GuestMediaControlButtons(props: {
 
     const [state, formAction, isPending] = useActionState(action, initialState)
 
-    const commands = useMemo<GuestMediaCommand[]>(() => ['play', 'pause', 'restart'], [])
+    const commands = useMemo<GuestMediaCommand[]>(() => ['play', 'pause', 'stop'], [])
 
     useEffect(() => {
         if (state.error) {

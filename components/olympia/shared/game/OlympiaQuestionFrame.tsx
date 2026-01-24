@@ -1,7 +1,7 @@
-'use client';
+'use client'
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React from 'react'
+import { motion } from 'framer-motion'
 
 type Props = {
     children: React.ReactNode;
@@ -9,9 +9,10 @@ type Props = {
     playIntro?: boolean;
     scoreboard?: Array<{ id?: string; name?: string; total?: number; seat?: number }>;
     currentSeat?: number | null;
+    embedded?: boolean;
 };
 
-export default function OlympiaQuestionFrame({ children, open = true, scoreboard, currentSeat }: Props) {
+export default function OlympiaQuestionFrame({ children, open = true, scoreboard, currentSeat, embedded = false }: Props) {
     const arrowTransition = { duration: 1.3, ease: 'easeOut' } as const;
     const frameTransition = { duration: 0.9, ease: 'easeOut' } as const;
     const contentTransition = { duration: 0.8, ease: 'easeOut' } as const;
@@ -36,9 +37,17 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
         animate: { opacity: 1, y: 0, transition: { ...contentTransition, delay: 2.2 } },
     } as const;
 
+    const rootClassName = embedded
+        ? 'relative w-full h-full flex items-center justify-center'
+        : 'fixed inset-0 flex items-center justify-center z-10 pointer-events-none'
+
+    const stageClassName = embedded
+        ? 'w-full h-full flex items-center justify-center pointer-events-auto relative'
+        : 'w-[92vw] h-[85vh] flex items-center justify-center pointer-events-auto relative'
+
     return (
-        <div className="fixed inset-0 flex items-center justify-center z-10 pointer-events-none" aria-hidden={!open}>
-            <div className="w-[92vw] h-[85vh] flex items-center justify-center pointer-events-auto relative">
+        <div className={rootClassName} aria-hidden={!open}>
+            <div className={stageClassName}>
 
                 {/* Left Chevrons: outer cyan then inner dark, adjacent (no overlap), inner edge touches frame edge */}
                 <motion.div
@@ -136,5 +145,5 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
                 </motion.div>
             </div>
         </div>
-    );
+    )
 }

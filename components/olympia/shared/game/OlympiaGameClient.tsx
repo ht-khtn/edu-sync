@@ -792,6 +792,9 @@ export function OlympiaGameClient({
     return '—'
   }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isMc, isStealWindow, questionState, session.buzzer_enabled])
 
+  void mcTurnLabel
+  void mcBuzzerLabel
+
   // Optimistic UI: thí sinh bấm chuông thắng -> status đổi ngay, không chờ realtime/poll.
   useEffect(() => {
     const msg = (buzzerState.success ?? '').trim()
@@ -1153,7 +1156,7 @@ export function OlympiaGameClient({
   }, [questionText, showQuestionMedia, mediaUrl])
 
   useEffect(() => {
-    const canReceiveVideoControl = isGuest || resolvedViewerMode === 'player'
+    const canReceiveVideoControl = isGuest || resolvedViewerMode === 'player' || resolvedViewerMode === 'mc'
     const canReceiveAudioControl = isGuest
     if (!canReceiveVideoControl && !canReceiveAudioControl) return
     const control = session.guest_media_control
@@ -1176,7 +1179,11 @@ export function OlympiaGameClient({
         console.info('[Olympia][GuestMedia] ignoring non-action tombstone', { mediaType, cmdId, action })
         return
       }
-      let element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
+      let element: HTMLMediaElement | null = null
+      if (mediaType === 'audio') element = guestAudioRef.current
+      if (mediaType === 'video') {
+        element = isGuest ? guestHiddenVideoRef.current : syncedVideoRef.current
+      }
 
       let cmdSrcs: string[] | undefined
       try {
@@ -1195,7 +1202,8 @@ export function OlympiaGameClient({
         for (let i = 0; i < maxRetries; i++) {
           // small delay to allow React to commit mounts
           await new Promise((res) => setTimeout(res, retryDelayMs))
-          element = mediaType === 'audio' ? guestAudioRef.current : guestHiddenVideoRef.current
+          if (mediaType === 'audio') element = guestAudioRef.current
+          if (mediaType === 'video') element = isGuest ? guestHiddenVideoRef.current : syncedVideoRef.current
           if (element) {
             found = true
             console.info('[Olympia][GuestMedia] element mounted after retry', { mediaType, attempt: i + 1 })
@@ -1322,6 +1330,19 @@ export function OlympiaGameClient({
           try {
             el.pause()
           } catch { }
+
+          // Player/MC: dừng tại chỗ (không unload src, không full-screen overlay)
+          if (!isGuest) {
+            try {
+              el.currentTime = 0
+            } catch { }
+            console.info('[Olympia][GuestMedia] applied stop (inline)', { mediaType, cmdId })
+            if (match?.id) {
+              void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+            }
+            return
+          }
+
           try {
             // clear playlist state and unload src
             mediaPlaylistRef.current[mediaType] = null
@@ -1352,6 +1373,15 @@ export function OlympiaGameClient({
 
         // If command includes srcs, handle sequential play for video
         if (cmdSrcs && mediaType === 'video') {
+          // Playlist srcs chỉ áp dụng cho Guest (intro); player/MC bỏ qua.
+          if (!isGuest) {
+            console.info('[Olympia][GuestMedia] ignore playlist srcs for non-guest', { mediaType, cmdId, srcsCount: cmdSrcs.length })
+            if (match?.id) {
+              void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+            }
+            return
+          }
+
           // initialize playlist
           mediaPlaylistRef.current[mediaType] = { srcs: cmdSrcs, idx: 0 }
 
@@ -1437,6 +1467,12 @@ export function OlympiaGameClient({
             paused: el.paused,
             currentTime: Number.isFinite(el.currentTime) ? el.currentTime : null,
           })
+          if (!isGuest) {
+            if (match?.id) {
+              void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+            }
+            return
+          }
           // Xóa command khỏi DB sau khi apply
           if (match?.id) {
             void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
@@ -1453,8 +1489,10 @@ export function OlympiaGameClient({
               mediaKind,
               mediaUrl,
             })
-            isVideoVisibleRef.current = false
-            setIsGuestMediaVideoVisible(false)
+            if (isGuest) {
+              isVideoVisibleRef.current = false
+              setIsGuestMediaVideoVisible(false)
+            }
             if (match?.id) {
               void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
             }
@@ -1470,8 +1508,10 @@ export function OlympiaGameClient({
         }
 
         if (mediaType === 'video') {
-          isVideoVisibleRef.current = true
-          setIsGuestMediaVideoVisible(true)
+          if (isGuest) {
+            isVideoVisibleRef.current = true
+            setIsGuestMediaVideoVisible(true)
+          }
         }
         await tryPlay(el, { restart: action === 'restart' })
         console.info('[Olympia][GuestMedia] applied play', {
@@ -1612,14 +1652,14 @@ export function OlympiaGameClient({
 
             <div className="min-w-0 flex-1 flex justify-center">
               {isMc ? (
-                <div className="flex flex-wrap justify-center gap-2 max-w-[720px]">
-                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
-                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Lượt hiện tại</p>
-                    <p className="text-sm text-slate-100 truncate">{mcTurnLabel ?? '—'}</p>
+                <div className="flex flex-wrap justify-center gap-2 w-full max-w-[980px]">
+                  <div className="rounded-md px-3 py-2 bg-slate-900/50 border border-slate-700/50 text-left min-w-[320px] flex-1">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Đáp án</p>
+                    <p className="text-sm text-slate-100 whitespace-pre-wrap line-clamp-2">{answerText?.trim() ? answerText : '—'}</p>
                   </div>
-                  <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
-                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Bấm chuông</p>
-                    <p className="text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
+                  <div className="rounded-md px-3 py-2 bg-slate-900/50 border border-slate-700/50 text-left min-w-[320px] flex-1">
+                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Ghi chú</p>
+                    <p className="text-sm text-slate-100 whitespace-pre-wrap line-clamp-2">{noteText?.trim() ? noteText : '—'}</p>
                   </div>
                 </div>
               ) : resolvedViewerMode === 'player' ? (
@@ -1642,28 +1682,32 @@ export function OlympiaGameClient({
             </div>
 
             <div className="flex items-center gap-3">
-              <div
-                className={cn(
-                  'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
-                  session.timer_deadline
-                    ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
-                    : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
-                )}
-              >
-                {timerLabel}
-              </div>
+              {!isMc ? (
+                <>
+                  <div
+                    className={cn(
+                      'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
+                      session.timer_deadline
+                        ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
+                        : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+                    )}
+                  >
+                    {timerLabel}
+                  </div>
 
-              {viewerTotalScore != null ? (
-                <div className="text-right">
-                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
-                  <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
-                </div>
-              ) : (
-                <div className="text-right">
-                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
-                  <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
-                </div>
-              )}
+                  {viewerTotalScore != null ? (
+                    <div className="text-right">
+                      <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
+                      <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
+                    </div>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
+                      <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
+                    </div>
+                  )}
+                </>
+              ) : null}
             </div>
           </header>
         ) : null}
@@ -1728,7 +1772,10 @@ export function OlympiaGameClient({
 
         {/* MAIN SCREEN */}
         <main
-          className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-6 overflow-y-auto"
+          className={cn(
+            'flex-1 relative flex px-6 pt-6 pb-6 overflow-y-auto',
+            isMc ? 'items-start justify-start' : 'items-center justify-center'
+          )}
 
         >
           {!isSessionRunning ? (
@@ -1744,7 +1791,7 @@ export function OlympiaGameClient({
           {isWaitingScreen ? (
             <div className=""></div>
           ) : (
-            <div className={cn('w-full text-center', isMc ? 'max-w-6xl' : 'max-w-5xl')}>
+            <div className={cn('w-full', isMc ? 'max-w-none text-left' : 'max-w-5xl text-center')}>
               {shouldUseVcnvUi ? (
                 (() => {
                   const resolveRoundQuestionCode = (rq: (typeof roundQuestions)[number] | null) => {
@@ -2034,24 +2081,219 @@ export function OlympiaGameClient({
               ) : null}
 
               {(isMc || questionState !== 'hidden') ? (
-                <OlympiaQuestionFrame
-                  open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
-                  scoreboard={scoreboard}
-                  currentSeat={currentHighlightSeat}
-                >
-                  {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
-                  <div className={cn(
-                    'w-full',
-                    showQuestionText && showQuestionMedia && !isMediaExpanded
-                      ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
-                      : 'flex flex-col'
-                  )}>
-                    {/* Cột chữ (ẩn khi media được phóng to) */}
-                    {showQuestionText && !isMediaExpanded ? (
-                      <div className={cn(
-                        'flex flex-col',
-                        showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : ''
-                      )}>
+                isMc ? (
+                  <div className="w-full">
+                    <div className="rounded-md border border-slate-700 bg-slate-950/60 p-6">
+                      <div
+                        className={cn(
+                          'w-full',
+                          showQuestionText && showQuestionMedia && !isMediaExpanded
+                            ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
+                            : 'flex flex-col'
+                        )}
+                      >
+                        {showQuestionText && !isMediaExpanded ? (
+                          <div className={cn('flex flex-col', showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : '')}>
+                            <div className="max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                              <p
+                                className={cn(
+                                  questionFontSize,
+                                  'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                                )}
+                              >
+                                {questionText?.trim() ? questionText : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {showQuestionMedia ? (
+                          <div className={cn(
+                            'rounded-md border border-slate-700 bg-slate-950/60 p-3',
+                            isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-5xl' : 'lg:pl-4') : 'mx-auto max-w-5xl'
+                          )}>
+                            {mediaUrl ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-slate-300">Ảnh/Video</p>
+                                  <button
+                                    onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                    className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                                    type="button"
+                                  >
+                                    {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
+                                  </button>
+                                </div>
+                                <div
+                                  onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                  className="cursor-pointer transition-transform hover:scale-[1.02]"
+                                  role="button"
+                                  tabIndex={0}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault()
+                                      setIsMediaExpanded(!isMediaExpanded)
+                                    }
+                                  }}
+                                >
+                                  {mediaKind === 'image' ? (
+                                    /* eslint-disable-next-line @next/next/no-img-element */
+                                    <img
+                                      src={mediaUrl}
+                                      alt="Media câu hỏi"
+                                      className={cn('w-full object-contain rounded', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                    />
+                                  ) : mediaKind === 'video' ? (
+                                    <video
+                                      ref={syncedVideoRef}
+                                      playsInline
+                                      src={mediaUrl}
+                                      className={cn('w-full rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                      tabIndex={-1}
+                                      controls
+                                    />
+                                  ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                                    <div className={cn('aspect-video w-full overflow-hidden rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : '')}>
+                                      <iframe
+                                        src={youtubeEmbedUrl}
+                                        title="Video câu hỏi"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                        className="h-full w-full"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <a
+                                      href={mediaUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-sky-300 hover:underline break-all"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {mediaUrl}
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <OlympiaQuestionFrame
+                    open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
+                    scoreboard={scoreboard}
+                    currentSeat={currentHighlightSeat}
+                  >
+                    {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
+                    <div className={cn(
+                      'w-full',
+                      showQuestionText && showQuestionMedia && !isMediaExpanded
+                        ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
+                        : 'flex flex-col'
+                    )}>
+                      {/* Cột chữ (ẩn khi media được phóng to) */}
+                      {showQuestionText && !isMediaExpanded ? (
+                        <div className={cn(
+                          'flex flex-col',
+                          showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : ''
+                        )}>
+                          <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                            <p className={cn(
+                              questionFontSize,
+                              'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                            )}>
+                              {questionText?.trim() ? questionText : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {/* Cột media (click để phóng to/thu nhỏ) */}
+                      {showQuestionMedia ? (
+                        <div className={cn(
+                          'rounded-md border border-slate-700 bg-slate-950/60 p-3',
+                          isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-4xl' : 'lg:pl-4') : 'mx-auto max-w-4xl'
+                        )}>
+                          {mediaUrl ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs text-slate-300">Ảnh/Video</p>
+                                <button
+                                  onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                  className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                                  type="button"
+                                >
+                                  {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
+                                </button>
+                              </div>
+                              <div
+                                onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                className="cursor-pointer transition-transform hover:scale-[1.02]"
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    setIsMediaExpanded(!isMediaExpanded)
+                                  }
+                                }}
+                              >
+                                {mediaKind === 'image' ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img
+                                    src={mediaUrl}
+                                    alt="Media câu hỏi"
+                                    className={cn(
+                                      'w-full object-contain rounded',
+                                      isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                    )}
+                                  />
+                                ) : mediaKind === 'video' ? (
+                                  <video
+                                    ref={syncedVideoRef}
+                                    playsInline
+                                    src={mediaUrl}
+                                    className={cn(
+                                      'w-full rounded bg-black',
+                                      isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                    )}
+                                    tabIndex={-1}
+                                  />
+                                ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                                  <div className={cn(
+                                    'aspect-video w-full overflow-hidden rounded bg-black',
+                                    isMediaExpanded ? 'max-h-[600px]' : ''
+                                  )}>
+                                    <iframe
+                                      src={youtubeEmbedUrl}
+                                      title="Video câu hỏi"
+                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                      allowFullScreen
+                                      className="h-full w-full"
+                                    />
+                                  </div>
+                                ) : (
+                                  <a
+                                    href={mediaUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-sky-300 hover:underline break-all"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {mediaUrl}
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {/* Hiển thị lại chữ khi không có media hoặc media chưa phóng to */}
+                      {showQuestionText && !showQuestionMedia ? (
                         <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
                           <p className={cn(
                             questionFontSize,
@@ -2060,119 +2302,11 @@ export function OlympiaGameClient({
                             {questionText?.trim() ? questionText : '—'}
                           </p>
                         </div>
-                      </div>
-                    ) : null}
-
-                    {/* Cột media (click để phóng to/thu nhỏ) */}
-                    {showQuestionMedia ? (
-                      <div className={cn(
-                        'rounded-md border border-slate-700 bg-slate-950/60 p-3',
-                        isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-4xl' : 'lg:pl-4') : 'mx-auto max-w-4xl'
-                      )}>
-                        {mediaUrl ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs text-slate-300">Ảnh/Video</p>
-                              <button
-                                onClick={() => setIsMediaExpanded(!isMediaExpanded)}
-                                className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
-                                type="button"
-                              >
-                                {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
-                              </button>
-                            </div>
-                            <div
-                              onClick={() => setIsMediaExpanded(!isMediaExpanded)}
-                              className="cursor-pointer transition-transform hover:scale-[1.02]"
-                              role="button"
-                              tabIndex={0}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  setIsMediaExpanded(!isMediaExpanded)
-                                }
-                              }}
-                            >
-                              {mediaKind === 'image' ? (
-                                /* eslint-disable-next-line @next/next/no-img-element */
-                                <img
-                                  src={mediaUrl}
-                                  alt="Media câu hỏi"
-                                  className={cn(
-                                    'w-full object-contain rounded',
-                                    isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
-                                  )}
-                                />
-                              ) : mediaKind === 'video' ? (
-                                <video
-                                  ref={syncedVideoRef}
-                                  playsInline
-                                  src={mediaUrl}
-                                  className={cn(
-                                    'w-full rounded bg-black pointer-events-none',
-                                    isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
-                                  )}
-                                  tabIndex={-1}
-                                />
-                              ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                                <div className={cn(
-                                  'aspect-video w-full overflow-hidden rounded bg-black',
-                                  isMediaExpanded ? 'max-h-[600px]' : ''
-                                )}>
-                                  <iframe
-                                    src={youtubeEmbedUrl}
-                                    title="Video câu hỏi"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                    allowFullScreen
-                                    className="h-full w-full"
-                                  />
-                                </div>
-                              ) : (
-                                <a
-                                  href={mediaUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-sky-300 hover:underline break-all"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {mediaUrl}
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {/* Hiển thị lại chữ khi không có media hoặc media chưa phóng to */}
-                    {showQuestionText && !showQuestionMedia ? (
-                      <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
-                        <p className={cn(
-                          questionFontSize,
-                          'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
-                        )}>
-                          {questionText?.trim() ? questionText : '—'}
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
-                </OlympiaQuestionFrame>
+                      ) : null}
+                    </div>
+                  </OlympiaQuestionFrame>
+                )
               ) : null}
-
-              {isMc && (answerText || noteText) && (
-                <div className="mt-6 text-left mx-auto max-w-3xl rounded-md border border-slate-700 bg-slate-950/60 p-4">
-                  {answerText ? (
-                    <p className="text-sm whitespace-pre-wrap">
-                      <span className="text-slate-200">Đáp án:</span> {answerText}
-                    </p>
-                  ) : null}
-                  {noteText ? (
-                    <p className="mt-2 text-sm whitespace-pre-wrap">
-                      <span className="text-slate-200">Ghi chú:</span> {noteText}
-                    </p>
-                  ) : null}
-                </div>
-              )}
             </div>
           )}
         </main>

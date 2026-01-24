@@ -4,6 +4,7 @@ import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js'
 import getSupabase from '@/lib/supabase'
 import type { AnswerRow, PlayerRow, LiveSessionRow } from '@/types/olympia/game'
+import OlympiaQuestionFrame from '@/components/olympia/shared/game/OlympiaQuestionFrame'
 
 type JsonValue =
     | string
@@ -198,7 +199,7 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                 }}
             />
             <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
-                <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
+                <div className="w-full max-w-6xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <p className="text-xs uppercase tracking-widest text-slate-200">Đáp án</p>
@@ -206,9 +207,9 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                         </div>
                     </div>
 
-                    <div className="mt-6 grid gap-3">
+                    <div className="mt-6 grid gap-4 md:grid-cols-2">
                         {rows.length > 0 ? (
-                            rows.map(({ player, answer, responseTimeMs }) => {
+                            rows.map(({ player, answer, responseTimeMs }, index) => {
                                 const seatText = player.seat_index != null ? `Ghế ${player.seat_index}` : 'Ghế —'
                                 const nameText = player.display_name ? ` · ${player.display_name}` : ''
                                 const responseTimeText =
@@ -217,27 +218,35 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                                         : '(chưa xác định)'
 
                                 return (
-                                    <div
-                                        key={player.id}
-                                        className="flex items-stretch justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 overflow-hidden"
-                                    >
-                                        <div className="flex-1 min-w-0 px-5 py-4">
-                                            <p className="text-sm font-medium text-slate-50 truncate">
-                                                {seatText}{nameText}
-                                            </p>
-                                            <p className="mt-2 text-sm text-slate-200 line-clamp-2">
-                                                {answer?.answer_text?.trim() ? (
-                                                    answer.answer_text
-                                                ) : (
-                                                    <span className="text-muted-foreground">(Chưa nộp)</span>
-                                                )}
-                                            </p>
-                                        </div>
+                                    <div key={player.id} className="w-full h-[170px] sm:h-[190px]">
+                                        <OlympiaQuestionFrame
+                                            embedded
+                                            open
+                                            playIntro
+                                            showScoreboardStrip={false}
+                                            introDelaySeconds={index * 0.22}
+                                            contentClassName="w-full h-full px-8 text-left text-white pointer-events-auto"
+                                        >
+                                            <div className="h-full w-full flex flex-col justify-center">
+                                                <div className="flex items-start justify-between gap-6">
+                                                    <div className="min-w-0">
+                                                        <p className="text-lg font-semibold truncate">{seatText}{nameText}</p>
+                                                        <p className="mt-2 text-base text-slate-100/90 line-clamp-2">
+                                                            {answer?.answer_text?.trim() ? (
+                                                                answer.answer_text
+                                                            ) : (
+                                                                <span className="text-slate-300">(Chưa nộp)</span>
+                                                            )}
+                                                        </p>
+                                                    </div>
 
-                                        <div className="flex flex-col items-end justify-center px-5 py-4 border-l border-slate-700/50">
-                                            <p className="text-xs uppercase tracking-widest text-slate-200">Thời gian</p>
-                                            <p className="text-sm font-mono text-white">{responseTimeText}</p>
-                                        </div>
+                                                    <div className="shrink-0 text-right">
+                                                        <p className="text-xs uppercase tracking-widest text-slate-200">Thời gian</p>
+                                                        <p className="mt-1 text-base font-mono text-white">{responseTimeText}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </OlympiaQuestionFrame>
                                     </div>
                                 )
                             })

@@ -1724,7 +1724,7 @@ export function OlympiaGameClient({
               }}
             />
             <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
-              <div className="w-full max-w-4xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
+              <div className="w-full max-w-6xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
@@ -1732,22 +1732,40 @@ export function OlympiaGameClient({
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-3">
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
                   {scoreboard.length > 0 ? (
-                    scoreboard.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between gap-4 rounded-md border border-slate-700 bg-slate-950/50 px-5 py-4"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-lg sm:text-xl font-semibold text-slate-50 truncate">
-                            {p.name}
-                          </p>
-                          <p className="text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
+                    scoreboard
+                      .slice()
+                      .sort((a, b) => {
+                        const seatA = typeof a.seat === 'number' ? a.seat : Number.MAX_SAFE_INTEGER
+                        const seatB = typeof b.seat === 'number' ? b.seat : Number.MAX_SAFE_INTEGER
+                        return seatA - seatB
+                      })
+                      .map((p, index) => (
+                        <div key={p.id} className="w-full h-[170px] sm:h-[190px]">
+                          <OlympiaQuestionFrame
+                            embedded
+                            open
+                            playIntro
+                            showScoreboardStrip={false}
+                            introDelaySeconds={index * 0.22}
+                            contentClassName="w-full h-full px-8 text-left text-white pointer-events-auto"
+                          >
+                            <div className="h-full w-full flex flex-col justify-center">
+                              <div className="flex items-start justify-between gap-6">
+                                <div className="min-w-0">
+                                  <p className="text-lg sm:text-xl font-semibold truncate">{p.name}</p>
+                                  <p className="mt-1 text-sm text-slate-200">Ghế {p.seat ?? '—'}</p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className="text-xs uppercase tracking-widest text-slate-200">Điểm</p>
+                                  <p className="mt-1 text-3xl sm:text-4xl font-mono font-semibold text-white">{p.total}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </OlympiaQuestionFrame>
                         </div>
-                        <p className="text-3xl sm:text-4xl font-mono font-semibold text-white">{p.total}</p>
-                      </div>
-                    ))
+                      ))
                   ) : (
                     <div className="text-center text-slate-200">Chưa có dữ liệu điểm.</div>
                   )}

@@ -12,6 +12,7 @@ type SessionInfoSidebarProps = {
   playerCount?: number
   timerLabel?: string
   variant?: 'default' | 'mc'
+  mcAnswerNoteSlotId?: string
 }
 
 const roundLabelMap: Record<string, string> = {
@@ -28,8 +29,16 @@ const questionStateLabel: Record<string, string> = {
   completed: 'Hoàn tất',
 }
 
-export function SessionInfoSidebar({ session, match, playerCount = 0, timerLabel, variant = 'default' }: SessionInfoSidebarProps) {
+export function SessionInfoSidebar({
+  session,
+  match,
+  playerCount = 0,
+  timerLabel,
+  variant = 'default',
+  mcAnswerNoteSlotId,
+}: SessionInfoSidebarProps) {
   const isSessionRunning = session.status === 'running'
+  const resolvedMcAnswerNoteSlotId = mcAnswerNoteSlotId ?? 'olympia-mc-answer-note-slot'
 
   return (
     <div className="space-y-3">
@@ -65,6 +74,10 @@ export function SessionInfoSidebar({ session, match, playerCount = 0, timerLabel
           )}
         </CardContent>
       </Card>
+
+      {variant === 'mc' ? (
+        <div id={resolvedMcAnswerNoteSlotId} className="space-y-3" />
+      ) : null}
 
       {variant !== 'mc' && (
         <>

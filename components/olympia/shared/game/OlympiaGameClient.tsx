@@ -39,6 +39,7 @@ type OlympiaGameClientProps = {
   viewerMode?: 'player' | 'guest' | 'mc'
   mcScoreboardSlotId?: string
   mcBuzzerSlotId?: string
+  mcAnswerNoteSlotId?: string
 }
 
 type BuzzerEventLite = {
@@ -84,6 +85,7 @@ export function OlympiaGameClient({
   viewerMode,
   mcScoreboardSlotId,
   mcBuzzerSlotId,
+  mcAnswerNoteSlotId,
 }: OlympiaGameClientProps) {
   const {
     match,
@@ -379,16 +381,20 @@ export function OlympiaGameClient({
   const [mcScoreboardSlotEl, setMcScoreboardSlotEl] = useState<HTMLElement | null>(null)
   const resolvedMcBuzzerSlotId = mcBuzzerSlotId ?? 'olympia-mc-buzzer-slot'
   const [mcBuzzerSlotEl, setMcBuzzerSlotEl] = useState<HTMLElement | null>(null)
+  const resolvedMcAnswerNoteSlotId = mcAnswerNoteSlotId ?? 'olympia-mc-answer-note-slot'
+  const [mcAnswerNoteSlotEl, setMcAnswerNoteSlotEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
     if (!isMc) {
       setMcScoreboardSlotEl(null)
       setMcBuzzerSlotEl(null)
+      setMcAnswerNoteSlotEl(null)
       return
     }
     if (typeof document === 'undefined') return
     setMcScoreboardSlotEl(document.getElementById(resolvedMcScoreboardSlotId))
     setMcBuzzerSlotEl(document.getElementById(resolvedMcBuzzerSlotId))
-  }, [isMc, resolvedMcBuzzerSlotId, resolvedMcScoreboardSlotId])
+    setMcAnswerNoteSlotEl(document.getElementById(resolvedMcAnswerNoteSlotId))
+  }, [isMc, resolvedMcAnswerNoteSlotId, resolvedMcBuzzerSlotId, resolvedMcScoreboardSlotId])
 
 
 
@@ -1651,18 +1657,7 @@ export function OlympiaGameClient({
             </div>
 
             <div className="min-w-0 flex-1 flex justify-center">
-              {isMc ? (
-                <div className="flex flex-wrap justify-center gap-2 w-full max-w-[980px]">
-                  <div className="rounded-md px-3 py-2 bg-slate-900/50 border border-slate-700/50 text-left min-w-[320px] flex-1">
-                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Đáp án</p>
-                    <p className="text-sm text-slate-100 whitespace-pre-wrap line-clamp-2">{answerText?.trim() ? answerText : '—'}</p>
-                  </div>
-                  <div className="rounded-md px-3 py-2 bg-slate-900/50 border border-slate-700/50 text-left min-w-[320px] flex-1">
-                    <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Ghi chú</p>
-                    <p className="text-sm text-slate-100 whitespace-pre-wrap line-clamp-2">{noteText?.trim() ? noteText : '—'}</p>
-                  </div>
-                </div>
-              ) : resolvedViewerMode === 'player' ? (
+              {resolvedViewerMode === 'player' ? (
                 <div className="flex flex-wrap justify-center gap-2 max-w-[720px]">
                   <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center min-w-[220px]">
                     <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Thí sinh</p>
@@ -1673,6 +1668,13 @@ export function OlympiaGameClient({
                     <p className="text-sm text-slate-100 truncate">{playerBuzzerLabel ?? '—'}</p>
                   </div>
                 </div>
+              ) : isMc ? (
+                <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center max-w-[520px]">
+                  <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Realtime</p>
+                  <p className="text-sm text-slate-100 truncate">
+                    {turnStatusText?.trim() ? turnStatusText : 'Chế độ MC: chỉ quan sát.'}
+                  </p>
+                </div>
               ) : turnStatusText ? (
                 <div className="rounded-md px-3 py-1 bg-slate-900/50 border border-slate-700/50 text-center max-w-[520px]">
                   <p className="text-xs uppercase tracking-widest text-slate-200 truncate">Realtime</p>
@@ -1682,32 +1684,28 @@ export function OlympiaGameClient({
             </div>
 
             <div className="flex items-center gap-3">
-              {!isMc ? (
-                <>
-                  <div
-                    className={cn(
-                      'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
-                      session.timer_deadline
-                        ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
-                        : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
-                    )}
-                  >
-                    {timerLabel}
-                  </div>
+              <div
+                className={cn(
+                  'rounded-md px-3 py-1 font-mono text-base whitespace-nowrap border',
+                  session.timer_deadline
+                    ? 'border-emerald-500/60 text-emerald-100 bg-emerald-950/50'
+                    : 'border-slate-500/60 text-slate-100 bg-slate-900/50'
+                )}
+              >
+                {timerLabel}
+              </div>
 
-                  {viewerTotalScore != null ? (
-                    <div className="text-right">
-                      <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
-                      <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
-                    </div>
-                  ) : (
-                    <div className="text-right">
-                      <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
-                      <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
-                    </div>
-                  )}
-                </>
-              ) : null}
+              {viewerTotalScore != null ? (
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Điểm</p>
+                  <p className="text-2xl font-semibold leading-none">{viewerTotalScore}</p>
+                </div>
+              ) : (
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-widest text-slate-200">Realtime</p>
+                  <p className="text-sm font-medium">{isRealtimeReady ? 'ON' : '...'} </p>
+                </div>
+              )}
             </div>
           </header>
         ) : null}
@@ -2443,6 +2441,22 @@ export function OlympiaGameClient({
             <p className="mt-1 text-sm text-slate-100 truncate">{mcBuzzerLabel ?? '—'}</p>
           </div>,
           mcBuzzerSlotEl
+        )
+        : null}
+
+      {isMc && mcAnswerNoteSlotEl
+        ? createPortal(
+          <>
+            <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+              <p className="text-[11px] uppercase tracking-widest text-slate-200 truncate">Đáp án</p>
+              <p className="mt-1 text-sm text-slate-100 whitespace-pre-wrap">{answerText?.trim() ? answerText : '—'}</p>
+            </div>
+            <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs">
+              <p className="text-[11px] uppercase tracking-widest text-slate-200 truncate">Ghi chú</p>
+              <p className="mt-1 text-sm text-slate-100 whitespace-pre-wrap">{noteText?.trim() ? noteText : '—'}</p>
+            </div>
+          </>,
+          mcAnswerNoteSlotEl
         )
         : null}
     </>

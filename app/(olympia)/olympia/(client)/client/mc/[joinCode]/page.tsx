@@ -154,6 +154,7 @@ export default async function OlympiaClientMcPage({ params }: PageProps) {
                                     viewerMode="mc"
                                     mcScoreboardSlotId="olympia-mc-scoreboard-slot"
                                     mcBuzzerSlotId="olympia-mc-buzzer-slot"
+                                    mcAnswerNoteSlotId="olympia-mc-answer-note-slot"
                                 />
                             </div>
 
@@ -165,6 +166,7 @@ export default async function OlympiaClientMcPage({ params }: PageProps) {
                                     match={data.match}
                                     playerCount={data.players.length}
                                     variant="mc"
+                                    mcAnswerNoteSlotId="olympia-mc-answer-note-slot"
                                 />
                             </aside>
                         </div>

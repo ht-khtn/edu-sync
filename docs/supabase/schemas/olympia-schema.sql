@@ -61,7 +61,7 @@ CREATE TABLE olympia.match_players (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   match_id uuid NOT NULL,
   participant_id uuid NOT NULL,
-  seat_index smallint NOT NULL CHECK (seat_index >= 1 AND seat_index <= 4),
+  seat_index smallint CHECK (seat_index IS NULL OR seat_index >= 1 AND seat_index <= 4),
   display_name text,
   is_disqualified_obstacle boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -117,7 +117,7 @@ CREATE TABLE olympia.obstacle_guesses (
   obstacle_id uuid NOT NULL,
   player_id uuid NOT NULL,
   guess_text text NOT NULL,
-  is_correct boolean NOT NULL DEFAULT false,  
+  is_correct boolean NOT NULL DEFAULT false,
   attempt_order smallint,
   attempted_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT obstacle_guesses_pkey PRIMARY KEY (id),
@@ -196,6 +196,17 @@ CREATE TABLE olympia.questions (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT questions_pkey PRIMARY KEY (id),
   CONSTRAINT questions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
+CREATE TABLE olympia.realtime_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  match_id uuid NOT NULL,
+  session_id uuid,
+  entity text NOT NULL,
+  entity_id uuid,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT realtime_events_pkey PRIMARY KEY (id)
 );
 CREATE TABLE olympia.round_questions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

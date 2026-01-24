@@ -490,7 +490,18 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           "id, match_round_id, target_player_id, meta, order_index, question_id, question_set_item_id, question_text, answer_text, note"
         );
       if (!allRqError && allRoundQuestions) {
-        setRoundQuestions(allRoundQuestions as RoundQuestionRow[]);
+        // Merge thay vì overwrite để không làm mất join fields (questions/question_set_items)
+        // Tránh flicker media (image_url/audio_url) khi polling snapshot.
+        setRoundQuestions((prev) => {
+          const incoming = allRoundQuestions as unknown as RoundQuestionRow[];
+          if (!Array.isArray(prev) || prev.length === 0) return incoming;
+          const byId = new Map(prev.map((r) => [r.id, r]));
+          for (const row of incoming) {
+            const existing = byId.get(row.id);
+            byId.set(row.id, existing ? { ...existing, ...row } : row);
+          }
+          return Array.from(byId.values());
+        });
       }
 
       if (currentRqId) {

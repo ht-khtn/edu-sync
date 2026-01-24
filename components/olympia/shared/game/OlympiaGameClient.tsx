@@ -1169,6 +1169,17 @@ export function OlympiaGameClient({
 
       lastMediaCmdRef.current = { ...lastMediaCmdRef.current, [mediaType]: cmdId }
 
+      const resolveDesiredSrc = (): string | null => {
+        if (mediaType === 'audio') {
+          return audioUrl?.trim() ? audioUrl.trim() : null
+        }
+
+        // Video overlay chỉ phát được URL trực tiếp (không hỗ trợ YouTube iframe).
+        if (!mediaUrl?.trim()) return null
+        if (mediaKind === 'youtube' || mediaKind === 'image') return null
+        return mediaUrl.trim()
+      }
+
       const waitForCanPlay = async (el: HTMLMediaElement) => {
         if (el.readyState >= 2) {
           console.info('[Olympia][GuestMedia] already ready', { readyState: el.readyState })
@@ -1325,6 +1336,17 @@ export function OlympiaGameClient({
             if (playlist.idx >= playlist.srcs.length) {
               mediaPlaylistRef.current[mediaType] = null
               try { (el as HTMLVideoElement).onended = null } catch { }
+              // Unload src để tránh trường hợp lệnh play câu hỏi sau đó bị phát lại intro.
+              try {
+                if (typeof (element as HTMLMediaElement).removeAttribute === 'function') {
+                  (element as HTMLMediaElement).removeAttribute('src')
+                }
+              } catch { }
+              try {
+                if (typeof (element as HTMLMediaElement).load === 'function') {
+                  (element as HTMLMediaElement).load()
+                }
+              } catch { }
               // playlist finished -> hide overlay
               isVideoVisibleRef.current = false
               setIsGuestMediaVideoVisible(false)
@@ -1362,6 +1384,30 @@ export function OlympiaGameClient({
         }
 
         // play/restart (no srcs)
+        if ((action === 'play' || action === 'restart') && mediaType === 'video') {
+          const desiredSrc = resolveDesiredSrc()
+          if (!desiredSrc) {
+            console.info('[Olympia][GuestMedia] skip video play: no playable src for current question', {
+              cmdId,
+              mediaKind,
+              mediaUrl,
+            })
+            isVideoVisibleRef.current = false
+            setIsGuestMediaVideoVisible(false)
+            if (match?.id) {
+              void clearGuestMediaCommandAction(match.id, mediaType, cmdId)
+            }
+            return
+          }
+
+          try {
+            ; (element as HTMLVideoElement).src = desiredSrc
+          } catch { }
+          try {
+            ; (element as HTMLVideoElement).load()
+          } catch { }
+        }
+
         if (mediaType === 'video') {
           isVideoVisibleRef.current = true
           setIsGuestMediaVideoVisible(true)
@@ -1386,7 +1432,7 @@ export function OlympiaGameClient({
 
     void applyCommand('audio')
     void applyCommand('video')
-  }, [audioUrl, isGuest, isWaitingScreen, mediaUrl, resolvedViewerMode, session.guest_media_control, match?.id])
+  }, [audioUrl, isGuest, isWaitingScreen, mediaKind, mediaUrl, resolvedViewerMode, session.guest_media_control, match?.id])
 
   // Toast notification for session state
   useEffect(() => {

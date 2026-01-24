@@ -16,6 +16,12 @@ interface Question {
   points: number;
 }
 
+interface TangTocCountdownQuestion {
+  order: number;
+  type: string;
+  durationSeconds: number;
+}
+
 interface Package {
   value: number;
   points: number;
@@ -106,10 +112,21 @@ export const getCountdownMs = (roundType: string, questionIndex?: number): numbe
     }
 
     case "tang_toc": {
-      const roundData = round as Record<string, Question[]>;
-      const questions = roundData.questions || [];
-      if (typeof questionIndex === "number" && questions[questionIndex]) {
-        return questions[questionIndex].points * 1000; // Using points as duration (20/30)
+      const roundData = round as unknown as { questions?: TangTocCountdownQuestion[] };
+      const questions = Array.isArray(roundData.questions) ? roundData.questions : [];
+      if (
+        typeof questionIndex === "number" &&
+        Number.isFinite(questionIndex) &&
+        questions[questionIndex]
+      ) {
+        const durationSeconds = questions[questionIndex]?.durationSeconds;
+        if (
+          typeof durationSeconds === "number" &&
+          Number.isFinite(durationSeconds) &&
+          durationSeconds > 0
+        ) {
+          return durationSeconds * 1000;
+        }
       }
       // Mặc định câu 1 (20s)
       return 20000;

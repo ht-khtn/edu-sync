@@ -608,6 +608,11 @@ export async function startSessionTimerAutoAction(
         durationMs = getCountdownMs(roundType, idx);
       }
 
+      if (!Number.isFinite(durationMs) || durationMs <= 0) {
+        // Fallback an toàn để tránh lỗi RangeError: Invalid time value
+        durationMs = getCountdownMs(roundType ?? "khoi_dong");
+      }
+
       const deadline = new Date(Date.now() + durationMs).toISOString();
       const { error: updateErr } = await olympia
         .from("live_sessions")

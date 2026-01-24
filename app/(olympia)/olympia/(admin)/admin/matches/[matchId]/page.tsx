@@ -11,6 +11,7 @@ import { MatchPlayersReorder } from '@/components/olympia/admin/matches/MatchPla
 import { AddPlayersToMatch } from '@/components/olympia/admin/matches/AddPlayersToMatch'
 import { CopyMatchIdButton } from '@/components/olympia/admin/matches/CopyMatchIdButton'
 import { CopyRoomLinksPanel } from '@/components/olympia/admin/matches/CopyRoomLinksPanel'
+import { TournamentInfoCard } from '@/components/olympia/admin/matches/TournamentInfoCard'
 import { getServerAuthContext } from '@/lib/server-auth'
 import { resetLiveSessionAndScoresAction } from '@/app/(olympia)/olympia/actions'
 
@@ -212,6 +213,18 @@ async function fetchMatchDetail(matchId: string) {
   if (roundsResult.error) throw roundsResult.error
   if (tournamentResult && tournamentResult.error) throw tournamentResult.error
 
+  // Lấy mật khẩu plain text từ session_password_history
+  let passwordHistory: { player_password_plain: string | null; mc_password_plain: string | null } | null = null
+  if (liveSessionResult.data?.id) {
+    const { data } = await olympia
+      .from('session_password_history')
+      .select('player_password_plain, mc_password_plain')
+      .eq('session_id', liveSessionResult.data.id)
+      .eq('is_current', true)
+      .maybeSingle()
+    passwordHistory = data
+  }
+
   let participantLookup = new Map<
     string,
     {
@@ -324,6 +337,7 @@ async function fetchMatchDetail(matchId: string) {
     match,
     tournament: tournamentResult?.data ?? null,
     liveSession: liveSessionResult.data,
+    passwordHistory,
     players: playersResult.data ?? [],
     rounds: roundsResult.data ?? [],
     questionSets: questionSetsResult.data ?? [],
@@ -343,7 +357,7 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
     notFound()
   }
 
-  const { match, tournament, liveSession, players, rounds, participantLookup, questionSets, selectedQuestionSetIds } = details
+  const { match, tournament, liveSession, passwordHistory, players, rounds, participantLookup, questionSets, selectedQuestionSetIds } = details
   const statusClass = statusVariants[match.status] ?? 'bg-slate-100 text-slate-700'
 
   type ParticipantRow = {
@@ -421,20 +435,17 @@ export default async function OlympiaMatchDetailPage({ params }: { params: Promi
 
           <Card>
             <CardHeader>
-              <CardTitle>Thông tin giải đấu</CardTitle>
-              <CardDescription>Giải mà trận này trực thuộc.</CardDescription>
+              <CardTitle>Thông tin trận đấu</CardTitle>
+              <CardDescription>Thông tin trận đấu và các link truy cập.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              {tournament ? (
-                <>
-                  <p className="text-base font-medium text-slate-900">{tournament.name}</p>
-                  <p>Trạng thái: {tournament.status ?? '—'}</p>
-                  <p>Bắt đầu: {formatDate(tournament.starts_at)}</p>
-                  <p>Kết thúc: {formatDate(tournament.ends_at)}</p>
-                </>
-              ) : (
-                <p>Trận chưa được gán vào giải đấu cụ thể.</p>
-              )}
+            <CardContent>
+              <TournamentInfoCard
+                matchName={match.name}
+                tournamentName={tournament?.name ?? null}
+                joinCode={liveSession?.join_code ?? null}
+                playerPassword={passwordHistory?.player_password_plain ?? null}
+                mcPassword={passwordHistory?.mc_password_plain ?? null}
+              />
             </CardContent>
           </Card>
         </div>

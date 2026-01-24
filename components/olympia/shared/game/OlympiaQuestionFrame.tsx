@@ -17,12 +17,12 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
     const contentTransition = { duration: 0.8, ease: 'easeOut' } as const;
 
     const leftVariant = {
-        initial: { x: '100vw', scale: 0.6, opacity: 0 },
+        initial: { x: '100vw', scale: 0.1, opacity: 0 },
         animate: { x: 0, scale: 1, opacity: 1, transition: arrowTransition },
     } as const;
 
     const rightVariant = {
-        initial: { x: '-100vw', scale: 0.6, opacity: 0 },
+        initial: { x: '-100vw', scale: 0.1, opacity: 0 },
         animate: { x: 0, scale: 1, opacity: 1, transition: arrowTransition },
     } as const;
 
@@ -49,7 +49,7 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
                 >
                     {/* Use a single path for matching shapes */}
                     {/* outer cyan (left) */}
-                    <svg className="h-full w-[56px] flex-shrink-0" viewBox="0 0 120 56" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 16px rgba(6, 182, 212, 0.7))', marginRight: '-15px' }}>
+                    <svg className="h-full w-[56px] flex-shrink-0" viewBox="0 0 120 56" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 16px rgba(6, 182, 212, 0.7))', marginRight: '-20px' }}>
                         <path d="M 0 28 L 40 0 L 120 0 L 100 28 L 120 56 L 40 56 Z" fill="#06b6d4" />
                     </svg>
                     {/* inner dark (left) sits flush to frame edge */}
@@ -130,7 +130,7 @@ export default function OlympiaQuestionFrame({ children, open = true, scoreboard
                         <path d="M 0 28 L 40 0 L 120 0 L 100 28 L 120 56 L 40 56 Z" fill="#0f172a" />
                     </svg>
                     {/* outer cyan (right) mirrored */}
-                    <svg className="h-full w-[56px] flex-shrink-0" viewBox="0 0 120 56" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 16px rgba(6, 182, 212, 0.7))', transform: 'scaleX(-1)', marginLeft: '-15px' }}>
+                    <svg className="h-full w-[56px] flex-shrink-0" viewBox="0 0 120 56" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 16px rgba(6, 182, 212, 0.7))', transform: 'scaleX(-1)', marginLeft: '-20px' }}>
                         <path d="M 0 28 L 40 0 L 120 0 L 100 28 L 120 56 L 40 56 Z" fill="#06b6d4" />
                     </svg>
                 </motion.div>

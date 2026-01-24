@@ -156,12 +156,17 @@ export function OlympiaGameClient({
   const [answerState, answerAction] = useActionState(submitAnswerActionTraced, actionInitialState)
   const [buzzerState, buzzerAction] = useActionState(triggerBuzzerActionTraced, actionInitialState)
 
+  const [optimisticSubmittedQuestionId, setOptimisticSubmittedQuestionId] = useState<string | null>(null)
+
   const [optimisticBuzzerWinner, setOptimisticBuzzerWinner] = useState<{
     roundQuestionId: string
     playerId: string
     eventType: 'buzz' | 'steal'
     createdAtMs: number
   } | null>(null)
+
+  // State để quản lý việc phóng to media
+  const [isMediaExpanded, setIsMediaExpanded] = useState(false)
 
   // Blocking preload overlay (không có nút huỷ)
   // Ưu tiên preload từ initialData để chạy ngay khi mount.
@@ -623,8 +628,22 @@ export function OlympiaGameClient({
   // (target có thể là lượt cá nhân hoặc người bấm chuông thắng).
   const isLockedToTarget = roundType !== 'vcnv' && Boolean(targetPlayerId)
   const canSubmitGeneric = !disableInteractions && (!isLockedToTarget || Boolean(isViewerTarget)) && !isViewerDisqualifiedObstacle
+
+  const hasSubmittedForCurrentQuestion = useMemo(() => {
+    if (!currentQuestionId) return false
+    if (!viewerPlayer?.id) return false
+    return answers.some((row) => row.round_question_id === currentQuestionId && row.player_id === viewerPlayer.id)
+  }, [answers, currentQuestionId, viewerPlayer?.id])
+
+  const isAnswerLocked =
+    hasSubmittedForCurrentQuestion ||
+    (Boolean(optimisticSubmittedQuestionId) && optimisticSubmittedQuestionId === currentQuestionId)
+
   // Disable submit nếu câu hiện tại là CNV (chỉ host/MC xác nhận đáp án, không cho client gửi trực tiếp)
-  const disableAnswerSubmit = isCnvQuestion || (isVeDich ? !canSubmitVeDich : !canSubmitGeneric)
+  const disableAnswerSubmit =
+    isCnvQuestion ||
+    (isVeDich ? !canSubmitVeDich : !canSubmitGeneric) ||
+    isAnswerLocked
 
   const canBuzzVeDich =
     !disableInteractions &&
@@ -641,7 +660,22 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     setOptimisticBuzzerWinner(null)
+    // Reset trạng thái phóng to media khi đổi câu hỏi
+    setIsMediaExpanded(false)
   }, [currentQuestionId])
+
+  useEffect(() => {
+    // Đổi câu -> mở lại input (lock theo từng câu)
+    setOptimisticSubmittedQuestionId(null)
+  }, [currentQuestionId])
+
+  useEffect(() => {
+    // Nếu submit lỗi thì cho phép gửi lại.
+    if (!answerState.error) return
+    if (!currentQuestionId) return
+    if (optimisticSubmittedQuestionId !== currentQuestionId) return
+    setOptimisticSubmittedQuestionId(null)
+  }, [answerState.error, currentQuestionId, optimisticSubmittedQuestionId])
 
   useEffect(() => {
     if (questionState === 'hidden') {
@@ -1090,6 +1124,33 @@ export function OlympiaGameClient({
       return null
     }
   }, [mediaKind, mediaUrl])
+
+  // Kiểm tra câu hỏi có ngắn không (dưới 80 ký tự)
+  const isQuestionShort = useMemo(() => {
+    if (!questionText) return false
+    return questionText.trim().length < 80
+  }, [questionText])
+
+  // Tự động điều chỉnh font size dựa trên độ dài câu hỏi và có media hay không
+  const questionFontSize = useMemo(() => {
+    if (!questionText) return 'text-4xl sm:text-5xl'
+    const textLength = questionText.trim().length
+    const hasMedia = Boolean(showQuestionMedia && mediaUrl)
+
+    // Nếu có media (ảnh/video), giảm cỡ chữ để fit 2 cột
+    if (hasMedia) {
+      if (textLength > 150) return 'text-xl sm:text-2xl'
+      if (textLength > 100) return 'text-2xl sm:text-3xl'
+      if (textLength > 60) return 'text-3xl sm:text-4xl'
+      return 'text-3xl sm:text-4xl'
+    }
+
+    // Không có media, dùng size lớn hơn
+    if (textLength > 200) return 'text-2xl sm:text-3xl'
+    if (textLength > 150) return 'text-3xl sm:text-4xl'
+    if (textLength > 100) return 'text-4xl sm:text-5xl'
+    return 'text-4xl sm:text-5xl'
+  }, [questionText, showQuestionMedia, mediaUrl])
 
   useEffect(() => {
     const canReceiveVideoControl = isGuest || resolvedViewerMode === 'player'
@@ -1667,7 +1728,7 @@ export function OlympiaGameClient({
 
         {/* MAIN SCREEN */}
         <main
-          className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-44"
+          className="flex-1 relative flex items-center justify-center px-6 pt-10 pb-6 overflow-y-auto"
 
         >
           {!isSessionRunning ? (
@@ -1978,56 +2039,123 @@ export function OlympiaGameClient({
                   scoreboard={scoreboard}
                   currentSeat={currentHighlightSeat}
                 >
-                  {showQuestionText ? (
-                    <p className="text-4xl sm:text-5xl font-semibold leading-snug whitespace-pre-wrap text-slate-50">
-                      {questionText?.trim() ? questionText : '—'}
-                    </p>
-                  ) : null}
-
-                  {showQuestionMedia ? (
-                    <div className="mt-6 mx-auto max-w-4xl rounded-md border border-slate-700 bg-slate-950/60 p-3 text-left">
-                      {mediaUrl ? (
-                        <div className="space-y-2">
-                          <p className="text-xs text-slate-300">Ảnh/Video</p>
-                          {mediaKind === 'image' ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={mediaUrl}
-                              alt="Media câu hỏi"
-                              className="w-full max-h-[420px] object-contain rounded"
-                            />
-                          ) : mediaKind === 'video' ? (
-                            <video
-                              ref={syncedVideoRef}
-                              playsInline
-                              src={mediaUrl}
-                              className="w-full max-h-[420px] rounded bg-black pointer-events-none"
-                              tabIndex={-1}
-                            />
-                          ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                            <div className="aspect-video w-full overflow-hidden rounded bg-black">
-                              <iframe
-                                src={youtubeEmbedUrl}
-                                title="Video câu hỏi"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                allowFullScreen
-                                className="h-full w-full"
-                              />
-                            </div>
-                          ) : (
-                            <a
-                              href={mediaUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-sky-300 hover:underline break-all"
-                            >
-                              {mediaUrl}
-                            </a>
-                          )}
+                  {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
+                  <div className={cn(
+                    'w-full',
+                    showQuestionText && showQuestionMedia && !isMediaExpanded
+                      ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
+                      : 'flex flex-col'
+                  )}>
+                    {/* Cột chữ (ẩn khi media được phóng to) */}
+                    {showQuestionText && !isMediaExpanded ? (
+                      <div className={cn(
+                        'flex flex-col',
+                        showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : ''
+                      )}>
+                        <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                          <p className={cn(
+                            questionFontSize,
+                            'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                          )}>
+                            {questionText?.trim() ? questionText : '—'}
+                          </p>
                         </div>
-                      ) : null}
-                    </div>
-                  ) : null}
+                      </div>
+                    ) : null}
+
+                    {/* Cột media (click để phóng to/thu nhỏ) */}
+                    {showQuestionMedia ? (
+                      <div className={cn(
+                        'rounded-md border border-slate-700 bg-slate-950/60 p-3',
+                        isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-4xl' : 'lg:pl-4') : 'mx-auto max-w-4xl'
+                      )}>
+                        {mediaUrl ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-slate-300">Ảnh/Video</p>
+                              <button
+                                onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                                type="button"
+                              >
+                                {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
+                              </button>
+                            </div>
+                            <div
+                              onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                              className="cursor-pointer transition-transform hover:scale-[1.02]"
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  setIsMediaExpanded(!isMediaExpanded)
+                                }
+                              }}
+                            >
+                              {mediaKind === 'image' ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img
+                                  src={mediaUrl}
+                                  alt="Media câu hỏi"
+                                  className={cn(
+                                    'w-full object-contain rounded',
+                                    isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                  )}
+                                />
+                              ) : mediaKind === 'video' ? (
+                                <video
+                                  ref={syncedVideoRef}
+                                  playsInline
+                                  src={mediaUrl}
+                                  className={cn(
+                                    'w-full rounded bg-black pointer-events-none',
+                                    isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                  )}
+                                  tabIndex={-1}
+                                />
+                              ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                                <div className={cn(
+                                  'aspect-video w-full overflow-hidden rounded bg-black',
+                                  isMediaExpanded ? 'max-h-[600px]' : ''
+                                )}>
+                                  <iframe
+                                    src={youtubeEmbedUrl}
+                                    title="Video câu hỏi"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                    className="h-full w-full"
+                                  />
+                                </div>
+                              ) : (
+                                <a
+                                  href={mediaUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-sky-300 hover:underline break-all"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {mediaUrl}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {/* Hiển thị lại chữ khi không có media hoặc media chưa phóng to */}
+                    {showQuestionText && !showQuestionMedia ? (
+                      <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                        <p className={cn(
+                          questionFontSize,
+                          'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                        )}>
+                          {questionText?.trim() ? questionText : '—'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
                 </OlympiaQuestionFrame>
               ) : null}
 
@@ -2090,7 +2218,14 @@ export function OlympiaGameClient({
                   <div className="flex flex-col items-center gap-3">
                     <div className="flex flex-wrap gap-3 justify-center">
                       {roundType !== 'khoi_dong' && !isVeDich ? (
-                        <form action={answerAction} className="flex items-center gap-2">
+                        <form
+                          action={answerAction}
+                          className="flex items-center gap-2"
+                          onSubmit={() => {
+                            // Lock ngay khi bấm gửi để tránh spam (sẽ mở lại nếu server trả lỗi)
+                            setOptimisticSubmittedQuestionId(currentQuestionId ?? null)
+                          }}
+                        >
                           <input type="hidden" name="sessionId" value={session.id} />
                           <Input
                             name="answer"

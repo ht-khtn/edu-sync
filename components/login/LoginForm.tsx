@@ -163,8 +163,24 @@ export default function LoginForm() {
         // Use window.location for hard redirect to ensure cookies are read by server-side middleware
         // This ensures proxy.ts can detect the authenticated user immediately
         // Check if there's a redirect parameter in the URL
-        const params = new URLSearchParams(window.location.search)
-        const redirectUrl = params.get('redirect') || '/'
+        let redirectUrl = '/'
+
+        // First, check localStorage for saved admin redirect path
+        try {
+          const savedAdminPath = localStorage.getItem('olympia-admin-redirect-path')
+          if (savedAdminPath && savedAdminPath.startsWith('/olympia/admin')) {
+            redirectUrl = savedAdminPath
+          } else {
+            // Fall back to URL parameter
+            const params = new URLSearchParams(window.location.search)
+            redirectUrl = params.get('redirect') || '/'
+          }
+        } catch (e) {
+          // localStorage might not be available in some contexts
+          const params = new URLSearchParams(window.location.search)
+          redirectUrl = params.get('redirect') || '/'
+        }
+
         window.location.href = redirectUrl
         toast.success("Đăng nhập thành công");
       }

@@ -15,6 +15,7 @@ export default async function OlympiaAdminLayout({ children }: { children: React
     const { appUserId } = await getServerAuthContext();
     if (!appUserId) {
       // Not authenticated - redirect to login
+      // OlympiaAdminPathSaver component in root layout will save the current path
       return redirect('/login?redirect=/olympia/admin');
     }
     // Authenticated but no admin role - redirect to olympia client

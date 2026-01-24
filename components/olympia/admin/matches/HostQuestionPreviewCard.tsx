@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
-import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { dispatchHostSessionUpdate, subscribeHostSessionUpdate, dispatchHostStarUseUpdate, subscribeHostStarUseUpdate } from '@/components/olympia/admin/matches/host-events'
 import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
 
 type PlayerSummary = {
@@ -262,6 +262,7 @@ export function HostQuestionPreviewCard(props: Props) {
     } = props
 
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
+    const [localStarEnabled, setLocalStarEnabled] = useState<boolean>(isStarEnabled ?? false)
     const questionsForPreload = preloadQuestions ?? questions
     const assets = useMemo(() => extractAssetUrls(questionsForPreload), [questionsForPreload])
     const preloadTotal = assets.images.length + assets.audios.length
@@ -301,6 +302,13 @@ export function HostQuestionPreviewCard(props: Props) {
         })
     }, [])
 
+    // Sync local star enabled với prop
+    useEffect(() => {
+        queueMicrotask(() => {
+            setLocalStarEnabled(isStarEnabled ?? false)
+        })
+    }, [isStarEnabled])
+
     const previewIndex = useMemo(() => {
         if (!previewId) return -1
         return questions.findIndex((q) => q.id === previewId)
@@ -314,6 +322,18 @@ export function HostQuestionPreviewCard(props: Props) {
         if (!previewId) return null
         return questions.find((q) => q.id === previewId) ?? null
     }, [previewId, questions])
+
+    // Listen for star use updates từ dispatch event
+    useEffect(() => {
+        return subscribeHostStarUseUpdate((payload) => {
+            // Chỉ update nếu là câu hiện tại đang xem
+            if (payload.roundQuestionId === previewRoundQuestion?.id) {
+                queueMicrotask(() => {
+                    setLocalStarEnabled(payload.isEnabled)
+                })
+            }
+        })
+    }, [previewRoundQuestion?.id])
 
     const previewQuestionText = previewRoundQuestion?.question_text ?? null
     const previewAnswerText = previewRoundQuestion?.answer_text ?? null
@@ -654,13 +674,22 @@ export function HostQuestionPreviewCard(props: Props) {
                                 <div className="flex-1">
                                     <p className="text-xs font-semibold text-amber-900">Ngôi sao hy vọng</p>
                                     <p className="mt-1 text-xs text-amber-700">
-                                        {isStarEnabled ? 'Đang bật: Nhân đôi điểm đúng, trừ điểm sai' : 'Tắt'}
+                                        {localStarEnabled ? 'Đang bật: Nhân đôi điểm đúng, trừ điểm sai' : 'Tắt'}
                                     </p>
                                 </div>
                                 <Switch
-                                    checked={isStarEnabled}
+                                    checked={localStarEnabled}
                                     onCheckedChange={async (checked) => {
                                         try {
+                                            // Optimistic update ngay
+                                            setLocalStarEnabled(checked)
+                                            dispatchHostStarUseUpdate({
+                                                roundQuestionId: previewRoundQuestion.id,
+                                                playerId: currentTargetPlayerId ?? '',
+                                                isEnabled: checked,
+                                                source: 'optimistic',
+                                            })
+
                                             const formData = new FormData()
                                             formData.append('matchId', matchId)
                                             formData.append('roundQuestionId', previewRoundQuestion.id)
@@ -671,6 +700,8 @@ export function HostQuestionPreviewCard(props: Props) {
                                             await toggleStarUseFormAction(formData)
                                         } catch (err) {
                                             console.error('Toggle star error:', err)
+                                            // Revert on error
+                                            setLocalStarEnabled(!checked)
                                         }
                                     }}
                                     aria-label="Toggle ngôi sao hy vọng"

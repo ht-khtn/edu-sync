@@ -721,7 +721,29 @@ export async function updateMatchPlayersOrderAction(
     if (matchError) return { error: matchError.message };
     if (!match) return { error: "Không tìm thấy trận." };
 
-    // Update each player's seat_index
+    // To avoid "duplicate key value violates unique constraint" on (match_id, seat_index),
+    // we use a two-phase update strategy:
+    // Phase 1: Set all affected player seat_index to NULL
+    // Phase 2: Update each player with their new seat_index
+
+    const playerIds = playerOrder.map((p) => p.playerId);
+
+    if (playerIds.length === 0) {
+      return { error: "Danh sách thí sinh trống." };
+    }
+
+    // Phase 1: Reset all seat_index to NULL for players being reordered
+    const { error: resetError } = await olympia
+      .from("match_players")
+      .update({ seat_index: null })
+      .in("id", playerIds)
+      .eq("match_id", matchId);
+
+    if (resetError) {
+      return { error: resetError.message || "Không thể cập nhật thứ tự thí sinh (phase 1)." };
+    }
+
+    // Phase 2: Update each player with their new seat_index
     const updatePromises = playerOrder.map((player) =>
       olympia
         .from("match_players")
@@ -734,7 +756,7 @@ export async function updateMatchPlayersOrderAction(
     const hasError = results.some((r) => r.error);
     if (hasError) {
       const firstError = results.find((r) => r.error)?.error;
-      return { error: firstError?.message || "Không thể cập nhật thứ tự thí sinh." };
+      return { error: firstError?.message || "Không thể cập nhật thứ tự thí sinh (phase 2)." };
     }
 
     revalidatePath(`/olympia/admin/matches/${matchId}`);

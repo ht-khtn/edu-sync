@@ -146,6 +146,7 @@ export type HostData = {
   roundQuestions: CachedRoundQuestionRow[];
   currentRoundQuestion: CachedRoundQuestionRow | null;
   isStarEnabled: boolean;
+  isStarLocked: boolean;
   winnerBuzz: WinnerBuzzRow | null;
   recentBuzzes: RecentBuzzRow[];
   recentAnswers: RecentAnswerRow[];

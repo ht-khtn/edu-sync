@@ -84,6 +84,7 @@ export function OlympiaHostConsoleView(props: {
         roundQuestions,
         currentRoundQuestion,
         isStarEnabled,
+        isStarLocked,
         winnerBuzz,
         recentAnswers,
         obstacle,
@@ -382,6 +383,7 @@ export function OlympiaHostConsoleView(props: {
                         setGuestMediaControlAction={setGuestMediaControlAction}
                         toggleStarUseFormAction={toggleStarUseFormAction}
                         isStarEnabled={isStarEnabled}
+                        isStarLocked={isStarLocked}
                         currentTargetPlayerId={currentRoundQuestion?.target_player_id ?? null}
                     />
 

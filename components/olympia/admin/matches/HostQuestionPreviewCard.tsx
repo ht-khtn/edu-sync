@@ -79,8 +79,9 @@ type Props = {
     winnerBuzz: WinnerBuzzRow | null
     setCurrentQuestionFormAction: (formData: FormData) => Promise<void>
     setGuestMediaControlAction: HostControlAction
-    toggleStarUseFormAction?: (formData: FormData) => Promise<void>
+    toggleStarUseFormAction?: (formData: FormData) => Promise<ActionState>
     isStarEnabled?: boolean
+    isStarLocked?: boolean
     currentTargetPlayerId?: string | null
 }
 
@@ -258,6 +259,7 @@ export function HostQuestionPreviewCard(props: Props) {
         setGuestMediaControlAction,
         toggleStarUseFormAction,
         isStarEnabled,
+        isStarLocked,
         currentTargetPlayerId,
     } = props
 
@@ -674,18 +676,29 @@ export function HostQuestionPreviewCard(props: Props) {
                                 <div className="flex-1">
                                     <p className="text-xs font-semibold text-amber-900">Ngôi sao hy vọng</p>
                                     <p className="mt-1 text-xs text-amber-700">
-                                        {localStarEnabled ? 'Đang bật: Nhân đôi điểm đúng, trừ điểm sai' : 'Tắt'}
+                                        {isStarLocked
+                                            ? localStarEnabled
+                                                ? 'Đã bật: Nhân đôi điểm đúng, trừ toàn bộ điểm nếu sai. (Đã khóa)'
+                                                : 'Thí sinh đã dùng ngôi sao hy vọng, không thể bật lại.'
+                                            : localStarEnabled
+                                                ? 'Đang bật: Nhân đôi điểm đúng, trừ toàn bộ điểm nếu sai.'
+                                                : 'Tắt'}
                                     </p>
                                 </div>
                                 <Switch
                                     checked={localStarEnabled}
+                                    disabled={Boolean(isStarLocked) || !currentTargetPlayerId}
                                     onCheckedChange={async (checked) => {
                                         try {
+                                            if (!currentTargetPlayerId) {
+                                                throw new Error('Cần chọn thí sinh chính trước.')
+                                            }
+
                                             // Optimistic update ngay
                                             setLocalStarEnabled(checked)
                                             dispatchHostStarUseUpdate({
                                                 roundQuestionId: previewRoundQuestion.id,
-                                                playerId: currentTargetPlayerId ?? '',
+                                                playerId: currentTargetPlayerId,
                                                 isEnabled: checked,
                                                 source: 'optimistic',
                                             })
@@ -693,11 +706,14 @@ export function HostQuestionPreviewCard(props: Props) {
                                             const formData = new FormData()
                                             formData.append('matchId', matchId)
                                             formData.append('roundQuestionId', previewRoundQuestion.id)
-                                            formData.append('playerId', currentTargetPlayerId ?? '')
+                                            formData.append('playerId', currentTargetPlayerId)
                                             if (checked) {
                                                 formData.append('enabled', '1')
                                             }
-                                            await toggleStarUseFormAction(formData)
+                                            const result = await toggleStarUseFormAction(formData)
+                                            if (result.error) {
+                                                throw new Error(result.error)
+                                            }
                                         } catch (err) {
                                             console.error('Toggle star error:', err)
                                             // Revert on error

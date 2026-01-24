@@ -32,7 +32,9 @@ export function computeVeDichMainDelta(params: {
   starEnabled: boolean;
 }): number {
   const safeValue = params.value === 30 ? 30 : 20;
-  if (params.decision !== "correct") return 0;
+  if (params.decision !== "correct") {
+    return params.starEnabled ? -safeValue : 0;
+  }
   const config = getVeDichPoints();
   return safeValue * (params.starEnabled ? config.starMultiplier : 1);
 }

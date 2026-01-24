@@ -77,11 +77,23 @@ describe("Về đích scoring", () => {
   it("main: đúng thì +value (x2 nếu star)", () => {
     expect(computeVeDichMainDelta({ value: 20, decision: "correct", starEnabled: false })).toBe(20);
     expect(computeVeDichMainDelta({ value: 20, decision: "correct", starEnabled: true })).toBe(40);
+    expect(computeVeDichMainDelta({ value: 30, decision: "correct", starEnabled: false })).toBe(30);
     expect(computeVeDichMainDelta({ value: 30, decision: "correct", starEnabled: true })).toBe(60);
   });
 
-  it("main: sai/hết giờ = 0", () => {
-    expect(computeVeDichMainDelta({ value: 20, decision: "wrong", starEnabled: true })).toBe(0);
+  it("main: sai/hết giờ phụ thuộc star", () => {
+    // Sai + sao → trừ toàn bộ điểm
+    expect(computeVeDichMainDelta({ value: 20, decision: "wrong", starEnabled: true })).toBe(-20);
+    expect(computeVeDichMainDelta({ value: 30, decision: "wrong", starEnabled: true })).toBe(-30);
+
+    // Hết giờ + sao → trừ toàn bộ điểm
+    expect(computeVeDichMainDelta({ value: 20, decision: "timeout", starEnabled: true })).toBe(-20);
+    expect(computeVeDichMainDelta({ value: 30, decision: "timeout", starEnabled: true })).toBe(-30);
+
+    // Sai/hết giờ không sao → không trừ
+    expect(computeVeDichMainDelta({ value: 20, decision: "wrong", starEnabled: false })).toBe(0);
+    expect(computeVeDichMainDelta({ value: 30, decision: "wrong", starEnabled: false })).toBe(0);
+    expect(computeVeDichMainDelta({ value: 20, decision: "timeout", starEnabled: false })).toBe(0);
     expect(computeVeDichMainDelta({ value: 30, decision: "timeout", starEnabled: false })).toBe(0);
   });
 

@@ -208,18 +208,26 @@ export async function fetchHostData(matchCode: string): Promise<HostData | null>
   const resetOccurredAt =
     (lastReset as { occurred_at?: string | null } | null)?.occurred_at ?? null;
 
-  const { data: currentStar } =
+  type StarUseLookupRow = { id: string; round_question_id: string | null };
+  const { data: starUseByPlayer } =
     currentQuestionId && currentRoundQuestion?.target_player_id
-      ? await perfTime(`[perf][host] supabase.star_uses.byTarget match=${realMatchId}`, () =>
+      ? await perfTime(`[perf][host] supabase.star_uses.byPlayer match=${realMatchId}`, () =>
           olympia
             .from("star_uses")
-            .select("id")
+            .select("id, round_question_id")
             .eq("match_id", realMatchId)
-            .eq("round_question_id", currentQuestionId)
             .eq("player_id", currentRoundQuestion.target_player_id)
+            .order("declared_at", { ascending: false })
+            .limit(1)
             .maybeSingle()
         )
       : { data: null };
+
+  const starUseRow = (starUseByPlayer as StarUseLookupRow | null) ?? null;
+  const isStarLocked = Boolean(starUseRow?.id);
+  const isStarEnabled = Boolean(
+    currentQuestionId && starUseRow?.round_question_id === currentQuestionId
+  );
 
   const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all(
     [
@@ -371,7 +379,8 @@ export async function fetchHostData(matchCode: string): Promise<HostData | null>
     })),
     roundQuestions: (roundQuestions ?? []) as CachedRoundQuestionRow[],
     currentRoundQuestion: (currentRoundQuestion as CachedRoundQuestionRow | null) ?? null,
-    isStarEnabled: Boolean((currentStar as { id?: string | null } | null)?.id),
+    isStarEnabled,
+    isStarLocked,
     winnerBuzz: (winnerBuzz as WinnerBuzzRow | null) ?? null,
     recentBuzzes: (recentBuzzes as RecentBuzzRow[]) ?? [],
     recentAnswers: (recentAnswers as RecentAnswerRow[]) ?? [],

@@ -2137,7 +2137,25 @@ export async function toggleStarUseAction(
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin Star." };
     }
 
+    type StarUseLookupRow = { id: string; round_question_id: string | null };
+    const { data: existingStar, error: existingStarError } = await olympia
+      .from("star_uses")
+      .select("id, round_question_id")
+      .eq("match_id", parsed.data.matchId)
+      .eq("player_id", parsed.data.playerId)
+      .order("declared_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingStarError) return { error: existingStarError.message };
+
+    const existingRoundQuestionId =
+      (existingStar as StarUseLookupRow | null)?.round_question_id ?? null;
+    const alreadyUsed = Boolean((existingStar as StarUseLookupRow | null)?.id);
+
     if (!parsed.data.enabled) {
+      if (alreadyUsed) {
+        return { error: "Thí sinh đã dùng ngôi sao hy vọng, không thể hủy." };
+      }
       const { error: delError } = await olympia
         .from("star_uses")
         .delete()
@@ -2146,6 +2164,14 @@ export async function toggleStarUseAction(
         .eq("player_id", parsed.data.playerId);
       if (delError) return { error: delError.message };
       return { success: "Đã tắt Star." };
+    }
+
+    if (alreadyUsed && existingRoundQuestionId !== parsed.data.roundQuestionId) {
+      return { error: "Thí sinh đã dùng ngôi sao hy vọng ở câu khác." };
+    }
+
+    if (alreadyUsed && existingRoundQuestionId === parsed.data.roundQuestionId) {
+      return { success: "Ngôi sao hy vọng đã được bật." };
     }
 
     const { error: upsertError } = await olympia.from("star_uses").upsert(
@@ -2166,8 +2192,12 @@ export async function toggleStarUseAction(
   }
 }
 
-export async function toggleStarUseFormAction(formData: FormData): Promise<void> {
-  await toggleStarUseAction({}, formData);
+export async function toggleStarUseFormAction(formData: FormData): Promise<ActionState> {
+  const result = await toggleStarUseAction({}, formData);
+  if (result.error) {
+    console.error("[Olympia] toggleStarUseFormAction error:", result.error);
+  }
+  return result;
 }
 
 export async function openStealWindowAction(

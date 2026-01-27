@@ -82,6 +82,18 @@ export type TimerPingPayload = {
   clientTs: number;
 };
 
+type QuestionState = "hidden" | "showing" | "answer_revealed" | "completed";
+
+export type QuestionPingPayload = {
+  matchId: string;
+  sessionId: string;
+  roundQuestionId?: string | null;
+  questionState?: QuestionState | null;
+  showScoreboardOverlay?: boolean | null;
+  showAnswersOverlay?: boolean | null;
+  clientTs: number;
+};
+
 function payloadString(payload: RealtimeEventPayload, key: string): string | null {
   const value = payload[key];
   return typeof value === "string" ? value : null;
@@ -193,6 +205,75 @@ function parseTimerPingPayload(payload: unknown): TimerPingPayload | null {
     roundQuestionId,
     action: actionRaw,
     deadline: deadlineRaw,
+    clientTs: clientTsRaw,
+  };
+}
+
+function parseQuestionPingPayload(payload: unknown): QuestionPingPayload | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const rec = payload as Record<string, unknown>;
+
+  const matchId = typeof rec.matchId === "string" ? rec.matchId : null;
+  const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
+  const clientTsRaw = typeof rec.clientTs === "number" ? rec.clientTs : null;
+
+  if (!matchId || !sessionId || clientTsRaw === null) return null;
+  if (!Number.isFinite(clientTsRaw)) return null;
+
+  let roundQuestionId: string | null | undefined = undefined;
+  if (Object.prototype.hasOwnProperty.call(rec, "roundQuestionId")) {
+    if (rec.roundQuestionId === null) roundQuestionId = null;
+    else if (typeof rec.roundQuestionId === "string") roundQuestionId = rec.roundQuestionId;
+    else return null;
+  }
+
+  let questionState: QuestionState | null | undefined = undefined;
+  if (Object.prototype.hasOwnProperty.call(rec, "questionState")) {
+    if (rec.questionState === null) {
+      questionState = null;
+    } else if (typeof rec.questionState === "string") {
+      if (
+        rec.questionState === "hidden" ||
+        rec.questionState === "showing" ||
+        rec.questionState === "answer_revealed" ||
+        rec.questionState === "completed"
+      ) {
+        questionState = rec.questionState;
+      } else {
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  let showScoreboardOverlay: boolean | null | undefined = undefined;
+  if (Object.prototype.hasOwnProperty.call(rec, "showScoreboardOverlay")) {
+    if (rec.showScoreboardOverlay === null) showScoreboardOverlay = null;
+    else if (typeof rec.showScoreboardOverlay === "boolean") {
+      showScoreboardOverlay = rec.showScoreboardOverlay;
+    } else {
+      return null;
+    }
+  }
+
+  let showAnswersOverlay: boolean | null | undefined = undefined;
+  if (Object.prototype.hasOwnProperty.call(rec, "showAnswersOverlay")) {
+    if (rec.showAnswersOverlay === null) showAnswersOverlay = null;
+    else if (typeof rec.showAnswersOverlay === "boolean") {
+      showAnswersOverlay = rec.showAnswersOverlay;
+    } else {
+      return null;
+    }
+  }
+
+  return {
+    matchId,
+    sessionId,
+    roundQuestionId,
+    questionState,
+    showScoreboardOverlay,
+    showAnswersOverlay,
     clientTs: clientTsRaw,
   };
 }
@@ -770,6 +851,33 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             setSession((prev) => ({
               ...prev,
               timer_deadline: parsed.deadline ?? null,
+            }));
+          })
+          .on("broadcast", { event: "question_ping" }, ({ payload }) => {
+            const parsed = parseQuestionPingPayload(payload);
+            if (!parsed) return;
+            if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
+            const lagMs = Date.now() - parsed.clientTs;
+            if (Number.isFinite(lagMs) && lagMs > 2000) return;
+
+            setSession((prev) => ({
+              ...prev,
+              question_state:
+                parsed.questionState !== undefined
+                  ? parsed.questionState
+                  : (prev.question_state ?? null),
+              current_round_question_id:
+                parsed.roundQuestionId !== undefined
+                  ? parsed.roundQuestionId
+                  : (prev.current_round_question_id ?? null),
+              show_scoreboard_overlay:
+                parsed.showScoreboardOverlay !== undefined && parsed.showScoreboardOverlay !== null
+                  ? parsed.showScoreboardOverlay
+                  : prev.show_scoreboard_overlay,
+              show_answers_overlay:
+                parsed.showAnswersOverlay !== undefined && parsed.showAnswersOverlay !== null
+                  ? parsed.showAnswersOverlay
+                  : prev.show_answers_overlay,
             }));
           })
           .on(

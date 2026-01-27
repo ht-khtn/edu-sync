@@ -22,7 +22,7 @@ Provide project context and coding guidelines that AI should follow when generat
    - Only ask clarifying questions when the context is genuinely insufficient or ambiguous.
 
 5. DO NOT CHANGE OTHER COMPONENTS:
-   - If you see any othr components which i đon't request to delete, please do not delete that.
+   - If you see any other components which I don't request to delete, please do not delete that.
 
 6. To-do lists
    - Always create to-do lists before doing anything.
@@ -40,4 +40,10 @@ Provide project context and coding guidelines that AI should follow when generat
    - Always do all steps in a single response, do not wait for my confirmation to proceed to the next step.
 
 10. Database
-   - Do not use the following table: "obstacles", "obstacle_guesses", "obsstacle_tiles"
+
+- Do not use the following table: "obstacles", "obstacle_guesses", "obsstacle_tiles"
+
+11. Versioning
+
+- Always update the version in package.json according to semantic versioning principles after completing changes.
+- Ensure the version reflects the nature of the changes (major, minor, patch).

@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { dispatchHostSessionUpdate, subscribeHostSessionUpdate, dispatchHostStarUseUpdate, subscribeHostStarUseUpdate } from '@/components/olympia/admin/matches/host-events'
+import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
+import type { QuestionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
 
 type PlayerSummary = {
@@ -263,6 +265,26 @@ export function HostQuestionPreviewCard(props: Props) {
         currentTargetPlayerId,
     } = props
 
+    const sessionId = liveSession?.id ?? null
+    const { sendBroadcast } = useHostBroadcast(sessionId)
+
+    const sendQuestionPing = useCallback(
+        (roundQuestionId: string) => {
+            if (!sessionId) return
+            const payload: QuestionPingPayload = {
+                matchId,
+                sessionId,
+                roundQuestionId,
+                questionState: 'showing',
+                showScoreboardOverlay: false,
+                showAnswersOverlay: false,
+                clientTs: Date.now(),
+            }
+            sendBroadcast('question_ping', payload)
+        },
+        [matchId, sendBroadcast, sessionId]
+    )
+
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
     const [localStarEnabled, setLocalStarEnabled] = useState<boolean>(isStarEnabled ?? false)
     const questionsForPreload = preloadQuestions ?? questions
@@ -346,6 +368,7 @@ export function HostQuestionPreviewCard(props: Props) {
         const nextId = typeof raw === 'string' && raw.trim() ? raw : null
         if (nextId) {
             dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
+            sendQuestionPing(nextId)
         }
         await setCurrentQuestionFormAction(formData)
     }

@@ -11,6 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Timer, Play, Pause, Square } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
+import type { QuestionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
 
 export type ActionState = {
@@ -342,6 +344,8 @@ export function HostRoundControls({
   const [, startRoundTransition] = useTransition()
   const [, startBuzzerTransition] = useTransition()
   const [, startViewModeTransition] = useTransition()
+
+  const { sendBroadcast } = useHostBroadcast(sessionId ?? null)
 
   const [effectiveCurrentRoundQuestionId, setEffectiveCurrentRoundQuestionId] = useState<string | null>(() => currentRoundQuestionId ?? null)
   const [effectiveCurrentQuestionState, setEffectiveCurrentQuestionState] = useState<string | null>(() => currentQuestionState ?? null)
@@ -747,6 +751,18 @@ export function HostRoundControls({
     const nextAnswers = next === 'answers'
 
     setViewModeOverride(next)
+
+    if (sessionId && (next === 'question' || next === 'waiting')) {
+      const payload: QuestionPingPayload = {
+        matchId,
+        sessionId,
+        questionState: next === 'waiting' ? 'hidden' : 'showing',
+        showScoreboardOverlay: false,
+        showAnswersOverlay: false,
+        clientTs: Date.now(),
+      }
+      sendBroadcast('question_ping', payload)
+    }
 
     submitToggleAction(startViewModeTransition, waitingAction, nextWaiting)
     submitToggleAction(startViewModeTransition, scoreboardAction, nextScoreboard)

@@ -79,6 +79,22 @@ function payloadBoolean(payload: RealtimeEventPayload, key: string): boolean | n
   return typeof value === "boolean" ? value : null;
 }
 
+function payloadHasKey(payload: RealtimeEventPayload, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
+
+function payloadStringFromKeys(
+  payload: RealtimeEventPayload,
+  keys: string[]
+): string | null | undefined {
+  for (const key of keys) {
+    if (payloadHasKey(payload, key)) {
+      return payloadString(payload, key);
+    }
+  }
+  return undefined;
+}
+
 function parseBuzzerPingPayload(payload: unknown): BuzzerPingPayload | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const rec = payload as Record<string, unknown>;
@@ -743,25 +759,51 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
                     }
                   }
 
-                  setSession((prev) => ({
-                    ...prev,
-                    status: payloadString(evt.payload, "status") ?? prev.status,
-                    join_code: payloadString(evt.payload, "joinCode") ?? prev.join_code,
-                    question_state: payloadString(evt.payload, "questionState"),
-                    current_round_id: payloadString(evt.payload, "currentRoundId"),
-                    current_round_type: payloadString(evt.payload, "currentRoundType"),
-                    current_round_question_id: payloadString(evt.payload, "currentRoundQuestionId"),
-                    timer_deadline: payloadString(evt.payload, "timerDeadline"),
-                    buzzer_enabled:
-                      payloadBoolean(evt.payload, "buzzerEnabled") ?? prev.buzzer_enabled,
-                    show_scoreboard_overlay:
-                      payloadBoolean(evt.payload, "showScoreboardOverlay") ??
-                      prev.show_scoreboard_overlay,
-                    show_answers_overlay:
-                      payloadBoolean(evt.payload, "showAnswersOverlay") ??
-                      prev.show_answers_overlay,
-                    guest_media_control: guestMediaControl ?? prev.guest_media_control,
-                  }));
+                  setSession((prev) => {
+                    const nextQuestionState = payloadStringFromKeys(evt.payload, [
+                      "questionState",
+                      "question_state",
+                    ]);
+                    const nextRoundId = payloadStringFromKeys(evt.payload, [
+                      "currentRoundId",
+                      "current_round_id",
+                    ]);
+                    const nextRoundType = payloadStringFromKeys(evt.payload, [
+                      "currentRoundType",
+                      "current_round_type",
+                    ]);
+                    const nextRoundQuestionId = payloadStringFromKeys(evt.payload, [
+                      "currentRoundQuestionId",
+                      "current_round_question_id",
+                    ]);
+                    const nextTimerDeadline = payloadStringFromKeys(evt.payload, [
+                      "timerDeadline",
+                      "timer_deadline",
+                    ]);
+
+                    return {
+                      ...prev,
+                      status: payloadString(evt.payload, "status") ?? prev.status,
+                      join_code:
+                        payloadStringFromKeys(evt.payload, ["joinCode", "join_code"]) ??
+                        prev.join_code,
+                      question_state: nextQuestionState ?? prev.question_state,
+                      current_round_id: nextRoundId ?? prev.current_round_id,
+                      current_round_type: nextRoundType ?? prev.current_round_type,
+                      current_round_question_id:
+                        nextRoundQuestionId ?? prev.current_round_question_id,
+                      timer_deadline: nextTimerDeadline ?? prev.timer_deadline,
+                      buzzer_enabled:
+                        payloadBoolean(evt.payload, "buzzerEnabled") ?? prev.buzzer_enabled,
+                      show_scoreboard_overlay:
+                        payloadBoolean(evt.payload, "showScoreboardOverlay") ??
+                        prev.show_scoreboard_overlay,
+                      show_answers_overlay:
+                        payloadBoolean(evt.payload, "showAnswersOverlay") ??
+                        prev.show_answers_overlay,
+                      guest_media_control: guestMediaControl ?? prev.guest_media_control,
+                    };
+                  });
                   return;
                 }
 

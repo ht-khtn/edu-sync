@@ -59,16 +59,12 @@ export function TournamentInfoCard({
 
         // Player info
         parts.push(`Link thí sinh: ${links?.playerLink || '—'}`)
-        if (playerPassword) {
-            parts.push(`Mật khẩu thí sinh: ${playerPassword}`)
-        }
+        parts.push(`Mật khẩu thí sinh: ${playerPassword}`)
 
         if (includeAll) {
             parts.push('----------')
             parts.push(`Link MC: ${links?.mcLink || '—'}`)
-            if (mcPassword) {
-                parts.push(`Mật khẩu MC: ${mcPassword}`)
-            }
+            parts.push(`Mật khẩu MC: ${mcPassword}`)
             parts.push('----------')
             parts.push(`Link khách: ${links?.guestLink || '—'}`)
         }

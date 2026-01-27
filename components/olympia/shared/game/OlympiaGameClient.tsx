@@ -51,6 +51,14 @@ type BuzzerEventLite = {
   occurred_at: string | null
 }
 
+type VeDichPackageValue = 20 | 30
+
+type VeDichPackageOverlay = {
+  seat: number
+  values: VeDichPackageValue[]
+  ownerName: string | null
+}
+
 const roundLabel: Record<string, string> = {
   khoi_dong: 'Khởi động',
   vcnv: 'Vượt chướng ngại vật',
@@ -178,6 +186,7 @@ export function OlympiaGameClient({
   const preloadRoundQuestions = useMemo(() => initialData.roundQuestions ?? [], [initialData.roundQuestions])
 
   const veDichNotifiedBySeatRef = useRef<Map<number, string>>(new Map())
+  const [veDichPackageOverlay, setVeDichPackageOverlay] = useState<VeDichPackageOverlay | null>(null)
 
   // Toast notifications for feedback
   useEffect(() => {
@@ -303,10 +312,9 @@ export function OlympiaGameClient({
   useEffect(() => {
     if (roundType !== 've_dich') {
       veDichNotifiedBySeatRef.current.clear()
+      setVeDichPackageOverlay(null)
       return
     }
-
-    if (!isGuest) return
 
     const currentRoundId = session.current_round_id
     if (!currentRoundId) return
@@ -341,24 +349,28 @@ export function OlympiaGameClient({
       const values = top3.map((rq) => {
         const meta = rq.meta
         const raw = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).ve_dich_value : undefined
-        const v = typeof raw === 'number' ? raw : raw ? Number(raw) : NaN
-        return v === 20 || v === 30 ? v : null
+        const v = typeof raw === 'number' ? raw : raw ? Number(raw) : Number.NaN
+        return v === 20 || v === 30 ? (v as VeDichPackageValue) : null
       })
       if (values.some((v) => v == null)) continue
-      const summary = (values as Array<20 | 30>).join('-')
+      const summary = (values as Array<VeDichPackageValue>).join('-')
 
       const last = veDichNotifiedBySeatRef.current.get(seat) ?? null
       if (last === summary) continue
       veDichNotifiedBySeatRef.current.set(seat, summary)
 
-      void emitSoundEvent(GameEvent.SELECT_CATEGORY, { roundType: 've_dich' })
-
       const ownerPlayerId =
         top3.find((rq) => typeof rq.target_player_id === 'string' && rq.target_player_id)?.target_player_id ?? null
       const owner = ownerPlayerId ? players.find((p) => p.id === ownerPlayerId) ?? null : null
-      const ownerName = owner?.display_name ? ` · ${owner.display_name}` : ''
+      const ownerName = owner?.display_name ?? null
 
-      toast.info(`Ghế ${seat}${ownerName} đã chọn gói Về đích: ${summary}`)
+      setVeDichPackageOverlay({ seat, values: values as VeDichPackageValue[], ownerName })
+
+      if (isGuest) {
+        void emitSoundEvent(GameEvent.SELECT_CATEGORY, { roundType: 've_dich' })
+        const ownerLabel = ownerName ? ` · ${ownerName}` : ''
+        toast.info(`Ghế ${seat}${ownerLabel} đã chọn gói Về đích: ${summary}`)
+      }
     }
   }, [emitSoundEvent, isGuest, players, roundQuestions, roundType, session.current_round_id])
 
@@ -390,6 +402,13 @@ export function OlympiaGameClient({
       soundCacheRef.current?.clear()
     }
   }, [isGuest])
+
+  useEffect(() => {
+    if (roundType !== 've_dich') return
+    if (questionState !== 'hidden') {
+      setVeDichPackageOverlay(null)
+    }
+  }, [questionState, roundType])
 
   const resolvedMcScoreboardSlotId = mcScoreboardSlotId ?? 'olympia-mc-scoreboard-slot'
   const [mcScoreboardSlotEl, setMcScoreboardSlotEl] = useState<HTMLElement | null>(null)
@@ -698,6 +717,14 @@ export function OlympiaGameClient({
   const isSessionRunning = session.status === 'running'
   const isWaitingScreen = !isMc && questionState === 'hidden'
   const isOnline = useOnlineStatus()
+  const showVeDichPackageOverlay = Boolean(
+    isVeDich &&
+    isWaitingScreen &&
+    !showBigScoreboard &&
+    !showAnswersOverlay &&
+    veDichPackageOverlay &&
+    veDichPackageOverlay.values.length === 3
+  )
 
   useEffect(() => {
     setOptimisticBuzzerWinner(null)
@@ -1890,6 +1917,58 @@ export function OlympiaGameClient({
             scores={scores && scores.length > 0 ? scores.map(s => ({ id: s.id ?? `score:${s.player_id}`, player_id: s.player_id, points: s.points ?? null })) : null}
             embedded={isMc}
           />
+        ) : null}
+
+        {/* Overlay gói Về đích (hiển thị trên màn chờ) */}
+        {showVeDichPackageOverlay && veDichPackageOverlay ? (
+          <div
+            className={cn(
+              isMc ? 'absolute' : 'fixed',
+              'inset-0 z-[55] flex items-center justify-center pointer-events-none'
+            )}
+          >
+            <div className="w-[92vw] max-w-5xl min-h-[30vh] h-[42vh] max-h-[60vh]">
+              <OlympiaQuestionFrame
+                embedded
+                open
+                playIntro
+                showScoreboardStrip={false}
+                contentClassName="w-full h-full px-8 py-6 text-white pointer-events-auto"
+              >
+                <div className="h-full w-full flex items-center justify-center">
+                  <div className="grid grid-cols-3 gap-5 w-full h-full">
+                    {veDichPackageOverlay.values.map((value, index) => (
+                      <div
+                        key={`vd-package-${veDichPackageOverlay.seat}-${index}`}
+                        className="grid grid-rows-2 gap-4 h-full"
+                      >
+                        <div
+                          className={cn(
+                            'flex items-center justify-center rounded-md border text-2xl font-semibold',
+                            value === 20
+                              ? 'bg-gradient-to-r from-blue-900 via-pink-600 to-red-600 border-white/20 text-white shadow-[0_0_24px_rgba(236,72,153,0.35)]'
+                              : 'bg-slate-950/40 border-white/15 text-slate-100'
+                          )}
+                        >
+                          20
+                        </div>
+                        <div
+                          className={cn(
+                            'flex items-center justify-center rounded-md border text-2xl font-semibold',
+                            value === 30
+                              ? 'bg-gradient-to-r from-blue-900 via-pink-600 to-red-600 border-white/20 text-white shadow-[0_0_24px_rgba(236,72,153,0.35)]'
+                              : 'bg-slate-950/40 border-white/15 text-slate-100'
+                          )}
+                        >
+                          30
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </OlympiaQuestionFrame>
+            </div>
+          </div>
         ) : null}
 
         {/* MAIN SCREEN */}

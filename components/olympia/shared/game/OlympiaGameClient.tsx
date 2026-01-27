@@ -1724,7 +1724,7 @@ export function OlympiaGameClient({
               }}
             />
             <div className="relative z-10 h-full w-full flex items-center justify-center px-4">
-              <div className="w-full max-w-6xl rounded-md border border-slate-700 bg-slate-950/70 p-6">
+              <div className="w-full max-w-6xl px-4 py-6">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-slate-200">Bảng điểm</p>
@@ -1742,7 +1742,7 @@ export function OlympiaGameClient({
                         return seatA - seatB
                       })
                       .map((p, index) => (
-                        <div key={p.id} className="w-full h-[170px] sm:h-[190px]">
+                        <div key={p.id} className="w-full h-[120px] sm:h-[140px]">
                           <OlympiaQuestionFrame
                             embedded
                             open

@@ -1528,7 +1528,7 @@ export async function confirmObstacleGuessAction(
     // Lấy answer từ bảng answers (không dùng obstacle_guesses)
     const { data: answer, error: answerError } = await olympia
       .from("answers")
-      .select("id, match_id, player_id, is_correct")
+      .select("id, match_id, player_id, is_correct, submitted_at")
       .eq("id", parsed.data.answerId)
       .maybeSingle();
     if (answerError) return { error: answerError.message };
@@ -1564,8 +1564,11 @@ export async function confirmObstacleGuessAction(
       .eq("id", answer.id);
     if (updateAnswerError) return { error: updateAnswerError.message };
 
-    // Tính điểm dựa trên số hàng VCNV được trả lời đúng (từ answers table)
-    // Lấy tất cả round_questions của vòng VCNV từ match hiện tại
+    // Tính điểm CNV theo số hàng ngang đã qua tại thời điểm thí sinh đoán.
+    // Lưu ý: không dựa trên is_correct=true vì:
+    // - có thể "reveal-all" để mở hình sau khi giải CNV
+    // - CNV/OTT cũng có thể tạo answers riêng
+    // Luật: 60 - 10 * (số hàng ngang đã qua)
     const { data: currentRound, error: roundError } = await olympia
       .from("live_sessions")
       .select("current_round_id")
@@ -1573,6 +1576,12 @@ export async function confirmObstacleGuessAction(
       .maybeSingle();
     if (roundError) return { error: roundError.message };
     if (!currentRound?.current_round_id) return { error: "Không xác định vòng VCNV." };
+
+    const guessSubmittedAt =
+      (answer as { submitted_at?: string | null } | null)?.submitted_at ?? null;
+    if (!guessSubmittedAt) {
+      return { error: "Không xác định được thời điểm đoán CNV." };
+    }
 
     // === REVEAL ALL: Tạo answers cho tất cả hàng VCNV chưa mở ===
     // Lấy tất cả round_questions của vòng VCNV với meta.code để xác định loại ô
@@ -1583,7 +1592,7 @@ export async function confirmObstacleGuessAction(
     if (rqFetchErr) {
       console.warn("[Olympia] fetch round_questions for reveal-all failed:", rqFetchErr.message);
     } else if (allRqForRound && allRqForRound.length > 0) {
-      // Xác định các hàng VCNV (VCNV-1, VCNV-2, VCNV-3, VCNV-4, OTT, VCNV-OTT)
+      // Xác định các hàng VCNV (VCNV-1..4) và các ô đặc biệt (OTT/VCNV-OTT)
       const vcnvCodeToId = new Map<string, string>();
       const wantedCodes = new Set(["VCNV-1", "VCNV-2", "VCNV-3", "VCNV-4", "OTT", "VCNV-OTT"]);
 
@@ -1602,7 +1611,41 @@ export async function confirmObstacleGuessAction(
         }
       }
 
-      // Lấy danh sách hàng nào đã có answer (với is_correct != null)
+      // === 1) Tính số hàng ngang đã qua tại thời điểm đoán ===
+      const horizontalIds = [
+        vcnvCodeToId.get("VCNV-1"),
+        vcnvCodeToId.get("VCNV-2"),
+        vcnvCodeToId.get("VCNV-3"),
+        vcnvCodeToId.get("VCNV-4"),
+      ].filter((id): id is string => typeof id === "string" && id.length > 0);
+
+      let passedHorizontalsCount = 0;
+      if (horizontalIds.length > 0) {
+        const { data: decided, error: decidedErr } = await olympia
+          .from("answers")
+          .select("round_question_id")
+          .eq("match_id", matchId)
+          .in("round_question_id", horizontalIds)
+          .not("is_correct", "is", null)
+          .lte("submitted_at", guessSubmittedAt);
+        if (decidedErr) {
+          console.warn("[Olympia] fetch decided horizontals failed:", decidedErr.message);
+        } else {
+          const decidedIds = new Set(
+            (decided as Array<{ round_question_id: string }> | null)?.map(
+              (a) => a.round_question_id
+            ) ?? []
+          );
+          passedHorizontalsCount = decidedIds.size;
+        }
+      }
+
+      // Tính điểm CNV theo luật 60 - 10 * số hàng ngang đã qua.
+      // (Sau khi đã mở 4 hàng -> 20 điểm, không cộng thêm logic đặc biệt.)
+      const delta = computeVcnvFinalScore(passedHorizontalsCount);
+
+      // === 2) REVEAL ALL: Tạo answers cho tất cả hàng/ô VCNV chưa mở (phục vụ UI mở hình) ===
+      // Lấy danh sách ô nào đã có answer (với is_correct != null)
       const vcnvRqIds = Array.from(vcnvCodeToId.values());
       if (vcnvRqIds.length > 0) {
         const { data: existingAnswers, error: existingErr } = await olympia
@@ -1620,7 +1663,6 @@ export async function confirmObstacleGuessAction(
             ) ?? []
           );
 
-          // Tạo answers cho hàng chưa mở
           const toCreate: Array<{
             match_id: string;
             match_round_id: string;
@@ -1649,24 +1691,60 @@ export async function confirmObstacleGuessAction(
           }
         }
       }
+
+      const {
+        nextPoints,
+        pointsBefore,
+        pointsAfter,
+        appliedDelta,
+        error: scoreErr,
+      } = await applyRoundDelta({
+        olympia,
+        matchId,
+        playerId: answer.player_id,
+        roundType: "vcnv",
+        delta,
+      });
+      if (scoreErr) return { error: scoreErr };
+
+      const { error: auditErr } = await insertScoreChange({
+        olympia,
+        matchId,
+        playerId: answer.player_id,
+        roundType: "vcnv",
+        requestedDelta: delta,
+        appliedDelta,
+        pointsBefore,
+        pointsAfter,
+        source: "vcnv_final_confirm",
+        createdBy: appUserId ?? null,
+      });
+      if (auditErr) {
+        console.warn("[Olympia] insertScoreChange(vcnv final) failed:", auditErr);
+      }
+
+      // Không update obstacle_tiles, answers table là source-of-truth
+      const { data: session, error: sessionError } = await olympia
+        .from("live_sessions")
+        .select("join_code")
+        .eq("match_id", matchId)
+        .maybeSingle();
+      if (sessionError) return { error: sessionError.message };
+
+      revalidatePath(`/olympia/admin/matches/${matchId}/host`);
+      if (session?.join_code) {
+        revalidatePath(`/olympia/client/game/${session.join_code}`);
+        revalidatePath(`/olympia/client/guest/${session.join_code}`);
+      }
+
+      return {
+        success: `Đã xác nhận ĐÚNG. Cộng ${delta} điểm (CNV). Điểm vòng CNV hiện tại: ${nextPoints}.`,
+      };
     }
 
-    const { data: vcnvQuestions, error: vcnvQError } = await olympia
-      .from("round_questions")
-      .select("id")
-      .eq("match_round_id", currentRound.current_round_id);
-    if (vcnvQError) return { error: vcnvQError.message };
-
-    const vcnvIds = vcnvQuestions?.map((q: { id: string }) => q.id) ?? [];
-    const { count: openedCount, error: openedError } = await olympia
-      .from("answers")
-      .select("id", { count: "exact", head: true })
-      .eq("match_id", matchId)
-      .eq("is_correct", true)
-      .in("round_question_id", vcnvIds);
-    if (openedError) return { error: openedError.message };
-
-    const delta = computeVcnvFinalScore(openedCount ?? 0);
+    // Fallback: nếu không load được round_questions (không vào nhánh reveal-all ở trên)
+    // vẫn cố gắng tính điểm theo mặc định 60.
+    const fallbackDelta = computeVcnvFinalScore(0);
     const {
       nextPoints,
       pointsBefore,
@@ -1678,7 +1756,7 @@ export async function confirmObstacleGuessAction(
       matchId,
       playerId: answer.player_id,
       roundType: "vcnv",
-      delta,
+      delta: fallbackDelta,
     });
     if (scoreErr) return { error: scoreErr };
 
@@ -1687,7 +1765,7 @@ export async function confirmObstacleGuessAction(
       matchId,
       playerId: answer.player_id,
       roundType: "vcnv",
-      requestedDelta: delta,
+      requestedDelta: fallbackDelta,
       appliedDelta,
       pointsBefore,
       pointsAfter,
@@ -1698,7 +1776,6 @@ export async function confirmObstacleGuessAction(
       console.warn("[Olympia] insertScoreChange(vcnv final) failed:", auditErr);
     }
 
-    // Không update obstacle_tiles, answers table là source-of-truth
     const { data: session, error: sessionError } = await olympia
       .from("live_sessions")
       .select("join_code")
@@ -1713,7 +1790,7 @@ export async function confirmObstacleGuessAction(
     }
 
     return {
-      success: `Đã xác nhận ĐÚNG. Cộng ${delta} điểm (CNV). Điểm vòng CNV hiện tại: ${nextPoints}.`,
+      success: `Đã xác nhận ĐÚNG. Cộng ${fallbackDelta} điểm (CNV). Điểm vòng CNV hiện tại: ${nextPoints}.`,
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Không thể xác nhận CNV." };

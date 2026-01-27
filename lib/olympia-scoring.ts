@@ -13,7 +13,7 @@ export function computeVcnvFinalScore(openedTilesCount: number): number {
 /**
  * Tính delta và điểm mới cho vòng Khởi động (lượt chung).
  * - Đúng: +config.commonPointsCorrect
- * - Sai/Hết giờ: -config.commonPointsIncorrect nhưng không để điểm âm (clamp 0).
+ * - Sai/Hết giờ: +config.commonPointsIncorrect (giá trị âm) và không để điểm âm (clamp 0).
  */
 export function computeKhoiDongCommonScore(
   decision: KhoiDongDecision,
@@ -21,7 +21,7 @@ export function computeKhoiDongCommonScore(
 ): { delta: number; nextPoints: number } {
   const config = getKhoiDongPoints();
   const rawDelta =
-    decision === "correct" ? config.commonPointsCorrect : -config.commonPointsIncorrect;
+    decision === "correct" ? config.commonPointsCorrect : config.commonPointsIncorrect;
   const nextPoints = Math.max(0, currentPoints + rawDelta);
   return { delta: rawDelta, nextPoints };
 }
@@ -46,7 +46,12 @@ export function computeVeDichStealDelta(params: {
   const safeValue = params.value === 30 ? 30 : 20;
   if (params.decision === "correct") return safeValue;
   const config = getVeDichPoints();
-  const penaltyAmount = Math.ceil((safeValue * config.stealPenaltyPercentage) / 100);
+  // Config hỗ trợ cả 2 dạng:
+  // - 0.5 (tức 50%)
+  // - 50 (tức 50%)
+  const raw = config.stealPenaltyPercentage;
+  const fraction = raw <= 1 ? raw : raw / 100;
+  const penaltyAmount = Math.ceil(safeValue * fraction);
   return -penaltyAmount;
 }
 

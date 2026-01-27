@@ -207,7 +207,7 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
                         </div>
                     </div>
 
-                    <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <div className="mt-6 grid gap-4 grid-cols-1">
                         {rows.length > 0 ? (
                             rows.map(({ player, answer, responseTimeMs }, index) => {
                                 const seatText = player.seat_index != null ? `Ghế ${player.seat_index}` : 'Ghế —'

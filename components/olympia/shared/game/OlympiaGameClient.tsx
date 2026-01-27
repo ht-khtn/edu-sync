@@ -1732,7 +1732,7 @@ export function OlympiaGameClient({
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <div className="mt-6 grid gap-4 grid-cols-1">
                   {scoreboard.length > 0 ? (
                     scoreboard
                       .slice()
@@ -2308,13 +2308,15 @@ export function OlympiaGameClient({
                         </div>
                       ) : null}
 
-                      {/* Hiển thị lại chữ khi không có media hoặc media chưa phóng to */}
-                      {showQuestionText && !showQuestionMedia ? (
+                      {/* Khi phóng to media thì vẫn hiển thị lại chữ (tránh mất câu hỏi) */}
+                      {showQuestionText && showQuestionMedia && isMediaExpanded ? (
                         <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
-                          <p className={cn(
-                            questionFontSize,
-                            'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
-                          )}>
+                          <p
+                            className={cn(
+                              questionFontSize,
+                              'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                            )}
+                          >
                             {questionText?.trim() ? questionText : '—'}
                           </p>
                         </div>

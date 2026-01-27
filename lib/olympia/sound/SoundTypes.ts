@@ -83,6 +83,8 @@ export interface GameEventPayload {
   playerId?: string;
   hasVideo?: boolean;
   durationMs?: number;
+  durationSeconds?: number;
+  roundNumber?: number;
   questionOrderIndex?: number;
   veDichValue?: number;
   questionCode?: string;
@@ -99,6 +101,20 @@ export const PRIORITY = {
 export const SOUND_GROUPS: Record<SoundGroup, string[]> = {
   BACKGROUND: ["kd_bat_dau_choi"],
   COUNTDOWN: [
+    "countdown_1_10s",
+    "countdown_1_15s",
+    "countdown_1_20s",
+    "countdown_1_30s",
+    "countdown_2_5s",
+    "countdown_2_10s",
+    "countdown_2_20s",
+    "countdown_2_30s",
+    "countdown_3_5s",
+    "countdown_3_10s",
+    "countdown_3_15s",
+    "countdown_4_5s",
+    "countdown_4_10s",
+    "countdown_4_30s",
     "kd_dem_gio_5s",
     "vcnv_dem_gio_15s",
     "tt_dem_gio_20s",

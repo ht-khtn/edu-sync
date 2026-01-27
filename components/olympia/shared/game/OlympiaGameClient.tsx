@@ -243,6 +243,17 @@ export function OlympiaGameClient({
     [roundType]
   )
 
+  const roundNumber = useMemo<number | null>(() => {
+    if (!resolvedRoundType) return null
+    const map: Record<RoundType, number> = {
+      khoi_dong: 1,
+      vcnv: 2,
+      tang_toc: 3,
+      ve_dich: 4,
+    }
+    return map[resolvedRoundType] ?? null
+  }, [resolvedRoundType])
+
   const soundRegistryRef = useRef<SoundRegistry | null>(null)
   const soundCacheRef = useRef<SoundCacheManager | null>(null)
   const soundControllerRef = useRef<SoundController | null>(null)
@@ -958,11 +969,19 @@ export function OlympiaGameClient({
 
     if (!prev && next) {
       const hasVideo = mediaKind === 'video' || mediaKind === 'youtube'
+      const deadlineMs = Date.parse(next)
+      const diffMs = Number.isFinite(deadlineMs) ? Math.max(0, deadlineMs - Date.now()) : null
+      const roundedSeconds =
+        typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.round(diffMs / 1000)) : null
+      const durationMs = roundedSeconds ? roundedSeconds * 1000 : undefined
       void emitSoundEvent(GameEvent.TIMER_STARTED, {
         roundType: resolvedRoundType,
         hasVideo,
         questionOrderIndex: currentQuestionOrderIndex ?? undefined,
         veDichValue: currentVeDichValue ?? undefined,
+        durationMs,
+        durationSeconds: roundedSeconds ?? undefined,
+        roundNumber: roundNumber ?? undefined,
       })
     }
 
@@ -971,7 +990,7 @@ export function OlympiaGameClient({
     }
 
     prevTimerDeadlineRef.current = next
-  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
+  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, roundNumber, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return

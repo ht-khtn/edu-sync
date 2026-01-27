@@ -8,7 +8,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Input } from '@/components/ui/input'
 import { Timer, Play, Pause, Square } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
@@ -33,6 +32,12 @@ const roundLabelMap: Record<string, string> = {
   tang_toc: 'Tăng tốc',
   ve_dich: 'Về đích',
 }
+
+const countdownOptions = [5, 10, 15, 20, 30] as const
+type CountdownOption = (typeof countdownOptions)[number]
+
+const isCountdownOption = (value: number): value is CountdownOption =>
+  countdownOptions.includes(value as CountdownOption)
 
 function isWaitingScreenOn(questionState: string | null | undefined) {
   return questionState === 'hidden'
@@ -59,12 +64,15 @@ type CountdownControlsProps = {
 
 function getAutoTimerDurationSeconds(
   roundType: string | null,
-  questionMeta?: Record<string, unknown> | null
+  questionMeta?: Record<string, unknown> | null,
+  questionState?: string | null
 ): number {
   const constraints = getDurationInputConstraints()
   let newDuration = constraints.defaultSeconds
 
-  if (roundType === 've_dich') {
+  if (roundType === 've_dich' && questionState === 'answer_revealed') {
+    newDuration = 5
+  } else if (roundType === 've_dich') {
     // Lấy ve_dich_value từ meta hoặc default 20
     const veDichValue = (questionMeta?.ve_dich_value as number) || 20
     newDuration = veDichValue === 30 ? 20 : 15 // 30 điểm = 20s, 20 điểm = 15s
@@ -99,7 +107,7 @@ function CountdownControls({
   currentQuestionMeta,
 }: CountdownControlsProps) {
   const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
-    getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta)
+    getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta, currentQuestionState)
   )
   const [hasUserEditedDuration, setHasUserEditedDuration] = useState<boolean>(false)
   const [realtimeTimerDeadline, setRealtimeTimerDeadline] = useState<string | null>(null)
@@ -113,8 +121,21 @@ function CountdownControls({
   }, [realtimeTimerDeadline, timerDeadline])
 
   const autoTimerDurationSeconds = useMemo(() => {
-    return getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta)
-  }, [currentRoundType, currentQuestionMeta])
+    return getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta, currentQuestionState)
+  }, [currentRoundType, currentQuestionMeta, currentQuestionState])
+
+  useEffect(() => {
+    if (!hasUserEditedDuration) {
+      setTimerDurationSeconds(autoTimerDurationSeconds)
+    }
+  }, [autoTimerDurationSeconds, hasUserEditedDuration])
+
+  useEffect(() => {
+    if (currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed') {
+      setHasUserEditedDuration(false)
+      setTimerDurationSeconds(5)
+    }
+  }, [currentRoundType, currentQuestionState])
 
   // Subscribe to realtime timer updates
   useEffect(() => {
@@ -138,9 +159,12 @@ function CountdownControls({
     return seconds
   }, [effectiveTimerDeadline, countdownTick])
 
-  const durationSecondsValue = useMemo(() => {
-    if (countdownSeconds !== null) return timerDurationSeconds
-    return hasUserEditedDuration ? timerDurationSeconds : autoTimerDurationSeconds
+  const durationSecondsValue = useMemo<CountdownOption>(() => {
+    const raw = countdownSeconds !== null
+      ? timerDurationSeconds
+      : (hasUserEditedDuration ? timerDurationSeconds : autoTimerDurationSeconds)
+    if (isCountdownOption(raw)) return raw
+    return countdownOptions[0]
   }, [autoTimerDurationSeconds, countdownSeconds, hasUserEditedDuration, timerDurationSeconds])
 
   // Tick countdown (interval only updates tick; countdown itself is derived)
@@ -182,39 +206,43 @@ function CountdownControls({
   }, [effectiveTimerDeadline])
 
   const canStartTimer = Boolean(
-    sessionId && currentRoundQuestionId && currentQuestionState === 'showing'
+    sessionId &&
+    currentRoundQuestionId &&
+    (currentQuestionState === 'showing' ||
+      (currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed'))
   )
 
   const canExpireTimer = Boolean(
     sessionId &&
     currentRoundQuestionId &&
-    currentQuestionState === 'showing' &&
-    Boolean(effectiveTimerDeadline) &&
-    (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc')
+    (currentQuestionState === 'showing' ||
+      (currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed')) &&
+    (currentRoundType === 'vcnv' || currentRoundType === 'tang_toc' || currentRoundType === 've_dich') &&
+    (currentRoundType === 've_dich' || Boolean(effectiveTimerDeadline))
   )
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Label className="text-xs whitespace-nowrap">Countdown:</Label>
-        <Input
-          type="number"
-          min={getDurationInputConstraints().minSeconds}
-          max={getDurationInputConstraints().maxSeconds}
+        <select
           value={durationSecondsValue}
           onChange={(e) => {
-            const constraints = getDurationInputConstraints()
-            const val = Math.max(
-              constraints.minSeconds,
-              Math.min(constraints.maxSeconds, Number(e.target.value) || constraints.defaultSeconds)
-            )
+            const val = Number(e.target.value)
+            if (!Number.isFinite(val) || !isCountdownOption(val)) return
             setHasUserEditedDuration(true)
             setTimerDurationSeconds(val)
           }}
           disabled={countdownSeconds !== null}
-          className="h-8 w-20"
+          className="h-8 w-24 rounded-md border border-slate-200 bg-white px-2 text-xs"
           aria-label="Thời gian countdown"
-        />
+        >
+          {countdownOptions.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}s
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex items-center justify-end gap-2">
@@ -267,7 +295,7 @@ function CountdownControls({
             size="sm"
             variant="outline"
             className="h-8"
-            disabled={!canExpireTimer || timerExpirePending || countdownSeconds === null}
+            disabled={!canExpireTimer || timerExpirePending || (countdownSeconds === null && currentRoundType !== 've_dich')}
             title="Hết giờ (khóa nhận đáp án ở VCNV/Tăng tốc)"
             aria-label="Hết giờ"
           >

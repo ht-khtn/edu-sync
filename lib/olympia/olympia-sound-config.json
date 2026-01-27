@@ -40,7 +40,27 @@
     },
 
     "kd_dem_gio_5s": {
-      "file": "4 5s",
+      "file": "1 5s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_1_10s": {
+      "file": "1 10s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_1_15s": {
+      "file": "1 15s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_1_20s": {
+      "file": "1 20s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_1_30s": {
+      "file": "1 30s",
       "autoStopWhenOtherPlays": true
     },
 
@@ -66,6 +86,26 @@
 
     "vcnv_dem_gio_15s": {
       "file": "2 15s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_2_5s": {
+      "file": "2 5s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_2_10s": {
+      "file": "2 10s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_2_20s": {
+      "file": "2 20s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_2_30s": {
+      "file": "2 30s",
       "autoStopWhenOtherPlays": true
     },
 
@@ -96,6 +136,21 @@
 
     "tt_dem_gio_30s": {
       "file": "3 30s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_3_5s": {
+      "file": "3 5s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_3_10s": {
+      "file": "3 10s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_3_15s": {
+      "file": "3 15s",
       "autoStopWhenOtherPlays": true
     },
 
@@ -146,6 +201,21 @@
 
     "vd_dem_gio_20s": {
       "file": "4 20s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_4_5s": {
+      "file": "4 5s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_4_10s": {
+      "file": "4 10s",
+      "autoStopWhenOtherPlays": true
+    },
+
+    "countdown_4_30s": {
+      "file": "4 30s",
       "autoStopWhenOtherPlays": true
     },
 

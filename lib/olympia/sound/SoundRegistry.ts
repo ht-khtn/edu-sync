@@ -17,6 +17,17 @@ export class SoundRegistry {
     return def?.file || null;
   }
 
+  findKeyByFileName(fileName: string): string | null {
+    const target = fileName.trim().toLowerCase();
+    if (!target) return null;
+    const entries = Object.entries(this.config.sounds) as Array<[string, SoundDef]>;
+    for (const [key, def] of entries) {
+      const defName = def.file?.trim().toLowerCase();
+      if (defName === target) return key;
+    }
+    return null;
+  }
+
   getUrl(soundKey: string): string | null {
     const fileName = this.getFileName(soundKey);
     if (!fileName) return null;

@@ -646,7 +646,7 @@ export async function expireSessionTimerAction(
 
       const { data: session, error: sessionErr } = await olympia
         .from("live_sessions")
-        .select("id, status, question_state, current_round_question_id")
+        .select("id, status, question_state, current_round_question_id, current_round_type")
         .eq("id", parsed.data.sessionId)
         .maybeSingle();
       if (sessionErr) return { error: sessionErr.message };
@@ -655,6 +655,34 @@ export async function expireSessionTimerAction(
       if (!session.current_round_question_id) return { error: "Chưa có câu hỏi đang hiển thị." };
       if (session.question_state !== "showing" && session.question_state !== "answer_revealed") {
         return { error: "Host chưa mở câu hỏi/cửa cướp để hết giờ." };
+      }
+
+      const roundType =
+        (session as unknown as { current_round_type?: string | null }).current_round_type ?? null;
+      const questionState =
+        (session as unknown as { question_state?: string | null }).question_state ?? null;
+
+      if (roundType === "ve_dich") {
+        if (questionState !== "answer_revealed") {
+          const deadline = new Date(Date.now() + 5000).toISOString();
+          const { error: openErr } = await olympia
+            .from("live_sessions")
+            .update({
+              question_state: "answer_revealed",
+              timer_deadline: deadline,
+              buzzer_enabled: true,
+            })
+            .eq("id", session.id);
+          if (openErr) return { error: openErr.message };
+          return { success: "Đã mở cửa cướp (5s)." };
+        }
+
+        const { error: closeErr } = await olympia
+          .from("live_sessions")
+          .update({ question_state: "completed", timer_deadline: null, buzzer_enabled: false })
+          .eq("id", session.id);
+        if (closeErr) return { error: closeErr.message };
+        return { success: "Đã đóng cửa cướp." };
       }
 
       const deadline = new Date(Date.now() - 1000).toISOString();

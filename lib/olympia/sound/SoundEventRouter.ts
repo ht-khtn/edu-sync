@@ -1,9 +1,11 @@
 import type { GameEventPayload, RoundType } from "./SoundTypes";
 import { GameEvent, TIMING_CONFIG } from "./SoundTypes";
 import { SoundController } from "./SoundController";
+import { SoundRegistry } from "./SoundRegistry";
 
 export class SoundEventRouter {
   private soundController: SoundController;
+  private registry: SoundRegistry;
   private timingMap: Map<RoundType, string> = new Map([
     ["khoi_dong", "kd_dem_gio_5s"],
     ["vcnv", "vcnv_dem_gio_15s"],
@@ -14,6 +16,7 @@ export class SoundEventRouter {
 
   constructor(soundController: SoundController) {
     this.soundController = soundController;
+    this.registry = new SoundRegistry();
   }
 
   async routeEvent(event: GameEvent | string, payload?: GameEventPayload): Promise<void> {
@@ -48,7 +51,7 @@ export class SoundEventRouter {
         await this.handleStarRevealed();
         break;
       case GameEvent.SELECT_ROW:
-        await this.handleSelectRow();
+        await this.handleSelectRow(payload);
         break;
       case GameEvent.SELECT_CATEGORY:
         await this.handleSelectCategory();
@@ -129,6 +132,12 @@ export class SoundEventRouter {
       return;
     }
 
+    const countdownKey = this.resolveCountdownSoundKey(roundType, payload);
+    if (countdownKey) {
+      await this.soundController.play(countdownKey);
+      return;
+    }
+
     if (roundType === "tang_toc") {
       const orderIndexRaw = payload?.questionOrderIndex;
       const orderIndex =
@@ -150,6 +159,42 @@ export class SoundEventRouter {
     if (timerSound) {
       await this.soundController.play(timerSound);
     }
+  }
+
+  private resolveCountdownSoundKey(
+    roundType: RoundType,
+    payload?: GameEventPayload
+  ): string | null {
+    const roundNumber =
+      typeof payload?.roundNumber === "number" && Number.isFinite(payload.roundNumber)
+        ? payload.roundNumber
+        : this.getRoundNumber(roundType);
+
+    const durationSeconds =
+      typeof payload?.durationSeconds === "number" && Number.isFinite(payload.durationSeconds)
+        ? payload.durationSeconds
+        : this.resolveDurationSecondsFromMs(payload?.durationMs);
+
+    if (!roundNumber || !durationSeconds) return null;
+
+    const fileName = `${roundNumber} ${durationSeconds}s`;
+    return this.registry.findKeyByFileName(fileName);
+  }
+
+  private getRoundNumber(roundType: RoundType): number {
+    const map: Record<RoundType, number> = {
+      khoi_dong: 1,
+      vcnv: 2,
+      tang_toc: 3,
+      ve_dich: 4,
+    };
+    return map[roundType];
+  }
+
+  private resolveDurationSecondsFromMs(durationMs?: number): number | null {
+    if (typeof durationMs !== "number" || !Number.isFinite(durationMs)) return null;
+    const seconds = Math.round(durationMs / 1000);
+    return seconds > 0 ? seconds : null;
   }
 
   private async handleCorrectAnswer(payload?: GameEventPayload): Promise<void> {
@@ -262,9 +307,10 @@ export class SoundEventRouter {
 
   private async handleSelectRow(payload?: GameEventPayload): Promise<void> {
     // Kiểm tra xem câu có code CNV không (không phải VCNV-...)
-    const questionCode = typeof payload?.questionCode === "string" ? payload.questionCode : null;
-    const isCnvQuestion = questionCode
-      ? questionCode.startsWith("CNV") && !questionCode.startsWith("VCNV")
+    const questionCodeRaw = typeof payload?.questionCode === "string" ? payload.questionCode : null;
+    const normalizedCode = questionCodeRaw ? questionCodeRaw.trim().toUpperCase() : "";
+    const isCnvQuestion = normalizedCode
+      ? normalizedCode.startsWith("CNV") && !normalizedCode.startsWith("VCNV")
       : false;
 
     if (isCnvQuestion) {

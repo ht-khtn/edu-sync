@@ -7,7 +7,7 @@ import { useFormStatus, createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { useOlympiaGameState } from '@/components/olympia/shared/game/useOlympiaGameState'
+import { useOlympiaGameState, type BuzzerPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { AnswersOverlay } from '@/components/olympia/shared/game/AnswersOverlay'
 import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
@@ -104,6 +104,8 @@ export function OlympiaGameClient({
     roundType,
     isRealtimeReady,
     viewerUserId,
+    lastBuzzerPing,
+    sendBuzzerPing,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
 
@@ -417,6 +419,8 @@ export function OlympiaGameClient({
   })
   const lastTrialBuzzerRef = useRef<{ id: string | null }>({ id: null })
   const lastBuzzerSoundRef = useRef<string | null>(null)
+  const lastBuzzerPingSoundRef = useRef<string | null>(null)
+  const lastBuzzerPingSentRef = useRef<number>(0)
   const prevScoreboardRef = useRef<boolean | null>(null)
   const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
   const prevEndQuestionIdRef = useRef<string | null>(null)
@@ -471,6 +475,15 @@ export function OlympiaGameClient({
 
     return effective.filter((e) => (e.event_type ?? null) !== 'reset')
   }, [buzzerEvents, currentQuestionId])
+
+  const recentBuzzerPing = useMemo(() => {
+    if (!lastBuzzerPing) return null
+    if (!currentQuestionId) return null
+    if (lastBuzzerPing.roundQuestionId !== currentQuestionId) return null
+    const ageMs = Date.now() - lastBuzzerPing.clientTs
+    if (!Number.isFinite(ageMs) || ageMs > 2000) return null
+    return lastBuzzerPing
+  }, [currentQuestionId, lastBuzzerPing])
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
   const questionRecord = currentRoundQuestion?.questions
     ? (Array.isArray(currentRoundQuestion.questions)
@@ -772,10 +785,16 @@ export function OlympiaGameClient({
     const effectiveWinnerId = winnerBuzzId ?? optimisticWinnerId
 
     if (effectiveWinnerId) return `${formatPlayerLabel(effectiveWinnerId)}`
+    if (recentBuzzerPing && (questionState === 'showing' || isStealWindow)) {
+      const pingLabel =
+        recentBuzzerPing.displayName ??
+        (recentBuzzerPing.playerId ? formatPlayerLabel(recentBuzzerPing.playerId) : null)
+      if (pingLabel) return `Vừa bấm: ${pingLabel}`
+    }
     if (session.buzzer_enabled === false) return 'Đang tắt'
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
-  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, optimisticBuzzerWinner, questionState, resolvedViewerMode, session.buzzer_enabled])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isStealWindow, isWaitingScreen, optimisticBuzzerWinner, questionState, recentBuzzerPing, resolvedViewerMode, session.buzzer_enabled])
 
   const mcTurnLabel = useMemo(() => {
     if (!isMc) return null
@@ -793,10 +812,16 @@ export function OlympiaGameClient({
         ?.player_id ?? null
 
     if (winnerBuzzId) return `${formatPlayerLabel(winnerBuzzId)}`
+    if (recentBuzzerPing && (questionState === 'showing' || isStealWindow)) {
+      const pingLabel =
+        recentBuzzerPing.displayName ??
+        (recentBuzzerPing.playerId ? formatPlayerLabel(recentBuzzerPing.playerId) : null)
+      if (pingLabel) return `Vừa bấm: ${pingLabel}`
+    }
     if (session.buzzer_enabled === false) return 'Đang tắt'
     if (questionState === 'showing' || isStealWindow) return 'Chưa ai bấm chuông'
     return '—'
-  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isMc, isStealWindow, questionState, session.buzzer_enabled])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, formatPlayerLabel, isMc, isStealWindow, questionState, recentBuzzerPing, session.buzzer_enabled])
 
   void mcTurnLabel
   void mcBuzzerLabel
@@ -1094,6 +1119,10 @@ export function OlympiaGameClient({
       return
     }
 
+    if (recentBuzzerPing && Date.now() - recentBuzzerPing.clientTs < 1500) {
+      return
+    }
+
     const relevant = currentQuestionBuzzerEvents.filter((e) => {
       const type = (e.event_type ?? '').toLowerCase()
       return type === 'buzz' || type === 'steal'
@@ -1117,7 +1146,39 @@ export function OlympiaGameClient({
     lastBuzzerSoundRef.current = key
 
     void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: resolvedRoundType ?? undefined })
-  }, [currentQuestionBuzzerEvents, currentQuestionId, emitSoundEvent, isGuest, resolvedRoundType])
+  }, [currentQuestionBuzzerEvents, currentQuestionId, emitSoundEvent, isGuest, recentBuzzerPing, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest) return
+    if (!recentBuzzerPing) return
+    const key = `${recentBuzzerPing.playerId ?? 'unknown'}|${recentBuzzerPing.clientTs}`
+    if (lastBuzzerPingSoundRef.current === key) return
+    lastBuzzerPingSoundRef.current = key
+    void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: resolvedRoundType ?? undefined })
+  }, [emitSoundEvent, isGuest, recentBuzzerPing, resolvedRoundType])
+
+  const handleBuzzerSubmit = useCallback(() => {
+    if (disableBuzz) return
+    if (resolvedViewerMode !== 'player') return
+    if (!viewerPlayer?.id) return
+
+    const now = Date.now()
+    if (now - lastBuzzerPingSentRef.current < 200) return
+    lastBuzzerPingSentRef.current = now
+
+    const payload: BuzzerPingPayload = {
+      matchId: match.id,
+      sessionId: session.id,
+      roundQuestionId: isWaitingScreen ? null : (currentQuestionId ?? null),
+      playerId: viewerPlayer.id,
+      seatIndex: viewerPlayer.seat_index ?? null,
+      displayName: viewerPlayer.display_name ?? null,
+      eventType: isWaitingScreen ? 'trial' : (isStealWindow ? 'steal' : 'buzz'),
+      clientTs: now,
+    }
+
+    sendBuzzerPing(payload)
+  }, [currentQuestionId, disableBuzz, isStealWindow, isWaitingScreen, match.id, resolvedViewerMode, sendBuzzerPing, session.id, viewerPlayer])
 
   const youtubeEmbedUrl = useMemo(() => {
     if (!mediaUrl || mediaKind !== 'youtube') return null
@@ -2411,7 +2472,7 @@ export function OlympiaGameClient({
         {/* Buzzer FAB - bottom right corner */}
         {!disableInteractions && session.buzzer_enabled !== false && (!isVeDich || isStealWindow) && (
           <div className="fixed bottom-24 right-4 z-50">
-            <form action={buzzerAction}>
+            <form action={buzzerAction} onSubmit={handleBuzzerSubmit}>
               <input type="hidden" name="sessionId" value={session.id} />
               {isWaitingScreen ? <input type="hidden" name="trial" value="1" /> : null}
               <Button

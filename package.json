@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/inject-version.cjs",
-    "dev": "pnpm run predev && next dev",
-    "dev:nosourcemaps": "next dev --disable-source-maps",
-    "dev:webpack": "next dev --webpack",
+    "dev": "pnpm run predev && next dev .",
+    "dev:nosourcemaps": "next dev . --disable-source-maps",
+    "dev:webpack": "next dev . --webpack",
     "prebuild": "node scripts/inject-version.cjs",
     "build": "pnpm run prebuild && next build",
     "start": "next start",

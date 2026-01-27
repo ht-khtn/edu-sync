@@ -27,8 +27,14 @@ function resolveAppVersion(): string {
 }
 
 const APP_VERSION = resolveAppVersion();
+const TURBOPACK_ROOT = fs.realpathSync.native?.(__dirname) ?? fs.realpathSync(__dirname);
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // Trên một số môi trường Windows/Workspace, Next có thể suy luận nhầm root là ./app,
+    // dẫn tới lỗi không resolve được next/package.json. Ép root về thư mục project.
+    root: TURBOPACK_ROOT,
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: APP_VERSION,
   },

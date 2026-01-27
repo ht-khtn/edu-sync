@@ -24,6 +24,12 @@ export function TournamentInfoCard({
     const [showAllLinks, setShowAllLinks] = useState(false)
     const [copiedState, setCopiedState] = useState<boolean>(false)
 
+    const normalizePassword = (value?: string | null): string => {
+        if (!value) return '—'
+        const trimmed = value.trim()
+        return trimmed ? trimmed : '—'
+    }
+
     const links = useMemo(() => {
         if (!joinCode) return null
         const trimmed = joinCode.trim()
@@ -59,12 +65,12 @@ export function TournamentInfoCard({
 
         // Player info
         parts.push(`Link thí sinh: ${links?.playerLink || '—'}`)
-        parts.push(`Mật khẩu thí sinh: ${playerPassword}`)
+        parts.push(`Mật khẩu thí sinh: ${normalizePassword(playerPassword)}`)
 
         if (includeAll) {
             parts.push('----------')
             parts.push(`Link MC: ${links?.mcLink || '—'}`)
-            parts.push(`Mật khẩu MC: ${mcPassword}`)
+            parts.push(`Mật khẩu MC: ${normalizePassword(mcPassword)}`)
             parts.push('----------')
             parts.push(`Link khách: ${links?.guestLink || '—'}`)
         }

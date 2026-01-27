@@ -216,13 +216,27 @@ async function fetchMatchDetail(matchId: string) {
   // Lấy mật khẩu plain text từ session_password_history
   let passwordHistory: { player_password_plain: string | null; mc_password_plain: string | null } | null = null
   if (liveSessionResult.data?.id) {
-    const { data } = await olympia
+    const sessionId = liveSessionResult.data.id
+    const { data: currentHistory } = await olympia
       .from('session_password_history')
       .select('player_password_plain, mc_password_plain')
-      .eq('session_id', liveSessionResult.data.id)
+      .eq('session_id', sessionId)
       .eq('is_current', true)
+      .order('generated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
-    passwordHistory = data
+    passwordHistory = currentHistory ?? null
+
+    if (!passwordHistory) {
+      const { data: latestHistory } = await olympia
+        .from('session_password_history')
+        .select('player_password_plain, mc_password_plain')
+        .eq('session_id', sessionId)
+        .order('generated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      passwordHistory = latestHistory ?? null
+    }
   }
 
   let participantLookup = new Map<

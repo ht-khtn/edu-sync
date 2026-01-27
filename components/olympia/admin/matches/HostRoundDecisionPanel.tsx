@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { confirmDecisionAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Check, X } from 'lucide-react'
 import { useActionState } from 'react'
+import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
+import type { DecisionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 
 interface Props {
     matchId: string
@@ -16,12 +18,27 @@ interface Props {
 }
 
 export function HostRoundDecisionPanel({
+    matchId,
     sessionId,
     enabledPlayerId,
     currentRoundQuestionId,
 }: Props) {
     const initialState: ActionState = { error: null, success: null }
     const [state, formAction, pending] = useActionState(confirmDecisionAction, initialState)
+    const { sendBroadcast } = useHostBroadcast(sessionId)
+
+    const sendDecisionPing = useCallback((decision: 'correct' | 'wrong' | 'timeout') => {
+        if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) return
+        const payload: DecisionPingPayload = {
+            matchId: matchId,
+            sessionId,
+            roundQuestionId: currentRoundQuestionId,
+            playerId: enabledPlayerId,
+            decision,
+            clientTs: Date.now(),
+        }
+        sendBroadcast('decision_ping', payload)
+    }, [currentRoundQuestionId, enabledPlayerId, matchId, sendBroadcast, sessionId])
 
     useEffect(() => {
         if (!sessionId || !enabledPlayerId || !currentRoundQuestionId) return
@@ -49,6 +66,7 @@ export function HostRoundDecisionPanel({
                     title="Đúng"
                     aria-label="Đúng"
                     disabled={pending}
+                    onClick={() => sendDecisionPing('correct')}
                 >
                     <Check className="w-6 h-6 mr-2" />
                     Đúng
@@ -63,6 +81,7 @@ export function HostRoundDecisionPanel({
                     title="Sai"
                     aria-label="Sai"
                     disabled={pending}
+                    onClick={() => sendDecisionPing('wrong')}
                 >
                     <X className="w-6 h-6 mr-2" />
                     Sai
@@ -77,6 +96,7 @@ export function HostRoundDecisionPanel({
                     title="Hết giờ"
                     aria-label="Hết giờ"
                     disabled={pending}
+                    onClick={() => sendDecisionPing('timeout')}
                 >
                     Hết giờ
                 </Button>

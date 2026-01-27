@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import getSupabase from '@/lib/supabase'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
+import type { DecisionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { Check, Timer, X } from 'lucide-react'
 
 type RealtimeEventPayload = Record<string, string | number | boolean | null>
@@ -86,6 +88,8 @@ export function HostAnswersByTimeCard(props: Props) {
     // const [effectiveQuestionState, setEffectiveQuestionState] = useState<string | null>(initialQuestionState)
     const [answers, setAnswers] = useState<AnswerRow[]>(initialAnswers)
 
+    const { sendBroadcast } = useHostBroadcast(sessionId)
+
     const supabaseRef = useRef<SupabaseClient | null>(null)
     const answersChannelRef = useRef<RealtimeChannel | null>(null)
 
@@ -96,6 +100,19 @@ export function HostAnswersByTimeCard(props: Props) {
     }, [])
 
     const hasLiveQuestion = useMemo(() => Boolean(sessionId && effectiveRoundQuestionId), [sessionId, effectiveRoundQuestionId])
+
+    const sendDecisionPing = useCallback((playerId: string, decision: 'correct' | 'wrong' | 'timeout') => {
+        if (!sessionId || !effectiveRoundQuestionId) return
+        const payload: DecisionPingPayload = {
+            matchId,
+            sessionId,
+            roundQuestionId: effectiveRoundQuestionId,
+            playerId,
+            decision,
+            clientTs: Date.now(),
+        }
+        sendBroadcast('decision_ping', payload)
+    }, [effectiveRoundQuestionId, matchId, sendBroadcast, sessionId])
 
     const refreshAnswers = useCallback(async () => {
         if (!matchId || !effectiveRoundQuestionId) {
@@ -250,7 +267,11 @@ export function HostAnswersByTimeCard(props: Props) {
                                     ) : null}
                                     {canScoreVcnv ? (
                                         <div className="mt-3 grid grid-cols-3 gap-2">
-                                            <form action={confirmVcnvRowDecisionFormAction} className="col-span-1">
+                                            <form
+                                                action={confirmVcnvRowDecisionFormAction}
+                                                className="col-span-1"
+                                                onSubmit={() => sendDecisionPing(p.id, 'correct')}
+                                            >
                                                 <input type="hidden" name="sessionId" value={sessionId ?? ''} />
                                                 <input type="hidden" name="playerId" value={p.id} />
                                                 <input type="hidden" name="decision" value="correct" />
@@ -258,7 +279,11 @@ export function HostAnswersByTimeCard(props: Props) {
                                                     <Check className="w-5 h-5 mr-1" /> Đúng
                                                 </Button>
                                             </form>
-                                            <form action={confirmVcnvRowDecisionFormAction} className="col-span-1">
+                                            <form
+                                                action={confirmVcnvRowDecisionFormAction}
+                                                className="col-span-1"
+                                                onSubmit={() => sendDecisionPing(p.id, 'wrong')}
+                                            >
                                                 <input type="hidden" name="sessionId" value={sessionId ?? ''} />
                                                 <input type="hidden" name="playerId" value={p.id} />
                                                 <input type="hidden" name="decision" value="wrong" />
@@ -266,7 +291,11 @@ export function HostAnswersByTimeCard(props: Props) {
                                                     <X className="w-5 h-5 mr-1" /> Sai
                                                 </Button>
                                             </form>
-                                            <form action={confirmVcnvRowDecisionFormAction} className="col-span-1">
+                                            <form
+                                                action={confirmVcnvRowDecisionFormAction}
+                                                className="col-span-1"
+                                                onSubmit={() => sendDecisionPing(p.id, 'timeout')}
+                                            >
                                                 <input type="hidden" name="sessionId" value={sessionId ?? ''} />
                                                 <input type="hidden" name="playerId" value={p.id} />
                                                 <input type="hidden" name="decision" value="timeout" />

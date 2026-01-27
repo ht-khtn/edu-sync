@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Check, X } from 'lucide-react'
 import { dispatchHostSessionUpdate, subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
+import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
+import type { DecisionPingPayload, TimerPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 
 type Props = {
     hint: string
@@ -44,6 +46,7 @@ export function HostQuickScorePanel(props: Props) {
         confirmVeDichMainDecisionFormAction,
     } = props
     const [locked, setLocked] = useState(false)
+    const { sendBroadcast } = useHostBroadcast(sessionId)
 
     const [activeRoundQuestionId, setActiveRoundQuestionId] = useState<string | null>(roundQuestionId)
 
@@ -85,6 +88,19 @@ export function HostQuickScorePanel(props: Props) {
         }
 
         try {
+            const decisionRaw = formData.get('decision')
+            const decision = typeof decisionRaw === 'string' ? decisionRaw : null
+            if (decision === 'correct' || decision === 'wrong' || decision === 'timeout') {
+                const payload: DecisionPingPayload = {
+                    matchId,
+                    sessionId,
+                    roundQuestionId: activeRoundQuestionId,
+                    playerId,
+                    decision,
+                    clientTs: Date.now(),
+                }
+                sendBroadcast('decision_ping', payload)
+            }
             await confirmDecisionAndAdvanceFormAction(formData)
         } catch {
             // Best-effort rollback nếu action fail.
@@ -102,9 +118,19 @@ export function HostQuickScorePanel(props: Props) {
             const raw = formData.get('durationMs')
             const duration = typeof raw === 'string' && raw.trim() ? Number(raw) : NaN
             if (Number.isFinite(duration) && duration > 0) {
+                const deadline = new Date(Date.now() + duration).toISOString()
+                const payload: TimerPingPayload = {
+                    matchId,
+                    sessionId,
+                    roundQuestionId: activeRoundQuestionId,
+                    action: 'start',
+                    deadline,
+                    clientTs: Date.now(),
+                }
+                sendBroadcast('timer_ping', payload)
                 dispatchHostSessionUpdate({
                     currentRoundQuestionId: activeRoundQuestionId,
-                    timerDeadline: new Date(Date.now() + duration).toISOString(),
+                    timerDeadline: deadline,
                     source: 'optimistic',
                 })
             }
@@ -116,6 +142,19 @@ export function HostQuickScorePanel(props: Props) {
 
     const handleConfirmVeDichMainDecision = async (formData: FormData) => {
         try {
+            const decisionRaw = formData.get('decision')
+            const decision = typeof decisionRaw === 'string' ? decisionRaw : null
+            if (decision === 'correct' || decision === 'wrong' || decision === 'timeout') {
+                const payload: DecisionPingPayload = {
+                    matchId,
+                    sessionId,
+                    roundQuestionId: activeRoundQuestionId,
+                    playerId,
+                    decision,
+                    clientTs: Date.now(),
+                }
+                sendBroadcast('decision_ping', payload)
+            }
             await confirmVeDichMainDecisionFormAction(formData)
         } finally {
             // Về đích: action này không nhất thiết đổi câu -> cần mở lock lại.

@@ -64,6 +64,24 @@ export type BuzzerPingPayload = {
   clientTs: number;
 };
 
+export type DecisionPingPayload = {
+  matchId: string;
+  sessionId: string;
+  roundQuestionId: string | null;
+  playerId: string | null;
+  decision: "correct" | "wrong" | "timeout";
+  clientTs: number;
+};
+
+export type TimerPingPayload = {
+  matchId: string;
+  sessionId: string;
+  roundQuestionId: string | null;
+  action: "start" | "expire";
+  deadline: string | null;
+  clientTs: number;
+};
+
 function payloadString(payload: RealtimeEventPayload, key: string): string | null {
   const value = payload[key];
   return typeof value === "string" ? value : null;
@@ -122,6 +140,59 @@ function parseBuzzerPingPayload(payload: unknown): BuzzerPingPayload | null {
     seatIndex,
     displayName,
     eventType: eventTypeRaw,
+    clientTs: clientTsRaw,
+  };
+}
+
+function parseDecisionPingPayload(payload: unknown): DecisionPingPayload | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const rec = payload as Record<string, unknown>;
+
+  const matchId = typeof rec.matchId === "string" ? rec.matchId : null;
+  const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
+  const decisionRaw = typeof rec.decision === "string" ? rec.decision : null;
+  const clientTsRaw = typeof rec.clientTs === "number" ? rec.clientTs : null;
+
+  if (!matchId || !sessionId || !decisionRaw || clientTsRaw === null) return null;
+  if (!Number.isFinite(clientTsRaw)) return null;
+  if (decisionRaw !== "correct" && decisionRaw !== "wrong" && decisionRaw !== "timeout")
+    return null;
+
+  const roundQuestionId = typeof rec.roundQuestionId === "string" ? rec.roundQuestionId : null;
+  const playerId = typeof rec.playerId === "string" ? rec.playerId : null;
+
+  return {
+    matchId,
+    sessionId,
+    roundQuestionId,
+    playerId,
+    decision: decisionRaw,
+    clientTs: clientTsRaw,
+  };
+}
+
+function parseTimerPingPayload(payload: unknown): TimerPingPayload | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const rec = payload as Record<string, unknown>;
+
+  const matchId = typeof rec.matchId === "string" ? rec.matchId : null;
+  const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
+  const actionRaw = typeof rec.action === "string" ? rec.action : null;
+  const clientTsRaw = typeof rec.clientTs === "number" ? rec.clientTs : null;
+  const deadlineRaw = typeof rec.deadline === "string" ? rec.deadline : null;
+
+  if (!matchId || !sessionId || !actionRaw || clientTsRaw === null) return null;
+  if (!Number.isFinite(clientTsRaw)) return null;
+  if (actionRaw !== "start" && actionRaw !== "expire") return null;
+
+  const roundQuestionId = typeof rec.roundQuestionId === "string" ? rec.roundQuestionId : null;
+
+  return {
+    matchId,
+    sessionId,
+    roundQuestionId,
+    action: actionRaw,
+    deadline: deadlineRaw,
     clientTs: clientTsRaw,
   };
 }
@@ -198,6 +269,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [players] = useState(initialData.players);
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
   const [lastBuzzerPing, setLastBuzzerPing] = useState<BuzzerPingPayload | null>(null);
+  const [lastDecisionPing, setLastDecisionPing] = useState<DecisionPingPayload | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isRealtimeReady, setRealtimeReady] = useState(false);
   const [timer, setTimer] = useState<TimerSnapshot>(() =>
@@ -685,6 +757,21 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
             setLastBuzzerPing(parsed);
           })
+          .on("broadcast", { event: "decision_ping" }, ({ payload }) => {
+            const parsed = parseDecisionPingPayload(payload);
+            if (!parsed) return;
+            if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
+            setLastDecisionPing(parsed);
+          })
+          .on("broadcast", { event: "timer_ping" }, ({ payload }) => {
+            const parsed = parseTimerPingPayload(payload);
+            if (!parsed) return;
+            if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
+            setSession((prev) => ({
+              ...prev,
+              timer_deadline: parsed.deadline ?? null,
+            }));
+          })
           .on(
             "postgres_changes",
             {
@@ -1090,6 +1177,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     isRealtimeReady,
     viewerUserId: initialData.viewerUserId,
     lastBuzzerPing,
+    lastDecisionPing,
     sendBuzzerPing,
     refreshFromServer,
   };

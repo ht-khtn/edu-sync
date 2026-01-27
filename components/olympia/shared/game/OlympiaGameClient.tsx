@@ -7,7 +7,7 @@ import { useFormStatus, createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
-import { useOlympiaGameState, type BuzzerPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
+import { useOlympiaGameState, type BuzzerPingPayload, type DecisionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { AnswersOverlay } from '@/components/olympia/shared/game/AnswersOverlay'
 import type { GameSessionPayload } from '@/types/olympia/game'
 import { RefreshCw, Bell } from 'lucide-react'
@@ -105,6 +105,7 @@ export function OlympiaGameClient({
     isRealtimeReady,
     viewerUserId,
     lastBuzzerPing,
+    lastDecisionPing,
     sendBuzzerPing,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
@@ -421,6 +422,7 @@ export function OlympiaGameClient({
   const lastBuzzerSoundRef = useRef<string | null>(null)
   const lastBuzzerPingSoundRef = useRef<string | null>(null)
   const lastBuzzerPingSentRef = useRef<number>(0)
+  const lastDecisionPingSoundAtRef = useRef<number>(0)
   const prevScoreboardRef = useRef<boolean | null>(null)
   const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
   const prevEndQuestionIdRef = useRef<string | null>(null)
@@ -484,6 +486,15 @@ export function OlympiaGameClient({
     if (!Number.isFinite(ageMs) || ageMs > 2000) return null
     return lastBuzzerPing
   }, [currentQuestionId, lastBuzzerPing])
+
+  const recentDecisionPing = useMemo<DecisionPingPayload | null>(() => {
+    if (!lastDecisionPing) return null
+    if (!currentQuestionId) return null
+    if (lastDecisionPing.roundQuestionId !== currentQuestionId) return null
+    const ageMs = Date.now() - lastDecisionPing.clientTs
+    if (!Number.isFinite(ageMs) || ageMs > 2000) return null
+    return lastDecisionPing
+  }, [currentQuestionId, lastDecisionPing])
   const currentRoundQuestion = currentQuestionId ? roundQuestions.find((q) => q.id === currentQuestionId) ?? null : null
   const questionRecord = currentRoundQuestion?.questions
     ? (Array.isArray(currentRoundQuestion.questions)
@@ -973,6 +984,7 @@ export function OlympiaGameClient({
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return
     if (resolvedRoundType === 'vcnv') return
+    if (Date.now() - lastDecisionPingSoundAtRef.current < 1500) return
     const latest = answers[0]
     if (!latest?.id) return
     const latestIsCorrect = typeof latest.is_correct === 'boolean' ? latest.is_correct : null
@@ -1001,6 +1013,20 @@ export function OlympiaGameClient({
       prevAnswerDecisionRef.current = { id: latest.id, isCorrect: null }
     }
   }, [answers, emitSoundEvent, isGuest, resolvedRoundType])
+
+  useEffect(() => {
+    if (!isGuest || !resolvedRoundType) return
+    if (resolvedRoundType === 'vcnv') return
+    if (!recentDecisionPing) return
+
+    if (recentDecisionPing.decision !== 'correct' && recentDecisionPing.decision !== 'wrong') return
+
+    lastDecisionPingSoundAtRef.current = Date.now()
+    void emitSoundEvent(
+      recentDecisionPing.decision === 'correct' ? GameEvent.CORRECT_ANSWER : GameEvent.WRONG_ANSWER,
+      { roundType: resolvedRoundType }
+    )
+  }, [emitSoundEvent, isGuest, recentDecisionPing, resolvedRoundType])
 
   useEffect(() => {
     if (!isGuest || resolvedRoundType !== 'vcnv') {

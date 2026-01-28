@@ -124,18 +124,12 @@ function CountdownControls({
     return getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta, currentQuestionState)
   }, [currentRoundType, currentQuestionMeta, currentQuestionState])
 
-  useEffect(() => {
-    if (!hasUserEditedDuration) {
-      setTimerDurationSeconds(autoTimerDurationSeconds)
-    }
-  }, [autoTimerDurationSeconds, hasUserEditedDuration])
-
-  useEffect(() => {
-    if (currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed') {
-      setHasUserEditedDuration(false)
-      setTimerDurationSeconds(5)
-    }
-  }, [currentRoundType, currentQuestionState])
+  const isVeDichReveal = currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed'
+  const effectiveHasUserEditedDuration = hasUserEditedDuration && !isVeDichReveal
+  const effectiveTimerDurationSeconds = effectiveHasUserEditedDuration
+    ? timerDurationSeconds
+    : autoTimerDurationSeconds
+  const effectiveDurationOverride = isVeDichReveal ? 5 : effectiveTimerDurationSeconds
 
   // Subscribe to realtime timer updates
   useEffect(() => {
@@ -160,12 +154,10 @@ function CountdownControls({
   }, [effectiveTimerDeadline, countdownTick])
 
   const durationSecondsValue = useMemo<CountdownOption>(() => {
-    const raw = countdownSeconds !== null
-      ? timerDurationSeconds
-      : (hasUserEditedDuration ? timerDurationSeconds : autoTimerDurationSeconds)
+    const raw = effectiveDurationOverride
     if (isCountdownOption(raw)) return raw
     return countdownOptions[0]
-  }, [autoTimerDurationSeconds, countdownSeconds, hasUserEditedDuration, timerDurationSeconds])
+  }, [effectiveDurationOverride])
 
   // Tick countdown (interval only updates tick; countdown itself is derived)
   useEffect(() => {
@@ -780,13 +772,13 @@ export function HostRoundControls({
 
     setViewModeOverride(next)
 
-    if (sessionId && (next === 'question' || next === 'waiting')) {
+    if (sessionId) {
       const payload: QuestionPingPayload = {
         matchId,
         sessionId,
         questionState: next === 'waiting' ? 'hidden' : 'showing',
-        showScoreboardOverlay: false,
-        showAnswersOverlay: false,
+        showScoreboardOverlay: nextScoreboard,
+        showAnswersOverlay: nextAnswers,
         clientTs: Date.now(),
       }
       sendBroadcast('question_ping', payload)

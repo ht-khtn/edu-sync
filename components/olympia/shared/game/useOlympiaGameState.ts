@@ -1032,6 +1032,110 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
                   return;
                 }
 
+                if (evt.entity === "round_questions") {
+                  const id =
+                    payloadString(evt.payload, "id") ??
+                    payloadString(evt.payload, "roundQuestionId");
+                  if (!id) return;
+
+                  const matchRoundId = payloadStringFromKeys(evt.payload, [
+                    "matchRoundId",
+                    "match_round_id",
+                  ]);
+                  const targetPlayerId = payloadStringFromKeys(evt.payload, [
+                    "targetPlayerId",
+                    "target_player_id",
+                  ]);
+                  const questionSetItemId = payloadStringFromKeys(evt.payload, [
+                    "questionSetItemId",
+                    "question_set_item_id",
+                  ]);
+
+                  const orderIndexRaw = payloadHasKey(evt.payload, "orderIndex")
+                    ? evt.payload.orderIndex
+                    : payloadHasKey(evt.payload, "order_index")
+                      ? evt.payload.order_index
+                      : undefined;
+                  const orderIndex =
+                    typeof orderIndexRaw === "number" && Number.isFinite(orderIndexRaw)
+                      ? orderIndexRaw
+                      : orderIndexRaw !== undefined
+                        ? null
+                        : undefined;
+
+                  const questionTextRaw = payloadHasKey(evt.payload, "questionText")
+                    ? evt.payload.questionText
+                    : payloadHasKey(evt.payload, "question_text")
+                      ? evt.payload.question_text
+                      : undefined;
+                  const answerTextRaw = payloadHasKey(evt.payload, "answerText")
+                    ? evt.payload.answerText
+                    : payloadHasKey(evt.payload, "answer_text")
+                      ? evt.payload.answer_text
+                      : undefined;
+                  const noteRaw = payloadHasKey(evt.payload, "note") ? evt.payload.note : undefined;
+
+                  const metaRaw = payloadHasKey(evt.payload, "meta")
+                    ? payloadObject(evt.payload, "meta")
+                    : undefined;
+
+                  setRoundQuestions((prev) => {
+                    const idx = prev.findIndex((row) => row.id === id);
+                    if (evt.event_type === "DELETE") {
+                      if (idx === -1) return prev;
+                      const next = prev.slice();
+                      next.splice(idx, 1);
+                      return next;
+                    }
+
+                    const update: Partial<RoundQuestionRow> = {};
+                    if (matchRoundId !== undefined) update.match_round_id = matchRoundId ?? null;
+                    if (targetPlayerId !== undefined)
+                      update.target_player_id = targetPlayerId ?? null;
+                    if (questionSetItemId !== undefined)
+                      update.question_set_item_id = questionSetItemId ?? null;
+                    if (orderIndex !== undefined) update.order_index = orderIndex ?? null;
+                    if (metaRaw !== undefined) {
+                      update.meta = metaRaw
+                        ? (metaRaw as Record<string, string | number | boolean | null>)
+                        : null;
+                    }
+                    if (questionTextRaw !== undefined) {
+                      update.question_text =
+                        typeof questionTextRaw === "string" ? questionTextRaw : null;
+                    }
+                    if (answerTextRaw !== undefined) {
+                      update.answer_text = typeof answerTextRaw === "string" ? answerTextRaw : null;
+                    }
+                    if (noteRaw !== undefined) {
+                      update.note = typeof noteRaw === "string" ? noteRaw : null;
+                    }
+
+                    if (idx === -1) {
+                      return [
+                        {
+                          id,
+                          match_round_id: update.match_round_id ?? null,
+                          question_id: null,
+                          order_index: update.order_index ?? null,
+                          target_player_id: update.target_player_id ?? null,
+                          question_set_item_id: update.question_set_item_id ?? null,
+                          meta: update.meta ?? null,
+                          question_text: update.question_text ?? null,
+                          answer_text: update.answer_text ?? null,
+                          note: update.note ?? null,
+                        },
+                        ...prev,
+                      ];
+                    }
+
+                    const next = prev.slice();
+                    next[idx] = { ...next[idx], ...update };
+                    return next;
+                  });
+                  return;
+                }
+
                 if (evt.entity === "star_uses") {
                   const id = payloadString(evt.payload, "id");
                   const playerId = payloadString(evt.payload, "playerId");

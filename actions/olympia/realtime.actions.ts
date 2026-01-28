@@ -1696,6 +1696,41 @@ export async function selectVeDichPackageAction(
       }
     }
 
+    const realtimePayloads = slots.map((rq, idx) => {
+      const meta = (rq as unknown as { meta?: unknown }).meta;
+      const metaObj = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
+      const item = chosenItems[idx];
+      const nextMeta = { ...metaObj, ve_dich_value: packageValues[idx], code: item.code };
+      const orderIndexRaw = (rq as unknown as { order_index?: unknown }).order_index;
+      const orderIndex = typeof orderIndexRaw === "number" ? orderIndexRaw : null;
+
+      return {
+        id: (rq as unknown as { id: string }).id,
+        matchRoundId: session.current_round_id,
+        orderIndex,
+        targetPlayerId: player.id,
+        questionSetItemId: item.id,
+        meta: nextMeta,
+        questionText: item.question_text,
+        answerText: item.answer_text,
+        note: item.note ?? null,
+      };
+    });
+
+    const { error: emitErr } = await olympia.from("realtime_events").insert(
+      realtimePayloads.map((payload) => ({
+        match_id: session.match_id,
+        session_id: session.id,
+        entity: "round_questions",
+        entity_id: payload.id,
+        event_type: "UPDATE",
+        payload,
+      }))
+    );
+    if (emitErr) {
+      console.warn("[selectVeDichPackageAction] emit realtime_events failed:", emitErr.message);
+    }
+
     revalidatePath("/olympia/client");
     if (session.join_code) {
       revalidatePath(`/olympia/client/game/${session.join_code}`);

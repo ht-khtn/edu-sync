@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Timer, Play, Pause, Square } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
-import type { QuestionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
+import type { QuestionPingPayload, SoundPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
 
 export type ActionState = {
@@ -1024,6 +1024,23 @@ export function HostRoundControls({
           onSubmit={(e) => {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
+            if (sessionId) {
+              const soundRoundType =
+                effectiveCurrentRoundType === 'khoi_dong' ||
+                  effectiveCurrentRoundType === 'vcnv' ||
+                  effectiveCurrentRoundType === 'tang_toc' ||
+                  effectiveCurrentRoundType === 've_dich'
+                  ? effectiveCurrentRoundType
+                  : null
+              const payload: SoundPingPayload = {
+                matchId,
+                sessionId,
+                event: 'ROUND_ENDED',
+                roundType: soundRoundType,
+                clientTs: Date.now(),
+              }
+              sendBroadcast('sound_ping', payload)
+            }
             startRoundTransition(() => endTurnAction(formData))
           }}
         >

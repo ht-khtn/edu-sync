@@ -114,6 +114,7 @@ export function OlympiaGameClient({
     viewerUserId,
     lastBuzzerPing,
     lastDecisionPing,
+    lastSoundPing,
     sendBuzzerPing,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
@@ -462,6 +463,7 @@ export function OlympiaGameClient({
   const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
   const prevEndQuestionIdRef = useRef<string | null>(null)
   const prevEndQuestionStateRef = useRef<string | null>(null)
+  const lastSoundPingRef = useRef<number | null>(null)
   const prevVcnvRevealRef = useRef<Record<string, boolean>>({})
   const prevVcnvLockedRef = useRef<Record<string, boolean>>({})
   const vcnvRevealInitRef = useRef<boolean>(false)
@@ -934,41 +936,10 @@ export function OlympiaGameClient({
   }, [mediaUrl])
 
   useEffect(() => {
-    // Nếu overlay đáp án/bảng điểm đang mở thì bỏ qua emit vòng
-    if (showAnswersOverlay || showBigScoreboard) return
-    if (questionState === 'hidden') {
-      if (isGuest && resolvedRoundType) {
-        prevRoundTypeRef.current = resolvedRoundType
-      }
-      return
-    }
-
-    if (!isGuest || !resolvedRoundType) {
-      prevRoundTypeRef.current = null
-      return
-    }
-
-    const prev = prevRoundTypeRef.current
-    if (prev && prev !== resolvedRoundType) {
-      void emitSoundEvent(GameEvent.ROUND_ENDED, { roundType: prev })
-    }
-    if (prev !== resolvedRoundType) {
-      void emitSoundEvent(GameEvent.ROUND_STARTED, { roundType: resolvedRoundType })
-    }
-    prevRoundTypeRef.current = resolvedRoundType
-  }, [emitSoundEvent, isGuest, questionState, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
-
-  useEffect(() => {
     if (!isGuest) return
     // Khi đang mở overlay đáp án hoặc bảng điểm, bỏ qua các sự kiện hiển thị câu/đáp án
     if (showAnswersOverlay || showBigScoreboard) return
     const prev = prevQuestionStateRef.current
-
-    if (questionState === 'showing' && prev !== 'showing') {
-      void emitSoundEvent(GameEvent.QUESTION_REVEALED, {
-        roundType: resolvedRoundType ?? undefined,
-      })
-    }
 
     if (questionState === 'answer_revealed' && prev !== 'answer_revealed') {
       if (resolvedRoundType === 'tang_toc' || resolvedRoundType === 'vcnv') {
@@ -976,17 +947,31 @@ export function OlympiaGameClient({
       }
     }
 
-    if (questionState === 'completed' && prev !== 'completed' && resolvedRoundType === 've_dich') {
-      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
-    }
-
-    // For Khởi động thi riêng (KD{seat}-): emit TURN_ENDED when question_state -> hidden (end of turn)
-    if (questionState === 'hidden' && prev !== 'hidden' && resolvedRoundType === 'khoi_dong') {
-      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType: resolvedRoundType })
-    }
-
     prevQuestionStateRef.current = questionState
   }, [emitSoundEvent, isGuest, questionState, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
+
+  useEffect(() => {
+    if (!isGuest) return
+    if (!lastSoundPing) return
+    if (lastSoundPingRef.current === lastSoundPing.clientTs) return
+    const lagMs = Date.now() - lastSoundPing.clientTs
+    if (Number.isFinite(lagMs) && lagMs > 2000) return
+
+    lastSoundPingRef.current = lastSoundPing.clientTs
+
+    const roundType = lastSoundPing.roundType ?? resolvedRoundType ?? undefined
+    if (lastSoundPing.event === 'QUESTION_REVEALED') {
+      void emitSoundEvent(GameEvent.QUESTION_REVEALED, { roundType })
+      return
+    }
+    if (lastSoundPing.event === 'ROUND_ENDED') {
+      void emitSoundEvent(GameEvent.ROUND_ENDED, { roundType })
+      return
+    }
+    if (lastSoundPing.event === 'TURN_ENDED') {
+      void emitSoundEvent(GameEvent.TURN_ENDED, { roundType })
+    }
+  }, [emitSoundEvent, isGuest, lastSoundPing, resolvedRoundType])
 
   // (removed transient intro effect)
 

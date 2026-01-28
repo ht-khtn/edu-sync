@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import getSupabase from "@/lib/supabase";
 
-export type HostBroadcastEvent = "decision_ping" | "timer_ping" | "question_ping";
+export type HostBroadcastEvent = "decision_ping" | "timer_ping" | "question_ping" | "sound_ping";
 
 export function useHostBroadcast(sessionId: string | null) {
   const supabaseRef = useRef<SupabaseClient | null>(null);

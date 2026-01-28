@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { GuestMediaControlButtons } from '@/components/olympia/admin/matches/GuestMediaControlButtons'
 import { dispatchHostSessionUpdate, subscribeHostSessionUpdate, dispatchHostStarUseUpdate, subscribeHostStarUseUpdate } from '@/components/olympia/admin/matches/host-events'
 import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
-import type { QuestionPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
+import type { QuestionPingPayload, SoundPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react'
 
 type PlayerSummary = {
@@ -285,6 +285,21 @@ export function HostQuestionPreviewCard(props: Props) {
         [matchId, sendBroadcast, sessionId]
     )
 
+    const sendSoundPing = useCallback(
+        (event: SoundPingPayload['event']) => {
+            if (!sessionId) return
+            const payload: SoundPingPayload = {
+                matchId,
+                sessionId,
+                event,
+                roundType: liveSession?.current_round_type ?? null,
+                clientTs: Date.now(),
+            }
+            sendBroadcast('sound_ping', payload)
+        },
+        [liveSession?.current_round_type, matchId, sendBroadcast, sessionId]
+    )
+
     const [previewId, setPreviewId] = useState<string>(() => initialPreviewId ?? '')
     const [localStarEnabled, setLocalStarEnabled] = useState<boolean>(isStarEnabled ?? false)
     const questionsForPreload = preloadQuestions ?? questions
@@ -369,6 +384,7 @@ export function HostQuestionPreviewCard(props: Props) {
         if (nextId) {
             dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
             sendQuestionPing(nextId)
+            sendSoundPing('QUESTION_REVEALED')
         }
         await setCurrentQuestionFormAction(formData)
     }

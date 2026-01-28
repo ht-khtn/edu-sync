@@ -82,6 +82,18 @@ export type TimerPingPayload = {
   clientTs: number;
 };
 
+export type SoundPingEvent = "QUESTION_REVEALED" | "ROUND_ENDED" | "TURN_ENDED";
+
+export type SoundPingRoundType = "khoi_dong" | "vcnv" | "tang_toc" | "ve_dich";
+
+export type SoundPingPayload = {
+  matchId: string;
+  sessionId: string;
+  event: SoundPingEvent;
+  roundType?: SoundPingRoundType | null;
+  clientTs: number;
+};
+
 type QuestionState = "hidden" | "showing" | "answer_revealed" | "completed";
 
 export type QuestionPingPayload = {
@@ -179,6 +191,40 @@ function parseDecisionPingPayload(payload: unknown): DecisionPingPayload | null 
     roundQuestionId,
     playerId,
     decision: decisionRaw,
+    clientTs: clientTsRaw,
+  };
+}
+
+function parseSoundPingPayload(payload: unknown): SoundPingPayload | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const rec = payload as Record<string, unknown>;
+
+  const matchId = typeof rec.matchId === "string" ? rec.matchId : null;
+  const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
+  const eventRaw = typeof rec.event === "string" ? rec.event : null;
+  const clientTsRaw = typeof rec.clientTs === "number" ? rec.clientTs : null;
+
+  if (!matchId || !sessionId || !eventRaw || clientTsRaw === null) return null;
+  if (!Number.isFinite(clientTsRaw)) return null;
+
+  if (eventRaw !== "QUESTION_REVEALED" && eventRaw !== "ROUND_ENDED" && eventRaw !== "TURN_ENDED") {
+    return null;
+  }
+
+  const roundTypeRaw = typeof rec.roundType === "string" ? rec.roundType : null;
+  const roundType =
+    roundTypeRaw === "khoi_dong" ||
+    roundTypeRaw === "vcnv" ||
+    roundTypeRaw === "tang_toc" ||
+    roundTypeRaw === "ve_dich"
+      ? roundTypeRaw
+      : null;
+
+  return {
+    matchId,
+    sessionId,
+    event: eventRaw as SoundPingEvent,
+    roundType,
     clientTs: clientTsRaw,
   };
 }
@@ -351,6 +397,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [buzzerEvents, setBuzzerEvents] = useState<BuzzerEvent[]>(initialData.buzzerEvents ?? []);
   const [lastBuzzerPing, setLastBuzzerPing] = useState<BuzzerPingPayload | null>(null);
   const [lastDecisionPing, setLastDecisionPing] = useState<DecisionPingPayload | null>(null);
+  const [lastSoundPing, setLastSoundPing] = useState<SoundPingPayload | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isRealtimeReady, setRealtimeReady] = useState(false);
   const [timer, setTimer] = useState<TimerSnapshot>(() =>
@@ -880,6 +927,14 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
                   : prev.show_answers_overlay,
             }));
           })
+          .on("broadcast", { event: "sound_ping" }, ({ payload }) => {
+            const parsed = parseSoundPingPayload(payload);
+            if (!parsed) return;
+            if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
+            const lagMs = Date.now() - parsed.clientTs;
+            if (Number.isFinite(lagMs) && lagMs > 2000) return;
+            setLastSoundPing(parsed);
+          })
           .on(
             "postgres_changes",
             {
@@ -1390,6 +1445,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     viewerUserId: initialData.viewerUserId,
     lastBuzzerPing,
     lastDecisionPing,
+    lastSoundPing,
     sendBuzzerPing,
     refreshFromServer,
   };

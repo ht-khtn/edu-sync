@@ -175,10 +175,24 @@ export class SoundEventRouter {
         ? payload.durationSeconds
         : this.resolveDurationSecondsFromMs(payload?.durationMs);
 
-    if (!roundNumber || !durationSeconds) return null;
+    if (!durationSeconds) return null;
 
-    const fileName = `${roundNumber} ${durationSeconds}s`;
-    return this.registry.findKeyByFileName(fileName);
+    const candidates = [roundNumber, 1, 2, 3, 4].filter(
+      (n, idx, arr) => typeof n === "number" && Number.isFinite(n) && arr.indexOf(n) === idx
+    );
+
+    const tried: string[] = [];
+    for (const n of candidates) {
+      const fileName = `${n} ${durationSeconds}s`;
+      tried.push(fileName);
+      const key = this.registry.findKeyByFileName(fileName);
+      if (key) return key;
+    }
+
+    if (tried.length > 0) {
+      console.error(`[SoundRouter] Countdown sound not found. Tried: ${tried.join(", ")}`);
+    }
+    return null;
   }
 
   private getRoundNumber(roundType: RoundType): number {

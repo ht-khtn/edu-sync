@@ -416,6 +416,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  const retryStoppedRef = useRef(false);
+  const subscribeInFlightRef = useRef(false);
   const realtimeReadyRef = useRef(false);
   const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
@@ -429,6 +431,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const questionState = session.question_state ?? "hidden";
   const roundType = session.current_round_type ?? "unknown";
   const matchId = initialData.match.id;
+  const MAX_RETRIES = 6;
+  const MAX_RETRY_DELAY_MS = 10000;
 
   const resolveRoundQuestionCode = useCallback((rq: RoundQuestionRow | null) => {
     if (!rq) return null;
@@ -866,6 +870,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     };
 
     const subscribe = async () => {
+      if (subscribeInFlightRef.current || retryStoppedRef.current) return;
+      subscribeInFlightRef.current = true;
       try {
         const supabase = await getSupabase();
         if (!mounted) return;
@@ -1326,22 +1332,50 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
               });
             }
           );
+        channelRef.current = channel;
+
         channel.subscribe((status) => {
+          if (!mounted) return;
+          if (channelRef.current !== channel) return;
+          const channelTopic = channel.topic ?? "unknown";
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
             realtimeReadyRef.current = true;
             setStatusMessage(null);
             retryCountRef.current = 0;
+            retryStoppedRef.current = false;
+            clearRetryTimer();
+            console.info("[Olympia] realtime subscribed", {
+              status,
+              channel: channelTopic,
+              matchId,
+              sessionId,
+            });
             void fetchSnapshotOnce();
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             setRealtimeReady(false);
             realtimeReadyRef.current = false;
 
-            const nextCount = Math.min(retryCountRef.current + 1, 6);
+            if (retryStoppedRef.current || retryTimerRef.current) return;
+
+            const nextCount = retryCountRef.current + 1;
+            if (nextCount > MAX_RETRIES) {
+              retryStoppedRef.current = true;
+              setStatusMessage("Mất kết nối realtime · vui lòng tải lại trang.");
+              return;
+            }
+
             retryCountRef.current = nextCount;
-            const delayMs = Math.min(10000, 500 * Math.pow(2, nextCount));
-            console.warn("[Olympia] realtime channel status", status, "retry in", delayMs, "ms");
+            const delayMs = Math.min(MAX_RETRY_DELAY_MS, 500 * Math.pow(2, nextCount));
+            console.warn("[Olympia] realtime channel status", {
+              status,
+              channel: channelTopic,
+              matchId,
+              sessionId,
+              retryInMs: delayMs,
+              attempt: nextCount,
+            });
             setStatusMessage("Mất kết nối realtime · đang thử lại…");
 
             clearRetryTimer();
@@ -1351,11 +1385,11 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             }, delayMs);
           }
         });
-
-        channelRef.current = channel;
       } catch (error) {
         console.error("Olympia game realtime init failed", error);
         setStatusMessage("Không thể kết nối realtime");
+      } finally {
+        subscribeInFlightRef.current = false;
       }
     };
 

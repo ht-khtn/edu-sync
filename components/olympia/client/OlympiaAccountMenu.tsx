@@ -14,7 +14,12 @@ export function OlympiaAccountMenu({ loginRedirectTo }: Props) {
     const { data } = useSession()
 
     if (data?.user?.id) {
-        return <UserMenu user={{ id: data.user.id }} hasAdminAccess={data.hasOlympiaAccess} />
+        return (
+            <UserMenu
+                user={{ id: data.user.id, displayName: data.user.displayName ?? null }}
+                hasAdminAccess={data.hasOlympiaAccess}
+            />
+        )
     }
 
     return (

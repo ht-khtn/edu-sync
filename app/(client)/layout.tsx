@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ClientHeader } from "@/components/client/layout/ClientHeader";
 import { redirect } from "next/navigation";
-import { getServerAuthContext, getServerRoles, summarizeRoles } from "@/lib/server-auth";
+import { getServerAuthContext, getServerRoles, getServerSupabase, summarizeRoles } from "@/lib/server-auth";
 
 export const metadata: Metadata = {
   title: "EduSync",
@@ -16,7 +16,7 @@ export default async function ClientLayout({ children }: { children: React.React
     getServerAuthContext(),
     getServerRoles()
   ])
-  
+
   if (!appUserId) {
     return redirect('/login?redirect=/client')
   }
@@ -27,9 +27,21 @@ export default async function ClientLayout({ children }: { children: React.React
     return redirect('/admin')
   }
 
+  const supabase = await getServerSupabase()
+  const { data: userRow } = await supabase
+    .from('users')
+    .select('user_name, user_profiles(full_name)')
+    .eq('id', appUserId)
+    .maybeSingle()
+
+  const profile = Array.isArray(userRow?.user_profiles)
+    ? userRow?.user_profiles[0]
+    : userRow?.user_profiles
+  const displayName = profile?.full_name?.trim() ?? userRow?.user_name?.trim() ?? null
+
   return (
     <>
-      <ClientHeader user={{ id: appUserId }} />
+      <ClientHeader user={{ id: appUserId, displayName }} />
       {children}
     </>
   )

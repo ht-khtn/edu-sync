@@ -11,7 +11,7 @@ type RoleRecord = {
 };
 
 type SessionResponse = {
-  user: { id: string } | null;
+  user: { id: string; displayName: string | null } | null;
   hasCC?: boolean;
   hasSchoolScope?: boolean;
   hasOlympiaAccess?: boolean;
@@ -47,10 +47,11 @@ async function computeSession(authUid: string): Promise<SessionResponse> {
 
   // Fetch user with a minimal retry (để tránh trigger chưa chạy kịp, nhưng không gây delay lớn).
   let appUserId: string | null = null;
+  let displayName: string | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const { data, error } = await supabase
       .from("users")
-      .select("id")
+      .select("id, user_name, user_profiles(full_name)")
       .eq("auth_uid", authUid)
       .maybeSingle();
     if (error) {
@@ -58,6 +59,12 @@ async function computeSession(authUid: string): Promise<SessionResponse> {
     }
     if (data?.id) {
       appUserId = data.id;
+      const profile = Array.isArray(data.user_profiles)
+        ? data.user_profiles[0]
+        : data.user_profiles;
+      const profileName = profile?.full_name?.trim() ?? null;
+      const userName = data.user_name?.trim() ?? null;
+      displayName = profileName || userName;
       break;
     }
     if (attempt === 0) await delay(50);
@@ -72,7 +79,7 @@ async function computeSession(authUid: string): Promise<SessionResponse> {
     .select("role_id, target, permissions(scope)")
     .eq("user_id", appUserId);
   if (rolesError) {
-    return { user: { id: appUserId }, error: rolesError.message };
+    return { user: { id: appUserId, displayName }, error: rolesError.message };
   }
 
   const roleList = Array.isArray(rolesData) ? (rolesData as RoleRecord[]) : [];
@@ -107,7 +114,7 @@ async function computeSession(authUid: string): Promise<SessionResponse> {
   }
 
   return {
-    user: { id: appUserId },
+    user: { id: appUserId, displayName },
     hasCC,
     hasSchoolScope,
     hasOlympiaAccess,

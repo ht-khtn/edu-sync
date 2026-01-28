@@ -7,7 +7,7 @@ import { UserMenu } from "../UserMenu";
 import { Trophy, AlertCircle } from "lucide-react";
 
 interface ClientHeaderProps {
-  user?: { id: string } | null;
+  user?: { id: string; displayName?: string | null } | null;
   hasAdminAccess?: boolean;
 }
 

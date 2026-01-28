@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 
 export type SessionUser = {
   id: string;
+  displayName: string | null;
 };
 
 export type SessionInfo = {

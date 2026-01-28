@@ -18,8 +18,21 @@ import { toast } from "sonner";
 import { Lock, LogOut } from "lucide-react";
 
 interface UserMenuProps {
-  user: { id: string };
+  user: { id: string; displayName?: string | null };
   hasAdminAccess?: boolean;
+}
+
+function getInitials(source: string): string {
+  const trimmed = source.trim();
+  if (!trimmed) return "?";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  const first = parts[0][0] ?? "";
+  const last = parts[parts.length - 1]?.[0] ?? "";
+  return `${first}${last}`.toUpperCase();
 }
 
 function UserMenuComponent({ user }: UserMenuProps) {
@@ -90,7 +103,9 @@ function UserMenuComponent({ user }: UserMenuProps) {
     }
   }, [router]);
 
-  const initials = user.id.slice(0, 2).toUpperCase();
+  const displayName = user.displayName?.trim() || null;
+  const initialsSource = displayName ?? user.id;
+  const initials = getInitials(initialsSource);
 
   return (
     <>
@@ -113,7 +128,7 @@ function UserMenuComponent({ user }: UserMenuProps) {
             <div className="flex flex-col space-y-1">
               <p className="text-sm font-medium">Tài khoản</p>
               <p className="text-xs text-muted-foreground">
-                {user.id.slice(0, 8)}...
+                {displayName ?? "Chưa cập nhật"}
               </p>
             </div>
           </DropdownMenuLabel>

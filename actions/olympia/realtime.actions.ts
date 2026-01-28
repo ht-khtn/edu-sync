@@ -2161,7 +2161,10 @@ export async function setCurrentQuestionAction(
         .update({ target_player_id: null })
         .eq("id", roundQuestion.id);
       if (resetErr) {
-        console.warn("[Olympia] reset target_player_id (khoi_dong personal) failed:", resetErr.message);
+        console.warn(
+          "[Olympia] reset target_player_id (khoi_dong personal) failed:",
+          resetErr.message
+        );
       }
     }
 
@@ -2456,10 +2459,8 @@ export async function advanceCurrentQuestionAction(
       const currentIsCommon = currentInfo?.kind === "common";
       const nextIsCommon = nextInfo?.kind === "common";
 
-      const currentIsPersonal =
-        !currentIsCommon && currentInfo?.kind === "personal";
-      const nextIsPersonal =
-        !nextIsCommon && nextInfo?.kind === "personal";
+      const currentIsPersonal = !currentIsCommon && currentInfo?.kind === "personal";
+      const nextIsPersonal = !nextIsCommon && nextInfo?.kind === "personal";
 
       const currentSeat = currentInfo && currentInfo.kind === "personal" ? currentInfo.seat : null;
       const nextSeat = nextInfo && nextInfo.kind === "personal" ? nextInfo.seat : null;

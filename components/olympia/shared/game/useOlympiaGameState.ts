@@ -79,6 +79,7 @@ export type TimerPingPayload = {
   roundQuestionId: string | null;
   action: "start" | "expire";
   deadline: string | null;
+  durationMs?: number | null;
   clientTs: number;
 };
 
@@ -238,6 +239,8 @@ function parseTimerPingPayload(payload: unknown): TimerPingPayload | null {
   const actionRaw = typeof rec.action === "string" ? rec.action : null;
   const clientTsRaw = typeof rec.clientTs === "number" ? rec.clientTs : null;
   const deadlineRaw = typeof rec.deadline === "string" ? rec.deadline : null;
+  const durationMsRaw =
+    typeof rec.durationMs === "number" && Number.isFinite(rec.durationMs) ? rec.durationMs : null;
 
   if (!matchId || !sessionId || !actionRaw || clientTsRaw === null) return null;
   if (!Number.isFinite(clientTsRaw)) return null;
@@ -251,6 +254,7 @@ function parseTimerPingPayload(payload: unknown): TimerPingPayload | null {
     roundQuestionId,
     action: actionRaw,
     deadline: deadlineRaw,
+    durationMs: durationMsRaw,
     clientTs: clientTsRaw,
   };
 }
@@ -398,6 +402,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const [lastBuzzerPing, setLastBuzzerPing] = useState<BuzzerPingPayload | null>(null);
   const [lastDecisionPing, setLastDecisionPing] = useState<DecisionPingPayload | null>(null);
   const [lastSoundPing, setLastSoundPing] = useState<SoundPingPayload | null>(null);
+  const [lastTimerPing, setLastTimerPing] = useState<TimerPingPayload | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isRealtimeReady, setRealtimeReady] = useState(false);
   const [timer, setTimer] = useState<TimerSnapshot>(() =>
@@ -895,6 +900,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             const parsed = parseTimerPingPayload(payload);
             if (!parsed) return;
             if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
+            setLastTimerPing(parsed);
             setSession((prev) => ({
               ...prev,
               timer_deadline: parsed.deadline ?? null,
@@ -1446,6 +1452,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
     lastBuzzerPing,
     lastDecisionPing,
     lastSoundPing,
+    lastTimerPing,
     sendBuzzerPing,
     refreshFromServer,
   };

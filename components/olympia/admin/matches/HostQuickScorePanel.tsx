@@ -125,6 +125,7 @@ export function HostQuickScorePanel(props: Props) {
                     roundQuestionId: activeRoundQuestionId,
                     action: 'start',
                     deadline,
+                    durationMs: duration,
                     clientTs: Date.now(),
                 }
                 sendBroadcast('timer_ping', payload)

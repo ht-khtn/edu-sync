@@ -115,6 +115,7 @@ export function OlympiaGameClient({
     lastBuzzerPing,
     lastDecisionPing,
     lastSoundPing,
+    lastTimerPing,
     sendBuzzerPing,
     refreshFromServer,
   } = useOlympiaGameState({ sessionId, initialData })
@@ -1001,14 +1002,28 @@ export function OlympiaGameClient({
       const diffMs = Number.isFinite(deadlineMs) ? Math.max(0, deadlineMs - Date.now()) : null
       const roundedSeconds =
         typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.round(diffMs / 1000)) : null
-      const durationMs = roundedSeconds ? roundedSeconds * 1000 : undefined
+      const durationMsFromPing =
+        lastTimerPing?.action === 'start' &&
+        typeof lastTimerPing.durationMs === 'number' &&
+        Number.isFinite(lastTimerPing.durationMs)
+          ? lastTimerPing.durationMs
+          : null
+      const durationSecondsFromPing =
+        typeof durationMsFromPing === 'number' ? Math.round(durationMsFromPing / 1000) : null
+      const durationSeconds = durationSecondsFromPing ?? roundedSeconds
+      const durationMs =
+        typeof durationMsFromPing === 'number'
+          ? durationMsFromPing
+          : durationSeconds
+            ? durationSeconds * 1000
+            : undefined
       void emitSoundEvent(GameEvent.TIMER_STARTED, {
         roundType: resolvedRoundType,
         hasVideo,
         questionOrderIndex: currentQuestionOrderIndex ?? undefined,
         veDichValue: currentVeDichValue ?? undefined,
         durationMs,
-        durationSeconds: roundedSeconds ?? undefined,
+        durationSeconds: durationSeconds ?? undefined,
         roundNumber: roundNumber ?? undefined,
       })
     }
@@ -1018,7 +1033,7 @@ export function OlympiaGameClient({
     }
 
     prevTimerDeadlineRef.current = next
-  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, mediaKind, resolvedRoundType, roundNumber, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
+  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, lastTimerPing, mediaKind, resolvedRoundType, roundNumber, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return

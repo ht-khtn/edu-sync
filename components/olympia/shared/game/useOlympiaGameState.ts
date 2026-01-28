@@ -418,6 +418,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const retryCountRef = useRef(0);
   const retryStoppedRef = useRef(false);
   const subscribeInFlightRef = useRef(false);
+  const lastSubscribedChannelRef = useRef<string | null>(null);
+  const channelStatusRef = useRef<
+    "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED" | "JOINING" | "LEAVING" | "UNKNOWN"
+  >("UNKNOWN");
   const realtimeReadyRef = useRef(false);
   const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
@@ -871,6 +875,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
     const subscribe = async () => {
       if (subscribeInFlightRef.current || retryStoppedRef.current) return;
+      const desiredTopic = `realtime:olympia-game-${sessionId}`;
+      if (channelRef.current?.topic === desiredTopic && channelStatusRef.current === "SUBSCRIBED") {
+        return;
+      }
       subscribeInFlightRef.current = true;
       try {
         const supabase = await getSupabase();
@@ -1338,6 +1346,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           if (!mounted) return;
           if (channelRef.current !== channel) return;
           const channelTopic = channel.topic ?? "unknown";
+          const nextStatus = typeof status === "string" ? status : "UNKNOWN";
+          channelStatusRef.current = nextStatus;
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
             realtimeReadyRef.current = true;
@@ -1345,12 +1355,15 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             retryCountRef.current = 0;
             retryStoppedRef.current = false;
             clearRetryTimer();
-            console.info("[Olympia] realtime subscribed", {
-              status,
-              channel: channelTopic,
-              matchId,
-              sessionId,
-            });
+            if (lastSubscribedChannelRef.current !== channelTopic) {
+              lastSubscribedChannelRef.current = channelTopic;
+              console.info("[Olympia] realtime subscribed", {
+                status,
+                channel: channelTopic,
+                matchId,
+                sessionId,
+              });
+            }
             void fetchSnapshotOnce();
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {

@@ -1033,13 +1033,14 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     }
 
     // Khởi động lượt cá nhân: chỉ thí sinh đúng ghế (KD{seat}-) mới được gửi đáp án.
-    // Ưu tiên target_player_id nếu có; nếu không có, suy luận theo meta.code.
+    // Luôn suy luận theo meta.code, không dựa vào target_player_id.
     // Ngoại lệ: Về đích mở cửa cướp (question_state='answer_revealed') → chỉ steal-winner mới được trả lời.
     const inferredKhoiDong =
-      session.current_round_type === "khoi_dong" && !roundQuestion.target_player_id
+      session.current_round_type === "khoi_dong"
         ? parseKhoiDongCodeInfoFromMeta((roundQuestion as unknown as { meta?: unknown }).meta)
         : null;
-    if (session.current_round_type === "khoi_dong" && inferredKhoiDong?.kind === "personal") {
+    const isKhoiDongPersonal = inferredKhoiDong?.kind === "personal";
+    if (session.current_round_type === "khoi_dong" && isKhoiDongPersonal) {
       const { data: seatPlayer, error: seatErr } = await olympia
         .from("match_players")
         .select("id")
@@ -1058,6 +1059,7 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     // target_player_id (nếu có) chỉ dùng để biểu thị lượt chọn hàng, không khóa quyền nhập đáp án.
     if (
       session.current_round_type !== "vcnv" &&
+      !isKhoiDongPersonal &&
       roundQuestion.target_player_id &&
       roundQuestion.target_player_id !== playerRow.id
     ) {
@@ -2079,6 +2081,7 @@ export async function setCurrentQuestionAction(
 
     // Nếu code là DKA- thì chắc chắn là thi chung, kể cả khi target_player_id đang bị dính từ lần trước.
     const isKhoiDongCommon = khoiDongInfo?.kind === "common";
+    const isKhoiDongPersonal = khoiDongInfo?.kind === "personal";
     // isKhoiDongPersonal không cần dùng ở đây; luật bật chuông dựa vào isKhoiDongCommon.
 
     // Khởi động thi chung: reset khóa lượt mỗi câu để buzzer hoạt động đúng theo câu.
@@ -2089,6 +2092,17 @@ export async function setCurrentQuestionAction(
         .eq("id", roundQuestion.id);
       if (resetErr) {
         console.warn("[Olympia] reset target_player_id failed:", resetErr.message);
+      }
+    }
+
+    // Khởi động thi riêng: không dùng target_player_id, luôn suy luận theo code KD{seat}-.
+    if (isKhoiDong && isKhoiDongPersonal) {
+      const { error: resetErr } = await olympia
+        .from("round_questions")
+        .update({ target_player_id: null })
+        .eq("id", roundQuestion.id);
+      if (resetErr) {
+        console.warn("[Olympia] reset target_player_id (khoi_dong personal) failed:", resetErr.message);
       }
     }
 
@@ -2302,9 +2316,7 @@ export async function advanceCurrentQuestionAction(
           const currentInfo = parseKhoiDongCodeInfoFromMeta(
             (currentRow as { meta?: unknown })?.meta
           );
-          const currentIsPersonal = Boolean(
-            currentRow?.target_player_id || currentInfo?.kind === "personal"
-          );
+          const currentIsPersonal = currentInfo?.kind === "personal";
           if (currentIsPersonal) {
             // Hết câu KD thi riêng - ép màn chờ, không lấy câu khác
             const { error: endErr } = await olympia
@@ -2386,10 +2398,9 @@ export async function advanceCurrentQuestionAction(
       const nextIsCommon = nextInfo?.kind === "common";
 
       const currentIsPersonal =
-        !currentIsCommon &&
-        Boolean(currentRow?.target_player_id || currentInfo?.kind === "personal");
+        !currentIsCommon && currentInfo?.kind === "personal";
       const nextIsPersonal =
-        !nextIsCommon && Boolean(nextRow?.target_player_id || nextInfo?.kind === "personal");
+        !nextIsCommon && nextInfo?.kind === "personal";
 
       const currentSeat = currentInfo && currentInfo.kind === "personal" ? currentInfo.seat : null;
       const nextSeat = nextInfo && nextInfo.kind === "personal" ? nextInfo.seat : null;
@@ -2398,12 +2409,7 @@ export async function advanceCurrentQuestionAction(
       const switchingBetweenPersonalPlayers =
         currentIsPersonal &&
         nextIsPersonal &&
-        (Boolean(
-          currentRow?.target_player_id &&
-          nextRow?.target_player_id &&
-          currentRow.target_player_id !== nextRow.target_player_id
-        ) ||
-          Boolean(currentSeat != null && nextSeat != null && currentSeat !== nextSeat));
+        Boolean(currentSeat != null && nextSeat != null && currentSeat !== nextSeat);
 
       // Nếu đang ở thi riêng (personal) và sang câu không cùng thí sinh, ép bật màn chờ.
       // Áp dụng cả khi autoShow=1 (chấm & chuyển) theo đúng luật/UX yêu cầu.

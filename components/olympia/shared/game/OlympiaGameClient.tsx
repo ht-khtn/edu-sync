@@ -466,6 +466,7 @@ export function OlympiaGameClient({
   const lastBuzzerPingSentRef = useRef<number>(0)
   const lastDecisionPingSoundAtRef = useRef<number>(0)
   const prevScoreboardRef = useRef<boolean | null>(null)
+  const prevAnswersOverlayRef = useRef<boolean | null>(null)
   const prevSessionStatusRef = useRef<string | null>(session.status ?? null)
   const prevEndQuestionIdRef = useRef<string | null>(null)
   const prevEndQuestionStateRef = useRef<string | null>(null)
@@ -1202,6 +1203,23 @@ export function OlympiaGameClient({
 
     prevScoreboardRef.current = showBigScoreboard
   }, [emitSoundEvent, isGuest, resolvedRoundType, showBigScoreboard, showAnswersOverlay, questionState, session.timer_deadline])
+
+  useEffect(() => {
+    if (!isGuest) return
+    const prev = prevAnswersOverlayRef.current
+    if (prev === null) {
+      prevAnswersOverlayRef.current = showAnswersOverlay
+      return
+    }
+
+    if (!prev && showAnswersOverlay) {
+      if (resolvedRoundType === 'vcnv' || resolvedRoundType === 'tang_toc') {
+        void emitSoundEvent(GameEvent.REVEAL_ANSWER, { roundType: resolvedRoundType })
+      }
+    }
+
+    prevAnswersOverlayRef.current = showAnswersOverlay
+  }, [emitSoundEvent, isGuest, resolvedRoundType, showAnswersOverlay])
 
   useEffect(() => {
     if (!isGuest) return

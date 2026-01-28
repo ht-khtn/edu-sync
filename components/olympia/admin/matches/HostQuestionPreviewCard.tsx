@@ -288,11 +288,18 @@ export function HostQuestionPreviewCard(props: Props) {
     const sendSoundPing = useCallback(
         (event: SoundPingPayload['event']) => {
             if (!sessionId) return
+            const soundRoundType =
+                liveSession?.current_round_type === 'khoi_dong' ||
+                    liveSession?.current_round_type === 'vcnv' ||
+                    liveSession?.current_round_type === 'tang_toc' ||
+                    liveSession?.current_round_type === 've_dich'
+                    ? liveSession.current_round_type
+                    : null
             const payload: SoundPingPayload = {
                 matchId,
                 sessionId,
                 event,
-                roundType: liveSession?.current_round_type ?? null,
+                roundType: soundRoundType,
                 clientTs: Date.now(),
             }
             sendBroadcast('sound_ping', payload)

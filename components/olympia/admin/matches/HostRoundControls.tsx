@@ -501,6 +501,18 @@ export function HostRoundControls({
   const [soundOptions, setSoundOptions] = useState<SoundFileOption[]>([])
   const [selectedSoundPath, setSelectedSoundPath] = useState<string>('')
   const [isSoundLoading, setIsSoundLoading] = useState<boolean>(false)
+  const soundPrefix = 'Olympia Sound'
+
+  type StorageListItem = {
+    name: string
+    id: string | null
+    metadata?: { size?: number | null } | null
+  }
+
+  const isSoundFileName = (value: string) => {
+    const lower = value.toLowerCase()
+    return lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.ogg') || lower.endsWith('.m4a')
+  }
 
   const khoiDongTargetPlayerIdFromUrl = useMemo<string | null>(() => {
     if (!isKhoiDong) return null
@@ -578,27 +590,39 @@ export function HostRoundControls({
       setIsSoundLoading(true)
       try {
         const supabase = await getSupabase()
-        const { data, error } = await supabase.storage.from('olympia').list('Olympia Sound', {
-          limit: 1000,
-        })
-        if (!active) return
-        if (error) {
-          toast.error('Không thể tải danh sách âm thanh.')
-          setSoundOptions([])
-          return
-        }
+        const nextOptions: SoundFileOption[] = []
 
-        const nextOptions: SoundFileOption[] = (data ?? [])
-          .map((item) => {
+        const walk = async (prefix: string) => {
+          if (!active) return
+          const { data, error } = await supabase.storage.from('olympia').list(prefix, { limit: 1000 })
+          if (!active) return
+          if (error) throw error
+
+          const items = (data ?? []) as StorageListItem[]
+          for (const item of items) {
+            if (!active) return
             const rawName = item.name
             const name = typeof rawName === 'string' ? rawName.trim() : ''
-            if (!name || name.endsWith('/')) return null
-            const path = `Olympia Sound/${name}`
-            const url = supabase.storage.from('olympia').getPublicUrl(path).data.publicUrl
-            return { name, path, url }
-          })
-          .filter((item): item is SoundFileOption => item !== null)
-          .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+            if (!name) continue
+            const fullPath = `${prefix}/${name}`
+
+            if (item.id === null) {
+              await walk(fullPath)
+              continue
+            }
+
+            if (!isSoundFileName(name)) continue
+            const url = supabase.storage.from('olympia').getPublicUrl(fullPath).data.publicUrl
+            const displayName = fullPath.startsWith(`${soundPrefix}/`)
+              ? fullPath.slice(soundPrefix.length + 1)
+              : fullPath
+            nextOptions.push({ name: displayName, path: fullPath, url })
+          }
+        }
+
+        await walk(soundPrefix)
+        if (!active) return
+        nextOptions.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
 
         setSoundOptions(nextOptions)
         setSelectedSoundPath((prev) => (prev ? prev : nextOptions[0]?.path ?? ''))

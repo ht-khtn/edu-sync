@@ -186,6 +186,7 @@ export function OlympiaGameClient({
   const preloadRoundQuestions = useMemo(() => initialData.roundQuestions ?? [], [initialData.roundQuestions])
 
   const veDichNotifiedBySeatRef = useRef<Map<number, string>>(new Map())
+  const veDichPackageKeyBySeatRef = useRef<Map<number, string>>(new Map())
   const [veDichPackageOverlay, setVeDichPackageOverlay] = useState<VeDichPackageOverlay | null>(null)
 
   // Toast notifications for feedback
@@ -312,6 +313,7 @@ export function OlympiaGameClient({
   useEffect(() => {
     if (roundType !== 've_dich') {
       veDichNotifiedBySeatRef.current.clear()
+      veDichPackageKeyBySeatRef.current.clear()
       setVeDichPackageOverlay(null)
       return
     }
@@ -343,6 +345,7 @@ export function OlympiaGameClient({
       const top3 = list.slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)).slice(0, 3)
       if (top3.length < 3) continue
 
+      const qsiKey = top3.map((rq) => (rq.question_set_item_id ?? '') as string).join('|')
       const confirmed = top3.every((rq) => Boolean(rq.question_set_item_id))
       if (!confirmed) continue
 
@@ -355,8 +358,10 @@ export function OlympiaGameClient({
       if (values.some((v) => v == null)) continue
       const summary = (values as Array<VeDichPackageValue>).join('-')
 
-      const last = veDichNotifiedBySeatRef.current.get(seat) ?? null
-      if (last === summary) continue
+      const lastKey = veDichPackageKeyBySeatRef.current.get(seat) ?? null
+      if (lastKey === qsiKey) continue
+      veDichPackageKeyBySeatRef.current.set(seat, qsiKey)
+
       veDichNotifiedBySeatRef.current.set(seat, summary)
 
       const ownerPlayerId =
@@ -931,6 +936,12 @@ export function OlympiaGameClient({
   useEffect(() => {
     // Nếu overlay đáp án/bảng điểm đang mở thì bỏ qua emit vòng
     if (showAnswersOverlay || showBigScoreboard) return
+    if (questionState === 'hidden') {
+      if (isGuest && resolvedRoundType) {
+        prevRoundTypeRef.current = resolvedRoundType
+      }
+      return
+    }
 
     if (!isGuest || !resolvedRoundType) {
       prevRoundTypeRef.current = null
@@ -945,7 +956,7 @@ export function OlympiaGameClient({
       void emitSoundEvent(GameEvent.ROUND_STARTED, { roundType: resolvedRoundType })
     }
     prevRoundTypeRef.current = resolvedRoundType
-  }, [emitSoundEvent, isGuest, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
+  }, [emitSoundEvent, isGuest, questionState, resolvedRoundType, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest) return
@@ -1158,6 +1169,11 @@ export function OlympiaGameClient({
     }
 
     if (!prev && showBigScoreboard) {
+      if (questionState === 'hidden') {
+        prevScoreboardRef.current = showBigScoreboard
+        overlayOpenRef.current = true
+        return
+      }
       // Opened scoreboard: set overlay ref then emit only scoreboard sound
       overlayOpenRef.current = true
       void emitSoundEvent(GameEvent.SCOREBOARD_OPENED, { roundType: resolvedRoundType ?? undefined })

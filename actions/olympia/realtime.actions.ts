@@ -508,7 +508,7 @@ export async function startSessionTimerAction(
 
     const { data: session, error: sessionErr } = await olympia
       .from("live_sessions")
-      .select("id, status, question_state, current_round_question_id, timer_deadline")
+      .select("id, status, match_id, question_state, current_round_question_id, timer_deadline")
       .eq("id", parsed.data.sessionId)
       .maybeSingle();
     if (sessionErr) return { error: sessionErr.message };
@@ -533,6 +533,23 @@ export async function startSessionTimerAction(
       .update({ timer_deadline: deadline })
       .eq("id", session.id);
     if (updateErr) return { error: updateErr.message };
+
+    const matchId = (session as unknown as { match_id?: string | null }).match_id ?? null;
+    const roundQuestionId =
+      (session as unknown as { current_round_question_id?: string | null })
+        .current_round_question_id ?? null;
+    if (matchId && roundQuestionId) {
+      const { error: timerStartErr } = await olympia.from("buzzer_events").insert({
+        match_id: matchId,
+        round_question_id: roundQuestionId,
+        player_id: null,
+        event_type: "timer_start",
+        result: null,
+      });
+      if (timerStartErr) {
+        console.warn("[Olympia] insert timer_start failed:", timerStartErr.message);
+      }
+    }
 
     return { success: "Đã bắt đầu đếm giờ." };
   } catch (err) {
@@ -560,7 +577,7 @@ export async function startSessionTimerAutoAction(
       const { data: session, error: sessionErr } = await olympia
         .from("live_sessions")
         .select(
-          "id, status, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline"
+          "id, status, match_id, question_state, current_round_id, current_round_type, current_round_question_id, timer_deadline"
         )
         .eq("id", parsed.data.sessionId)
         .maybeSingle();
@@ -619,6 +636,23 @@ export async function startSessionTimerAutoAction(
         .update({ timer_deadline: deadline })
         .eq("id", session.id);
       if (updateErr) return { error: updateErr.message };
+
+      const matchId = (session as unknown as { match_id?: string | null }).match_id ?? null;
+      const roundQuestionId =
+        (session as unknown as { current_round_question_id?: string | null })
+          .current_round_question_id ?? null;
+      if (matchId && roundQuestionId) {
+        const { error: timerStartErr } = await olympia.from("buzzer_events").insert({
+          match_id: matchId,
+          round_question_id: roundQuestionId,
+          player_id: null,
+          event_type: "timer_start",
+          result: null,
+        });
+        if (timerStartErr) {
+          console.warn("[Olympia] insert timer_start failed:", timerStartErr.message);
+        }
+      }
 
       return { success: "Đã bắt đầu đếm giờ." };
     } catch (err) {
@@ -1107,9 +1141,18 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
               (roundQuestion as unknown as { answer_text?: string | null }).answer_text ?? null,
           })
         : null;
-    // Tính response_time_ms dựa trên mốc reset gần nhất (khi host show câu)
+    // Tính response_time_ms dựa trên mốc bấm giờ gần nhất (timer_start)
     let responseTimeMs: number | null = null;
     try {
+      const { data: lastTimerStart } = await olympia
+        .from("buzzer_events")
+        .select("occurred_at")
+        .eq("round_question_id", roundQuestion.id)
+        .eq("event_type", "timer_start")
+        .order("occurred_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       const { data: lastReset } = await olympia
         .from("buzzer_events")
         .select("occurred_at")
@@ -1119,18 +1162,34 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
         .limit(1)
         .maybeSingle();
 
-      traceInfo({
-        traceId,
-        action: "submitAnswerAction",
-        event: "db.buzzer_events.last_reset",
-        fields: { msSinceStart: Date.now() - startedAt },
-      });
       const submittedMs = Date.parse(submittedAt);
+      const timerStartMs = lastTimerStart?.occurred_at
+        ? Date.parse(lastTimerStart.occurred_at as unknown as string)
+        : NaN;
       const resetMs = lastReset?.occurred_at
         ? Date.parse(lastReset.occurred_at as unknown as string)
         : NaN;
-      if (Number.isFinite(submittedMs) && Number.isFinite(resetMs)) {
-        responseTimeMs = Math.max(0, submittedMs - resetMs);
+
+      if (Number.isFinite(timerStartMs)) {
+        traceInfo({
+          traceId,
+          action: "submitAnswerAction",
+          event: "db.buzzer_events.last_timer_start",
+          fields: { msSinceStart: Date.now() - startedAt },
+        });
+        if (Number.isFinite(submittedMs)) {
+          responseTimeMs = Math.max(0, submittedMs - timerStartMs);
+        }
+      } else {
+        traceInfo({
+          traceId,
+          action: "submitAnswerAction",
+          event: "db.buzzer_events.last_reset",
+          fields: { msSinceStart: Date.now() - startedAt },
+        });
+        if (Number.isFinite(submittedMs) && Number.isFinite(resetMs)) {
+          responseTimeMs = Math.max(0, submittedMs - resetMs);
+        }
       }
     } catch {
       responseTimeMs = null;

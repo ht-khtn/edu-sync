@@ -686,6 +686,11 @@ export function OlympiaGameClient({
       return players.find((p) => p.id === effectiveBuzzerWinnerId)?.seat_index ?? null
     }
 
+    // Khởi động (thi riêng): luôn ưu tiên ghế suy ra từ mã KD-<seat> trước khi xét target_player_id.
+    if (roundType === 'khoi_dong' && khoiDongSeatFromCode) {
+      return khoiDongSeatFromCode
+    }
+
     // Ưu tiên target_player_id nếu đã được set.
     if (targetPlayerId) {
       return players.find((p) => p.id === targetPlayerId)?.seat_index ?? null
@@ -693,7 +698,6 @@ export function OlympiaGameClient({
 
     // Khởi động: fallback theo code KD-<seat> (cá nhân). Nếu là DKA (chung) thì dùng buzzer winner nếu có.
     if (roundType === 'khoi_dong') {
-      if (khoiDongSeatFromCode) return khoiDongSeatFromCode
       // Chỉ dùng buzzer winner nếu currentQuestionBuzzerEvents không rỗng và match current question
       if (effectiveBuzzerWinnerId && currentQuestionBuzzerEvents.length > 0 && currentQuestionBuzzerEvents[0]?.round_question_id === currentQuestionId) {
         return players.find((p) => p.id === effectiveBuzzerWinnerId)?.seat_index ?? null

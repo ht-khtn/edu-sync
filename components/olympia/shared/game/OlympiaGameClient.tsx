@@ -1195,7 +1195,7 @@ export function OlympiaGameClient({
   }, [currentQuestionId, emitSoundEvent, isGuest, questionCode, resolvedRoundType])
 
   useEffect(() => {
-    if (!isGuest || resolvedRoundType !== 'khoi_dong') {
+    if (!isGuest || (resolvedRoundType !== 'khoi_dong' && resolvedRoundType !== 've_dich')) {
       prevEndQuestionIdRef.current = currentQuestionId ?? null
       prevEndQuestionStateRef.current = questionState
       return
@@ -2063,7 +2063,8 @@ export function OlympiaGameClient({
         {/* MAIN SCREEN */}
         <main
           className={cn(
-            'flex-1 relative flex px-6 pt-6 pb-6 overflow-y-auto',
+            'flex-1 relative flex overflow-y-auto',
+            isGuest ? 'px-0 pt-0 pb-0 overflow-hidden' : 'px-6 pt-6 pb-6',
             isMc ? 'items-start justify-start' : 'items-center justify-center'
           )}
 
@@ -2081,7 +2082,12 @@ export function OlympiaGameClient({
           {isWaitingScreen ? (
             <div className=""></div>
           ) : (
-            <div className={cn('w-full', isMc ? 'max-w-none text-left' : 'max-w-5xl text-center')}>
+            <div
+              className={cn(
+                'w-full',
+                isMc ? 'max-w-none text-left' : isGuest ? 'max-w-none text-center' : 'max-w-5xl text-center'
+              )}
+            >
               {shouldUseVcnvUi ? (
                 (() => {
                   const resolveRoundQuestionCode = (rq: (typeof roundQuestions)[number] | null) => {

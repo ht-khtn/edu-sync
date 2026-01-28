@@ -208,25 +208,22 @@ export async function fetchHostData(matchCode: string): Promise<HostData | null>
   const resetOccurredAt =
     (lastReset as { occurred_at?: string | null } | null)?.occurred_at ?? null;
 
-  type StarUseLookupRow = { id: string; round_question_id: string | null };
-  const { data: starUseByPlayer } =
+  type StarUseLookupRow = { id: string; round_question_id: string | null; outcome: string | null };
+  const { data: starUsesByPlayer } =
     currentQuestionId && currentRoundQuestion?.target_player_id
       ? await perfTime(`[perf][host] supabase.star_uses.byPlayer match=${realMatchId}`, () =>
           olympia
             .from("star_uses")
-            .select("id, round_question_id")
+            .select("id, round_question_id, outcome")
             .eq("match_id", realMatchId)
             .eq("player_id", currentRoundQuestion.target_player_id)
-            .order("declared_at", { ascending: false })
-            .limit(1)
-            .maybeSingle()
         )
       : { data: null };
 
-  const starUseRow = (starUseByPlayer as StarUseLookupRow | null) ?? null;
-  const isStarLocked = Boolean(starUseRow?.id);
+  const starUseRows = (starUsesByPlayer as StarUseLookupRow[] | null) ?? [];
+  const isStarLocked = starUseRows.some((row) => row.outcome !== null);
   const isStarEnabled = Boolean(
-    currentQuestionId && starUseRow?.round_question_id === currentQuestionId
+    currentQuestionId && starUseRows.some((row) => row.round_question_id === currentQuestionId)
   );
 
   const [{ data: winnerBuzz }, { data: recentBuzzes }, { data: recentAnswers }] = await Promise.all(

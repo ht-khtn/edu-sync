@@ -276,38 +276,6 @@ function parseKhoiDongCodeInfoFromMeta(
   return { kind: "personal", seat };
 }
 
-function normalizeAnswerForAutoCheck(input: string): string {
-  // Mục tiêu: so khớp "gần đúng" cho đáp án dạng text (đặc biệt tiếng Việt)
-  // - Không phân biệt hoa/thường
-  // - Bỏ dấu tiếng Việt
-  // - Chuẩn hoá khoảng trắng
-  const raw = (input ?? "").toString().trim().toLowerCase();
-  if (!raw) return "";
-  const withoutDiacritics = raw
-    .normalize("NFD")
-    // remove combining marks
-    .replace(/[\u0300-\u036f]/g, "")
-    // Vietnamese đ/Đ
-    .replace(/đ/g, "d");
-  return withoutDiacritics.replace(/\s+/g, " ").trim();
-}
-
-function isAnswerCorrectLoose(params: { submitted: string; expected: string | null }): boolean {
-  const submitted = normalizeAnswerForAutoCheck(params.submitted);
-  if (!submitted) return false;
-  const expectedRaw = (params.expected ?? "").toString().trim();
-  if (!expectedRaw) return false;
-
-  // Hỗ trợ nhiều đáp án trong DB: phân tách theo | ; \n
-  const candidates = expectedRaw
-    .split(/\||;|\n/g)
-    .map((s) => normalizeAnswerForAutoCheck(s))
-    .filter(Boolean);
-
-  if (candidates.length === 0) return false;
-  return candidates.some((c) => c === submitted);
-}
-
 export async function setLiveSessionRoundAction(
   _: ActionState,
   formData: FormData
@@ -1133,14 +1101,7 @@ export async function submitAnswerAction(_: ActionState, formData: FormData): Pr
     }
 
     const submittedAt = new Date().toISOString();
-    const autoMarkCorrect =
-      session.current_round_type === "tang_toc"
-        ? isAnswerCorrectLoose({
-            submitted: parsed.data.answer,
-            expected:
-              (roundQuestion as unknown as { answer_text?: string | null }).answer_text ?? null,
-          })
-        : null;
+    const autoMarkCorrect: boolean | null = null;
     // Tính response_time_ms dựa trên mốc bấm giờ gần nhất (timer_start)
     let responseTimeMs: number | null = null;
     try {

@@ -5,6 +5,7 @@ import {
   computeVcnvFinalScore,
   computeVeDichMainDelta,
   computeVeDichStealDelta,
+  computeVeDichStealTransfer,
 } from "@/lib/olympia-scoring";
 
 describe("computeKhoiDongCommonScore", () => {
@@ -102,5 +103,27 @@ describe("Về đích scoring", () => {
     expect(computeVeDichStealDelta({ value: 20, decision: "wrong" })).toBe(-10);
     expect(computeVeDichStealDelta({ value: 30, decision: "wrong" })).toBe(-15);
     expect(computeVeDichStealDelta({ value: 30, decision: "timeout" })).toBe(-15);
+  });
+
+  it("steal: chuyển điểm từ thí sinh chính tùy trạng thái sao", () => {
+    expect(
+      computeVeDichStealTransfer({ value: 20, decision: "correct", mainStarEnabled: false })
+    ).toEqual({ stealDelta: 20, mainDelta: -20 });
+    expect(
+      computeVeDichStealTransfer({ value: 30, decision: "correct", mainStarEnabled: false })
+    ).toEqual({ stealDelta: 30, mainDelta: -30 });
+
+    // Nếu thí sinh chính dùng Sao: cướp đúng không trừ thêm điểm
+    expect(
+      computeVeDichStealTransfer({ value: 20, decision: "correct", mainStarEnabled: true })
+    ).toEqual({ stealDelta: 20, mainDelta: 0 });
+
+    // Cướp sai/hết giờ không ảnh hưởng thí sinh chính
+    expect(
+      computeVeDichStealTransfer({ value: 20, decision: "wrong", mainStarEnabled: false })
+    ).toEqual({ stealDelta: -10, mainDelta: 0 });
+    expect(
+      computeVeDichStealTransfer({ value: 30, decision: "timeout", mainStarEnabled: true })
+    ).toEqual({ stealDelta: -15, mainDelta: 0 });
   });
 });

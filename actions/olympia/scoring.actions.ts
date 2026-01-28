@@ -2220,24 +2220,29 @@ export async function toggleStarUseAction(
       return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin Star." };
     }
 
-    type StarUseLookupRow = { id: string; round_question_id: string | null };
-    const { data: existingStar, error: existingStarError } = await olympia
+    type StarUseLookupRow = {
+      id: string;
+      round_question_id: string | null;
+      outcome: string | null;
+    };
+    const { data: existingStars, error: existingStarError } = await olympia
       .from("star_uses")
-      .select("id, round_question_id")
+      .select("id, round_question_id, outcome")
       .eq("match_id", parsed.data.matchId)
-      .eq("player_id", parsed.data.playerId)
-      .order("declared_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq("player_id", parsed.data.playerId);
     if (existingStarError) return { error: existingStarError.message };
 
-    const existingRoundQuestionId =
-      (existingStar as StarUseLookupRow | null)?.round_question_id ?? null;
-    const alreadyUsed = Boolean((existingStar as StarUseLookupRow | null)?.id);
+    const starRows = (existingStars as StarUseLookupRow[] | null) ?? [];
+    const isLocked = starRows.some((row) => row.outcome !== null);
+    const currentStar =
+      starRows.find((row) => row.round_question_id === parsed.data.roundQuestionId) ?? null;
 
     if (!parsed.data.enabled) {
-      if (alreadyUsed) {
+      if (isLocked) {
         return { error: "Thí sinh đã dùng ngôi sao hy vọng, không thể hủy." };
+      }
+      if (!currentStar?.id) {
+        return { success: "Đã tắt Star." };
       }
       const { error: delError } = await olympia
         .from("star_uses")
@@ -2249,12 +2254,20 @@ export async function toggleStarUseAction(
       return { success: "Đã tắt Star." };
     }
 
-    if (alreadyUsed && existingRoundQuestionId !== parsed.data.roundQuestionId) {
-      return { error: "Thí sinh đã dùng ngôi sao hy vọng ở câu khác." };
+    if (isLocked) {
+      return { error: "Thí sinh đã dùng ngôi sao hy vọng, không thể bật lại." };
     }
 
-    if (alreadyUsed && existingRoundQuestionId === parsed.data.roundQuestionId) {
+    if (currentStar?.id) {
       return { success: "Ngôi sao hy vọng đã được bật." };
+    }
+
+    const otherStarIds = starRows
+      .filter((row) => row.round_question_id !== parsed.data.roundQuestionId)
+      .map((row) => row.id);
+    if (otherStarIds.length > 0) {
+      const { error: clearError } = await olympia.from("star_uses").delete().in("id", otherStarIds);
+      if (clearError) return { error: clearError.message };
     }
 
     const { error: upsertError } = await olympia.from("star_uses").upsert(
@@ -2448,13 +2461,11 @@ export async function confirmVeDichMainDecisionAction(
     }
 
     if (isCorrect) {
-      // Về đích: KHÔNG auto chuyển câu.
-      // Chấm xong thì quay lại màn chờ (hidden) để chuẩn bị câu tiếp theo.
+      // Về đích: KHÔNG auto chuyển câu, giữ nguyên câu hỏi trên màn hình.
       const { error: completeErr } = await olympia
         .from("live_sessions")
         .update({
-          question_state: "hidden",
-          current_round_question_id: null,
+          question_state: "completed",
           timer_deadline: null,
           buzzer_enabled: false,
         })
@@ -2549,11 +2560,24 @@ export async function confirmVeDichStealDecisionAction(
     const isCorrect = decision === "correct";
     const penalty = value / 2;
 
+    const mainPlayerId = rq.target_player_id ?? null;
+    const { data: starRow, error: starErr } = mainPlayerId
+      ? await olympia
+          .from("star_uses")
+          .select("id")
+          .eq("match_id", session.match_id)
+          .eq("round_question_id", rq.id)
+          .eq("player_id", mainPlayerId)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (starErr) return { error: starErr.message };
+    const starEnabled = Boolean(starRow?.id);
+
     // Luật cướp điểm:
     // - Đúng: lấy điểm từ quỹ điểm của thí sinh đang thi (chuyển từ thí sinh chính sang người cướp)
     // - Sai/Hết giờ: người cướp bị trừ 50% điểm câu
     if (isCorrect) {
-      if (!rq.target_player_id) return { error: "Chưa có thí sinh chính để trừ quỹ điểm." };
+      if (!mainPlayerId) return { error: "Chưa có thí sinh chính để trừ quỹ điểm." };
 
       const gain = await applyRoundDelta({
         olympia,
@@ -2564,14 +2588,17 @@ export async function confirmVeDichStealDecisionAction(
       });
       if (gain.error) return { error: gain.error };
 
-      const loss = await applyRoundDelta({
-        olympia,
-        matchId: session.match_id,
-        playerId: rq.target_player_id,
-        roundType: "ve_dich",
-        delta: -value,
-      });
-      if (loss.error) return { error: loss.error };
+      const shouldTransferFromMain = !starEnabled;
+      const loss = shouldTransferFromMain
+        ? await applyRoundDelta({
+            olympia,
+            matchId: session.match_id,
+            playerId: mainPlayerId,
+            roundType: "ve_dich",
+            delta: -value,
+          })
+        : null;
+      if (loss && loss.error) return { error: loss.error };
 
       const { data: latestAnswer } = await olympia
         .from("answers")
@@ -2608,22 +2635,24 @@ export async function confirmVeDichStealDecisionAction(
         console.warn("[Olympia] insertScoreChange(ve dich steal gain) failed:", auditGainErr);
       }
 
-      const { error: auditLossErr } = await insertScoreChange({
-        olympia,
-        matchId: session.match_id,
-        playerId: rq.target_player_id,
-        roundType: "ve_dich",
-        requestedDelta: -value,
-        appliedDelta: loss.appliedDelta,
-        pointsBefore: loss.pointsBefore,
-        pointsAfter: loss.pointsAfter,
-        source: "ve_dich_steal_transfer",
-        createdBy: appUserId ?? null,
-        roundQuestionId: rq.id,
-        answerId: null,
-      });
-      if (auditLossErr) {
-        console.warn("[Olympia] insertScoreChange(ve dich steal transfer) failed:", auditLossErr);
+      if (shouldTransferFromMain && loss) {
+        const { error: auditLossErr } = await insertScoreChange({
+          olympia,
+          matchId: session.match_id,
+          playerId: mainPlayerId,
+          roundType: "ve_dich",
+          requestedDelta: -value,
+          appliedDelta: loss.appliedDelta,
+          pointsBefore: loss.pointsBefore,
+          pointsAfter: loss.pointsAfter,
+          source: "ve_dich_steal_transfer",
+          createdBy: appUserId ?? null,
+          roundQuestionId: rq.id,
+          answerId: null,
+        });
+        if (auditLossErr) {
+          console.warn("[Olympia] insertScoreChange(ve dich steal transfer) failed:", auditLossErr);
+        }
       }
 
       // Về đích: KHÔNG auto chuyển câu. Đóng cửa cướp sau khi chấm.
@@ -2643,7 +2672,11 @@ export async function confirmVeDichStealDecisionAction(
         revalidatePath(`/olympia/client/guest/${session.join_code}`);
       }
 
-      return { success: `Cướp ĐÚNG (+${value}), đã trừ ${value} từ thí sinh chính.` };
+      return {
+        success: starEnabled
+          ? `Cướp ĐÚNG (+${value}), không trừ điểm thí sinh chính (đã dùng Sao).`
+          : `Cướp ĐÚNG (+${value}), đã trừ ${value} từ thí sinh chính.`,
+      };
     }
 
     // Sai/Hết giờ (cướp)

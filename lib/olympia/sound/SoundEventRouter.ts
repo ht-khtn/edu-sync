@@ -182,7 +182,7 @@ export class SoundEventRouter {
           : this.resolveDurationSecondsFromMs(payload?.durationMs);
       const durationSeconds =
         typeof durationSecondsRaw === "number" && Number.isFinite(durationSecondsRaw)
-          ? Math.max(1, Math.floor(durationSecondsRaw))
+          ? Math.max(1, Math.ceil(durationSecondsRaw))
           : null;
 
       // Ưu tiên durationSeconds để tránh lệch index (vòng 3: 20/20/30/30).
@@ -236,7 +236,7 @@ export class SoundEventRouter {
 
     const durationSeconds =
       typeof durationSecondsRaw === "number" && Number.isFinite(durationSecondsRaw)
-        ? Math.max(1, Math.floor(durationSecondsRaw))
+        ? Math.max(1, Math.ceil(durationSecondsRaw))
         : null;
 
     if (!durationSeconds) return null;

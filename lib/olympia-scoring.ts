@@ -55,6 +55,20 @@ export function computeVeDichStealDelta(params: {
   return -penaltyAmount;
 }
 
+export function computeVeDichStealTransfer(params: {
+  value: number;
+  decision: VeDichDecision;
+  mainStarEnabled: boolean;
+}): { stealDelta: number; mainDelta: number } {
+  const safeValue = params.value === 30 ? 30 : 20;
+  const stealDelta = computeVeDichStealDelta({
+    value: safeValue,
+    decision: params.decision,
+  });
+  const mainDelta = params.decision === "correct" && !params.mainStarEnabled ? -safeValue : 0;
+  return { stealDelta, mainDelta };
+}
+
 export type TangTocSubmission = {
   id: string;
   submittedAtMs: number;

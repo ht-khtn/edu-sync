@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { selectVeDichPackageClientAction, type ActionState } from '@/app/(olympia)/olympia/actions'
 import { Undo2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 const initialState: ActionState = { error: null, success: null }
 
@@ -28,6 +28,8 @@ export function VeDichPackageFormComponent({
     confirmed,
 }: VeDichPackageFormComponentProps) {
     const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
     const [localFormValues, setLocalFormValues] = useState<string[]>(() =>
         values.map((v) => (v === 20 || v === 30 ? String(v) : ''))
     )
@@ -79,7 +81,11 @@ export function VeDichPackageFormComponent({
                 toast.error(data.error)
             } else if (data?.success) {
                 toast.success(data.success)
-                // Refresh router để update UI ngay với dữ liệu mới
+                const params = new URLSearchParams(searchParams?.toString())
+                params.delete('vdSeat')
+                const qs = params.toString()
+                const nextUrl = qs ? `${pathname}?${qs}` : pathname
+                router.replace(nextUrl)
                 router.refresh()
             }
         } catch (err) {
@@ -87,7 +93,7 @@ export function VeDichPackageFormComponent({
         } finally {
             setIsResetting(false)
         }
-    }, [matchId, router])
+    }, [matchId, pathname, router, searchParams])
 
     return (
         <div className="mt-3 rounded-md border bg-background p-2">

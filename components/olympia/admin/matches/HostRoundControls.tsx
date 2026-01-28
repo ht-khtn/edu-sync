@@ -13,6 +13,7 @@ import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/h
 import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
 import type { QuestionPingPayload, SoundPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
+import getSupabase from '@/lib/supabase'
 
 export type ActionState = {
   error?: string | null
@@ -47,6 +48,12 @@ type MatchRound = {
   id: string
   round_type: string
   order_index: number
+}
+
+type SoundFileOption = {
+  name: string
+  path: string
+  url: string
 }
 
 type CountdownControlsProps = {
@@ -470,6 +477,7 @@ export function HostRoundControls({
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
   const targetFormRef = useRef<HTMLFormElement | null>(null)
+  const khuyetAudioRef = useRef<HTMLAudioElement | null>(null)
   const hostAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const roundById = useMemo(() => {
@@ -490,6 +498,9 @@ export function HostRoundControls({
 
   const [targetPlayerId, setTargetPlayerId] = useState<string>('')
   const [hasUserPickedTarget, setHasUserPickedTarget] = useState<boolean>(false)
+  const [soundOptions, setSoundOptions] = useState<SoundFileOption[]>([])
+  const [selectedSoundPath, setSelectedSoundPath] = useState<string>('')
+  const [isSoundLoading, setIsSoundLoading] = useState<boolean>(false)
 
   const khoiDongTargetPlayerIdFromUrl = useMemo<string | null>(() => {
     if (!isKhoiDong) return null
@@ -547,9 +558,63 @@ export function HostRoundControls({
 
   const playKhuyet = useCallback(() => {
     try {
-      hostAudioRef.current?.play()
+      if (!khuyetAudioRef.current) return
+      khuyetAudioRef.current.currentTime = 0
+      void khuyetAudioRef.current.play()
     } catch (e) {
       void e
+    }
+  }, [])
+
+  const selectedSoundUrl = useMemo(() => {
+    const selected = soundOptions.find((opt) => opt.path === selectedSoundPath) ?? null
+    return selected?.url ?? null
+  }, [soundOptions, selectedSoundPath])
+
+  useEffect(() => {
+    let active = true
+
+    const loadSounds = async () => {
+      setIsSoundLoading(true)
+      try {
+        const supabase = await getSupabase()
+        const { data, error } = await supabase.storage.from('olympia').list('Olympia Sound', {
+          limit: 1000,
+        })
+        if (!active) return
+        if (error) {
+          toast.error('Không thể tải danh sách âm thanh.')
+          setSoundOptions([])
+          return
+        }
+
+        const nextOptions: SoundFileOption[] = (data ?? [])
+          .map((item) => {
+            const rawName = item.name
+            const name = typeof rawName === 'string' ? rawName.trim() : ''
+            if (!name || name.endsWith('/')) return null
+            const path = `Olympia Sound/${name}`
+            const url = supabase.storage.from('olympia').getPublicUrl(path).data.publicUrl
+            return { name, path, url }
+          })
+          .filter((item): item is SoundFileOption => item !== null)
+          .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+
+        setSoundOptions(nextOptions)
+        setSelectedSoundPath((prev) => (prev ? prev : nextOptions[0]?.path ?? ''))
+      } catch {
+        if (!active) return
+        toast.error('Không thể tải danh sách âm thanh.')
+        setSoundOptions([])
+      } finally {
+        if (active) setIsSoundLoading(false)
+      }
+    }
+
+    void loadSounds()
+
+    return () => {
+      active = false
     }
   }, [])
 
@@ -572,7 +637,7 @@ export function HostRoundControls({
   const canPickTarget = Boolean(
     allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId || isKhoiDong)
   )
-  const canEndKhoiDongTurn = Boolean(isKhoiDong)
+  const canEndKhoiDongTurn = Boolean(isKhoiDong || isVeDich)
 
   // Show toasts for messages
   useEffect(() => {
@@ -790,7 +855,23 @@ export function HostRoundControls({
     <div className="grid gap-3">
       <div className="grid gap-2">
         <Label className="text-xs">Âm thanh</Label>
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <select
+            value={selectedSoundPath}
+            onChange={(e) => setSelectedSoundPath(e.target.value)}
+            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+            aria-label="Chọn âm thanh"
+            disabled={isSoundLoading || soundOptions.length === 0}
+          >
+            {soundOptions.length === 0 ? (
+              <option value="">{isSoundLoading ? 'Đang tải âm thanh…' : 'Không có âm thanh'}</option>
+            ) : null}
+            {soundOptions.map((opt) => (
+              <option key={opt.path} value={opt.path}>
+                {opt.name}
+              </option>
+            ))}
+          </select>
           <Button
             type="button"
             size="sm"
@@ -803,8 +884,13 @@ export function HostRoundControls({
             Phát khuyết
           </Button>
         </div>
+        {selectedSoundUrl ? (
+          <audio ref={hostAudioRef} controls src={selectedSoundUrl} className="w-full" />
+        ) : (
+          <p className="text-xs text-muted-foreground">Chưa chọn âm thanh.</p>
+        )}
         <audio
-          ref={hostAudioRef}
+          ref={khuyetAudioRef}
           src="https://fbxrlpiigoviphaxmstd.supabase.co/storage/v1/object/public/olympia/Olympia%20Sound/khuyet.mp3"
           preload="auto"
           hidden
@@ -1014,7 +1100,7 @@ export function HostRoundControls({
         )
       ) : null}
 
-      {isKhoiDong ? (
+      {isKhoiDong || isVeDich ? (
         <form
           className="grid gap-2"
           onSubmit={(e) => {

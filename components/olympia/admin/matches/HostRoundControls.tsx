@@ -611,9 +611,15 @@ export function HostRoundControls({
       try {
         const supabase = await getSupabase()
         const nextOptions: SoundFileOption[] = []
+        const visitedPrefixes = new Set<string>()
+        const prefixesToTry = [soundPrefix, soundPrefix.replace(/\s/g, '%20')].filter(
+          (val, idx, arr) => val && arr.indexOf(val) === idx
+        )
 
         const walk = async (prefix: string) => {
           if (!active) return
+          if (visitedPrefixes.has(prefix)) return
+          visitedPrefixes.add(prefix)
           const { data, error } = await supabase.storage.from('olympia').list(prefix, { limit: 1000 })
           if (!active) return
           if (error) throw error
@@ -625,13 +631,14 @@ export function HostRoundControls({
             const name = typeof rawName === 'string' ? rawName.trim() : ''
             if (!name) continue
             const fullPath = `${prefix}/${name}`
+            const isFile = isSoundFileName(name)
 
-            if (item.id === null) {
+            if (!isFile && item.id === null) {
               await walk(fullPath)
               continue
             }
 
-            if (!isSoundFileName(name)) continue
+            if (!isFile) continue
             const url = supabase.storage.from('olympia').getPublicUrl(fullPath).data.publicUrl
             const displayName = fullPath.startsWith(`${soundPrefix}/`)
               ? fullPath.slice(soundPrefix.length + 1)
@@ -640,7 +647,9 @@ export function HostRoundControls({
           }
         }
 
-        await walk(soundPrefix)
+        for (const prefix of prefixesToTry) {
+          await walk(prefix)
+        }
         if (!active) return
         nextOptions.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
 

@@ -1049,10 +1049,17 @@ export function OlympiaGameClient({
     const prev = prevTimerDeadlineRef.current
     const next = session.timer_deadline ?? null
 
-    if (!prev && next) {
+    const prevTs = prev ? Date.parse(prev) : Number.NaN
+    const nextTs = next ? Date.parse(next) : Number.NaN
+    const isNewValue = Boolean(next && prev !== next)
+    const prevExpired = !Number.isFinite(prevTs) || prevTs <= Date.now() - 200
+    const isPingStart =
+      lastTimerPing?.action === 'start' && typeof next === 'string' && lastTimerPing.deadline === next
+    const shouldStart = Boolean(next) && (prev == null || (isNewValue && (prevExpired || isPingStart)))
+
+    if (shouldStart) {
       const hasVideo = mediaKind === 'video' || mediaKind === 'youtube'
-      const deadlineMs = Date.parse(next)
-      const diffMs = Number.isFinite(deadlineMs) ? Math.max(0, deadlineMs - Date.now()) : null
+      const diffMs = Number.isFinite(nextTs) ? Math.max(0, nextTs - Date.now()) : null
       const roundedSeconds =
         typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.ceil(diffMs / 1000)) : null
       const durationMsFromPing =

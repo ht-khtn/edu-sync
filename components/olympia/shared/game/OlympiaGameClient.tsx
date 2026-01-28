@@ -22,9 +22,9 @@ import {
   GameEvent,
   SoundCacheManager,
   SoundController,
-  SoundEventRouter,
   SoundRegistry,
 } from '@/lib/olympia/sound'
+import { SoundEventRouter } from '@/lib/olympia/sound/SoundEventRouter'
 import type { GameEventPayload, RoundType } from '@/lib/olympia/sound'
 import { clearGuestMediaCommandAction } from '@/actions/olympia/realtime.actions'
 
@@ -386,7 +386,12 @@ export function OlympiaGameClient({
       const registry = new SoundRegistry()
       const cache = new SoundCacheManager(registry)
       const controller = new SoundController(cache, registry)
-      const router = new SoundEventRouter(controller)
+      const router = new SoundEventRouter(controller, {
+        onCountdownMissing: (tried: string[]) => {
+          const msg = `Không tìm thấy âm thanh countdown. Đã thử: ${tried.join(', ')}`
+          toast.error(msg)
+        },
+      })
       soundRegistryRef.current = registry
       soundCacheRef.current = cache
       soundControllerRef.current = controller
@@ -1871,6 +1876,9 @@ export function OlympiaGameClient({
                     scoreboard
                       .slice()
                       .sort((a, b) => {
+                        const totalA = typeof a.total === 'number' ? a.total : 0
+                        const totalB = typeof b.total === 'number' ? b.total : 0
+                        if (totalA !== totalB) return totalB - totalA
                         const seatA = typeof a.seat === 'number' ? a.seat : Number.MAX_SAFE_INTEGER
                         const seatB = typeof b.seat === 'number' ? b.seat : Number.MAX_SAFE_INTEGER
                         return seatA - seatB

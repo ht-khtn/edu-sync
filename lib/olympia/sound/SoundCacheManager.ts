@@ -142,6 +142,10 @@ export class SoundCacheManager {
     return this.audioContext;
   }
 
+  isMissing(soundKey: string): boolean {
+    return this.failedSounds.has(soundKey);
+  }
+
   getStatus(): CacheStatus {
     const allKeys = this.registry.getAllSoundKeys();
     return {

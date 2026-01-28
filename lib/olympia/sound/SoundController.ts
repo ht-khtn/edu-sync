@@ -147,6 +147,14 @@ export class SoundController {
       .map(([key]) => key);
   }
 
+  isReady(soundKey: string): boolean {
+    return this.cacheManager.isReady(soundKey);
+  }
+
+  isMissing(soundKey: string): boolean {
+    return this.cacheManager.isMissing(soundKey);
+  }
+
   setVolume(soundKey: string, volume: number): void {
     const state = this.playbackState.get(soundKey);
     if (state?.gainNode) {

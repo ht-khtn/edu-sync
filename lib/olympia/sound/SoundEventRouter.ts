@@ -6,6 +6,7 @@ import { SoundRegistry } from "./SoundRegistry";
 export class SoundEventRouter {
   private soundController: SoundController;
   private registry: SoundRegistry;
+  private onCountdownMissing?: (tried: string[]) => void;
   private timingMap: Map<RoundType, string> = new Map([
     ["khoi_dong", "kd_dem_gio_5s"],
     ["vcnv", "vcnv_dem_gio_15s"],
@@ -14,9 +15,13 @@ export class SoundEventRouter {
   ]);
   private timeoutIds: Map<string, NodeJS.Timeout> = new Map();
 
-  constructor(soundController: SoundController) {
+  constructor(
+    soundController: SoundController,
+    options?: { onCountdownMissing?: (tried: string[]) => void }
+  ) {
     this.soundController = soundController;
     this.registry = new SoundRegistry();
+    this.onCountdownMissing = options?.onCountdownMissing;
   }
 
   async routeEvent(event: GameEvent | string, payload?: GameEventPayload): Promise<void> {
@@ -186,11 +191,14 @@ export class SoundEventRouter {
       const fileName = `${n} ${durationSeconds}s`;
       tried.push(fileName);
       const key = this.registry.findKeyByFileName(fileName);
-      if (key) return key;
+      if (!key) continue;
+      if (this.soundController.isReady(key)) return key;
+      if (this.soundController.isMissing(key)) continue;
     }
 
     if (tried.length > 0) {
       console.error(`[SoundRouter] Countdown sound not found. Tried: ${tried.join(", ")}`);
+      this.onCountdownMissing?.(tried);
     }
     return null;
   }

@@ -172,13 +172,17 @@ export function AnswersOverlay({ session, match, players, embedded }: Props) {
         const list = players.map((p) => {
             const answer = answerByPlayerId.get(p.id) ?? null
             const responseTimeMs = typeof answer?.response_time_ms === 'number' ? answer.response_time_ms : null
-            return { player: p, answer, responseTimeMs }
+            const submittedAtMs = answer?.submitted_at ? Date.parse(answer.submitted_at) : Number.NaN
+            return { player: p, answer, responseTimeMs, submittedAtMs }
         })
 
         list.sort((ra, rb) => {
             const aMs = ra.responseTimeMs ?? Number.MAX_SAFE_INTEGER
             const bMs = rb.responseTimeMs ?? Number.MAX_SAFE_INTEGER
             if (aMs !== bMs) return aMs - bMs
+            const aSubmitted = Number.isFinite(ra.submittedAtMs) ? ra.submittedAtMs : Number.MAX_SAFE_INTEGER
+            const bSubmitted = Number.isFinite(rb.submittedAtMs) ? rb.submittedAtMs : Number.MAX_SAFE_INTEGER
+            if (aSubmitted !== bSubmitted) return aSubmitted - bSubmitted
             const aSeat = ra.player.seat_index ?? Number.MAX_SAFE_INTEGER
             const bSeat = rb.player.seat_index ?? Number.MAX_SAFE_INTEGER
             return aSeat - bSeat

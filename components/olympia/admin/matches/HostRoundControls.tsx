@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Timer, Play, Pause, Square } from 'lucide-react'
 import { subscribeHostSessionUpdate } from '@/components/olympia/admin/matches/host-events'
 import { useHostBroadcast } from '@/components/olympia/admin/matches/useHostBroadcast'
-import type { QuestionPingPayload, SoundPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
+import type { QuestionPingPayload, SoundPingPayload, TimerPingPayload } from '@/components/olympia/shared/game/useOlympiaGameState'
 import { getCountdownMs, getDurationInputConstraints } from '@/lib/olympia/olympia-config'
 import getSupabase from '@/lib/supabase'
 
@@ -67,6 +67,7 @@ type CountdownControlsProps = {
   timerStartPending: boolean
   timerExpirePending: boolean
   currentQuestionMeta?: Record<string, unknown> | null
+  onTimerPing?: (payload: { durationMs: number; deadline: string }) => void
 }
 
 function getAutoTimerDurationSeconds(
@@ -112,6 +113,7 @@ function CountdownControls({
   timerStartPending,
   timerExpirePending,
   currentQuestionMeta,
+  onTimerPing,
 }: CountdownControlsProps) {
   const [timerDurationSeconds, setTimerDurationSeconds] = useState<number>(() =>
     getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta, currentQuestionState)
@@ -261,6 +263,7 @@ function CountdownControls({
 
             const nextDeadlineIso = new Date(Date.now() + durationMs).toISOString()
             setRealtimeTimerDeadline(nextDeadlineIso)
+            onTimerPing?.({ durationMs, deadline: nextDeadlineIso })
 
             startTimerTransition(() => timerStartAction(formData))
           }}
@@ -382,6 +385,23 @@ export function HostRoundControls({
   const [effectiveShowScoreboardOverlay, setEffectiveShowScoreboardOverlay] = useState<boolean | null>(() => showScoreboardOverlay ?? null)
   const [effectiveShowAnswersOverlay, setEffectiveShowAnswersOverlay] = useState<boolean | null>(() => showAnswersOverlay ?? null)
   const [effectiveCurrentRoundType, setEffectiveCurrentRoundType] = useState<string | null>(() => currentRoundType ?? null)
+
+  const handleTimerPing = useCallback(
+    (payload: { durationMs: number; deadline: string }) => {
+      if (!sessionId) return
+      const timerPing: TimerPingPayload = {
+        matchId,
+        sessionId,
+        roundQuestionId: effectiveCurrentRoundQuestionId ?? null,
+        action: 'start',
+        deadline: payload.deadline,
+        durationMs: payload.durationMs,
+        clientTs: Date.now(),
+      }
+      sendBroadcast('timer_ping', timerPing)
+    },
+    [effectiveCurrentRoundQuestionId, matchId, sendBroadcast, sessionId]
+  )
 
   useEffect(() => {
     // Đồng bộ realtime/optimistic updates để giảm phụ thuộc router.refresh().
@@ -932,6 +952,7 @@ export function HostRoundControls({
         timerStartPending={timerStartPending}
         timerExpirePending={timerExpirePending}
         currentQuestionMeta={currentQuestionMeta}
+        onTimerPing={handleTimerPing}
       />
 
       <form

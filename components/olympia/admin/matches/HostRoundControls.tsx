@@ -150,6 +150,7 @@ function CountdownControls({
     if (!Number.isFinite(deadline)) return null
     const diffMs = deadline - now
     const seconds = Math.max(0, Math.ceil(diffMs / 1000))
+    if (seconds <= 0) return null
     return seconds
   }, [effectiveTimerDeadline, countdownTick])
 

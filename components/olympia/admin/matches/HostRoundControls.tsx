@@ -571,12 +571,7 @@ export function HostRoundControls({
   const canPickTarget = Boolean(
     allowTargetSelection && (isVeDichLike || effectiveCurrentRoundQuestionId || isKhoiDong)
   )
-  const canEndKhoiDongTurn = Boolean(
-    isKhoiDong &&
-    effectiveCurrentRoundQuestionId &&
-    effectiveCurrentQuestionState &&
-    effectiveCurrentQuestionState !== 'hidden'
-  )
+  const canEndKhoiDongTurn = Boolean(isKhoiDong)
 
   // Show toasts for messages
   useEffect(() => {

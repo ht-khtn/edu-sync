@@ -584,6 +584,12 @@ export async function resetLiveSessionAndScoresAction(
     const { error: delAnswersErr } = await olympia.from("answers").delete().eq("match_id", matchId);
     if (delAnswersErr) return { error: delAnswersErr.message };
 
+    const { error: delRealtimeErr } = await olympia
+      .from("realtime_events")
+      .delete()
+      .eq("match_id", matchId);
+    if (delRealtimeErr) return { error: delRealtimeErr.message };
+
     // Reset các gói Về đích: clear target_player_id và question_set_item_id
     const { data: rounds, error: roundsErr } = await olympia
       .from("match_rounds")

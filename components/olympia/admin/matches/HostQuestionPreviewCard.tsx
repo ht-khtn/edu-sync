@@ -391,7 +391,12 @@ export function HostQuestionPreviewCard(props: Props) {
         if (nextId) {
             dispatchHostSessionUpdate({ currentRoundQuestionId: nextId, questionState: 'showing', source: 'optimistic' })
             sendQuestionPing(nextId)
-            sendSoundPing('QUESTION_REVEALED')
+            const isAlreadyShowing =
+                nextId === liveSession?.current_round_question_id &&
+                (liveSession?.question_state ?? 'hidden') !== 'hidden'
+            if (!isAlreadyShowing) {
+                sendSoundPing('QUESTION_REVEALED')
+            }
         }
         await setCurrentQuestionFormAction(formData)
     }

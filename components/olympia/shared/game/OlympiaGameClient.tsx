@@ -751,6 +751,12 @@ export function OlympiaGameClient({
   }, [currentQuestionId])
 
   useEffect(() => {
+    // Đổi câu -> reset tracking đáp án để tránh phát nhạc lặp từ câu trước.
+    prevAnswerIdRef.current = null
+    prevAnswerDecisionRef.current = { id: null, isCorrect: null }
+  }, [currentQuestionId])
+
+  useEffect(() => {
     // Nếu submit lỗi thì cho phép gửi lại.
     if (!answerState.error) return
     if (!currentQuestionId) return
@@ -1049,6 +1055,8 @@ export function OlympiaGameClient({
     if (Date.now() - lastDecisionPingSoundAtRef.current < 1500) return
     const latest = answers[0]
     if (!latest?.id) return
+    if (latest.round_question_id !== currentQuestionId) return
+    if (recentDecisionPing && recentDecisionPing.roundQuestionId === latest.round_question_id) return
     const latestIsCorrect = typeof latest.is_correct === 'boolean' ? latest.is_correct : null
     const prevAnswerId = prevAnswerIdRef.current
     const prevDecision = prevAnswerDecisionRef.current
@@ -1074,7 +1082,7 @@ export function OlympiaGameClient({
     } else if (latestIsCorrect === null) {
       prevAnswerDecisionRef.current = { id: latest.id, isCorrect: null }
     }
-  }, [answers, emitSoundEvent, isGuest, resolvedRoundType])
+  }, [answers, currentQuestionId, emitSoundEvent, isGuest, recentDecisionPing, resolvedRoundType])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return

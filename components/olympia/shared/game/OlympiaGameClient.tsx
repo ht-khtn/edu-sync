@@ -202,7 +202,7 @@ export function OlympiaGameClient({
         toast.success(answerFeedback)
       }
     }
-  }, [answerState.error, answerState.success])
+  }, [answerState])
 
   useEffect(() => {
     const buzzerFeedback = buzzerState.error ?? buzzerState.success
@@ -213,7 +213,7 @@ export function OlympiaGameClient({
         toast.success(buzzerFeedback)
       }
     }
-  }, [buzzerState.error, buzzerState.success])
+  }, [buzzerState])
 
   const scoreboard = useMemo(() => {
     const totals = new Map<string, number>()

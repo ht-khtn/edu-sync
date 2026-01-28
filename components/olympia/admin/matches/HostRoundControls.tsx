@@ -513,7 +513,6 @@ export function HostRoundControls({
   const lastTargetToastRef = useRef<string | null>(null)
   const lastEndTurnToastRef = useRef<string | null>(null)
   const lastTimerStartToastRef = useRef<string | null>(null)
-  const lastTimerExpireToastRef = useRef<string | null>(null)
   const lastMediaToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
@@ -780,12 +779,10 @@ export function HostRoundControls({
   useEffect(() => {
     const message = timerExpireState.error ?? timerExpireState.success
     if (!message) return
-    if (lastTimerExpireToastRef.current === message) return
-    lastTimerExpireToastRef.current = message
 
     if (timerExpireState.error) toast.error(message)
     else toast.success(message)
-  }, [timerExpireState.error, timerExpireState.success])
+  }, [timerExpireState])
 
   useEffect(() => {
     const message = buzzerState.error ?? buzzerState.success

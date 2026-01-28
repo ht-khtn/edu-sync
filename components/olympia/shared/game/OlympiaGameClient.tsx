@@ -497,7 +497,12 @@ export function OlympiaGameClient({
     key: null,
   })
   const lastTrialBuzzerRef = useRef<{ id: string | null }>({ id: null })
-  const lastBuzzerSoundRef = useRef<string | null>(null)
+  const lastBuzzerSoundRef = useRef<{
+    questionId: string | null
+    key: string | null
+    playerId: string | null
+    clientTs: number | null
+  } | null>(null)
   const lastBuzzerPingSoundRef = useRef<string | null>(null)
   const lastBuzzerPingSentRef = useRef<number>(0)
   const lastDecisionPingSoundAtRef = useRef<number>(0)
@@ -1281,6 +1286,10 @@ export function OlympiaGameClient({
       return
     }
 
+    if (lastBuzzerSoundRef.current?.questionId && lastBuzzerSoundRef.current.questionId !== currentQuestionId) {
+      lastBuzzerSoundRef.current = null
+    }
+
     if (recentBuzzerPing && Date.now() - recentBuzzerPing.clientTs < 1500) {
       return
     }
@@ -1303,9 +1312,32 @@ export function OlympiaGameClient({
 
     if (!latest) return
 
+    const pingPlayerId = recentBuzzerPing?.playerId ?? null
+    const pingTs = recentBuzzerPing?.clientTs ?? null
+    const latestTs = latest.occurred_at ? Date.parse(latest.occurred_at) : NaN
+    const isSamePing =
+      Boolean(pingPlayerId && Number.isFinite(latestTs)) &&
+      pingPlayerId === (latest.player_id ?? null) &&
+      pingTs != null &&
+      Math.abs(latestTs - pingTs) <= 2500
+    if (isSamePing) {
+      lastBuzzerSoundRef.current = {
+        questionId: currentQuestionId,
+        key: latest.id ?? null,
+        playerId: latest.player_id ?? null,
+        clientTs: pingTs,
+      }
+      return
+    }
+
     const key = latest.id ?? `${latest.player_id ?? 'unknown'}|${latest.occurred_at ?? ''}|${latest.event_type ?? ''}`
-    if (lastBuzzerSoundRef.current === key) return
-    lastBuzzerSoundRef.current = key
+    if (lastBuzzerSoundRef.current?.questionId === currentQuestionId && lastBuzzerSoundRef.current.key === key) return
+    lastBuzzerSoundRef.current = {
+      questionId: currentQuestionId,
+      key,
+      playerId: latest.player_id ?? null,
+      clientTs: Number.isFinite(latestTs) ? latestTs : null,
+    }
 
     void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: resolvedRoundType ?? undefined })
   }, [currentQuestionBuzzerEvents, currentQuestionId, emitSoundEvent, isGuest, recentBuzzerPing, resolvedRoundType])
@@ -1316,6 +1348,12 @@ export function OlympiaGameClient({
     const key = `${recentBuzzerPing.playerId ?? 'unknown'}|${recentBuzzerPing.clientTs}`
     if (lastBuzzerPingSoundRef.current === key) return
     lastBuzzerPingSoundRef.current = key
+    lastBuzzerSoundRef.current = {
+      questionId: recentBuzzerPing.roundQuestionId ?? null,
+      key,
+      playerId: recentBuzzerPing.playerId ?? null,
+      clientTs: recentBuzzerPing.clientTs,
+    }
     void emitSoundEvent(GameEvent.BUZZER_PRESSED, { roundType: resolvedRoundType ?? undefined })
   }, [emitSoundEvent, isGuest, recentBuzzerPing, resolvedRoundType])
 

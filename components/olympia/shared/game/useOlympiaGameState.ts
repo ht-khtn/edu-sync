@@ -420,6 +420,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const subscribeInFlightRef = useRef(false);
   const realtimeReadyRef = useRef(false);
   const snapshotInFlightRef = useRef(false);
+  const lastQuestionPingAtRef = useRef<number | null>(null);
   const sessionRef = useRef(initialData.session);
   const vcnvTrackedRqIdsRef = useRef<string[]>([]);
   const guardStateRef = useRef<IGuardState>(createInitialGuardState());
@@ -739,7 +740,20 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       }
 
       if (nextSession) {
-        setSession((prev) => ({ ...prev, ...(nextSession as typeof prev) }));
+        const guardActive =
+          lastQuestionPingAtRef.current != null &&
+          Date.now() - lastQuestionPingAtRef.current < 1200;
+        setSession((prev) => {
+          const merged = { ...prev, ...(nextSession as typeof prev) };
+          if (!guardActive) return merged;
+          return {
+            ...merged,
+            question_state: prev.question_state,
+            current_round_question_id: prev.current_round_question_id,
+            show_scoreboard_overlay: prev.show_scoreboard_overlay,
+            show_answers_overlay: prev.show_answers_overlay,
+          };
+        });
       }
 
       const { data: nextScores, error: scoresError } = await olympia
@@ -918,6 +932,8 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             if (parsed.matchId !== matchId || parsed.sessionId !== sessionId) return;
             const lagMs = Date.now() - parsed.clientTs;
             if (Number.isFinite(lagMs) && lagMs > 2000) return;
+
+            lastQuestionPingAtRef.current = Date.now();
 
             setSession((prev) => ({
               ...prev,

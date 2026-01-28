@@ -61,6 +61,8 @@ type Props = {
         current_round_type: string | null
         current_round_id: string | null
         current_round_question_id: string | null
+        show_scoreboard_overlay?: boolean | null
+        show_answers_overlay?: boolean | null
     } | null
     descriptionText: string
     options: Array<{ id: string; label: string }>
@@ -394,7 +396,11 @@ export function HostQuestionPreviewCard(props: Props) {
             const isAlreadyShowing =
                 nextId === liveSession?.current_round_question_id &&
                 (liveSession?.question_state ?? 'hidden') !== 'hidden'
-            if (!isAlreadyShowing) {
+            const isQuestionViewActive =
+                (liveSession?.question_state ?? 'hidden') === 'showing' &&
+                liveSession?.show_scoreboard_overlay !== true &&
+                liveSession?.show_answers_overlay !== true
+            if (!isAlreadyShowing && !isQuestionViewActive) {
                 sendSoundPing('QUESTION_REVEALED')
             }
         }

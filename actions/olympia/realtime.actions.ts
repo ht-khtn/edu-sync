@@ -682,17 +682,16 @@ export async function expireSessionTimerAction(
 
       if (roundType === "ve_dich") {
         if (questionState !== "answer_revealed") {
-          const deadline = new Date(Date.now() + 5000).toISOString();
           const { error: openErr } = await olympia
             .from("live_sessions")
             .update({
               question_state: "answer_revealed",
-              timer_deadline: deadline,
+              timer_deadline: null,
               buzzer_enabled: true,
             })
             .eq("id", session.id);
           if (openErr) return { error: openErr.message };
-          return { success: "Đã mở cửa cướp (5s)." };
+          return { success: "Đã mở cửa cướp." };
         }
 
         const { error: closeErr } = await olympia

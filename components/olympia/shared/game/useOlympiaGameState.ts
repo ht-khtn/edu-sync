@@ -418,11 +418,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const retryCountRef = useRef(0);
   const retryStoppedRef = useRef(false);
   const subscribeInFlightRef = useRef(false);
-  const lastSubscribedChannelRef = useRef<string | null>(null);
-  const channelStatusRef = useRef<
-    "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED" | "JOINING" | "LEAVING" | "UNKNOWN"
-  >("UNKNOWN");
-  const subscribeRef = useRef<(() => void) | null>(null);
   const realtimeReadyRef = useRef(false);
   const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
@@ -876,10 +871,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
 
     const subscribe = async () => {
       if (subscribeInFlightRef.current || retryStoppedRef.current) return;
-      const desiredTopic = `realtime:olympia-game-${sessionId}`;
-      if (channelRef.current?.topic === desiredTopic && channelStatusRef.current === "SUBSCRIBED") {
-        return;
-      }
       subscribeInFlightRef.current = true;
       try {
         const supabase = await getSupabase();
@@ -1347,8 +1338,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
           if (!mounted) return;
           if (channelRef.current !== channel) return;
           const channelTopic = channel.topic ?? "unknown";
-          const nextStatus = typeof status === "string" ? status : "UNKNOWN";
-          channelStatusRef.current = nextStatus;
           if (status === "SUBSCRIBED") {
             setRealtimeReady(true);
             realtimeReadyRef.current = true;
@@ -1356,15 +1345,12 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
             retryCountRef.current = 0;
             retryStoppedRef.current = false;
             clearRetryTimer();
-            if (lastSubscribedChannelRef.current !== channelTopic) {
-              lastSubscribedChannelRef.current = channelTopic;
-              console.info("[Olympia] realtime subscribed", {
-                status,
-                channel: channelTopic,
-                matchId,
-                sessionId,
-              });
-            }
+            console.info("[Olympia] realtime subscribed", {
+              status,
+              channel: channelTopic,
+              matchId,
+              sessionId,
+            });
             void fetchSnapshotOnce();
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
@@ -1407,15 +1393,10 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       }
     };
 
-    subscribeRef.current = () => {
-      void subscribe();
-    };
-
     subscribe();
 
     return () => {
       mounted = false;
-      subscribeRef.current = null;
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
       }
@@ -1475,45 +1456,6 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       }
     };
   }, [refreshFromServer]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (typeof document === "undefined") return;
-
-    const tryResume = (reason: "visibility" | "online") => {
-      if (document.hidden) return;
-      if (channelStatusRef.current === "SUBSCRIBED") return;
-      retryStoppedRef.current = false;
-      retryCountRef.current = 0;
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-      console.info("[Olympia] realtime resume", {
-        reason,
-        matchId,
-        sessionId,
-      });
-      subscribeRef.current?.();
-    };
-
-    const onOnline = () => {
-      tryResume("online");
-    };
-
-    const onVisibilityChange = () => {
-      if (!document.hidden) {
-        tryResume("visibility");
-      }
-    };
-
-    window.addEventListener("online", onOnline);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [matchId, sessionId]);
 
   const timerLabel = useMemo(() => {
     if (timer.remainingMs === null) return "Đang chờ host";

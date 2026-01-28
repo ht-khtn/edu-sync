@@ -1004,8 +1004,8 @@ export function OlympiaGameClient({
         typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.round(diffMs / 1000)) : null
       const durationMsFromPing =
         lastTimerPing?.action === 'start' &&
-        typeof lastTimerPing.durationMs === 'number' &&
-        Number.isFinite(lastTimerPing.durationMs)
+          typeof lastTimerPing.durationMs === 'number' &&
+          Number.isFinite(lastTimerPing.durationMs)
           ? lastTimerPing.durationMs
           : null
       const durationSecondsFromPing =

@@ -189,6 +189,7 @@ export function OlympiaGameClient({
 
   const veDichNotifiedBySeatRef = useRef<Map<number, string>>(new Map())
   const veDichPackageKeyBySeatRef = useRef<Map<number, string>>(new Map())
+  const veDichPackageSeenLoadedRef = useRef<boolean>(false)
   const [veDichPackageOverlay, setVeDichPackageOverlay] = useState<VeDichPackageOverlay | null>(null)
 
   // Toast notifications for feedback
@@ -316,8 +317,31 @@ export function OlympiaGameClient({
     if (roundType !== 've_dich') {
       veDichNotifiedBySeatRef.current.clear()
       veDichPackageKeyBySeatRef.current.clear()
+      veDichPackageSeenLoadedRef.current = false
       setVeDichPackageOverlay(null)
       return
+    }
+
+    // Guest: ghi nhớ các package đã từng hiển thị để tránh F5 là overlay tự bật lại.
+    if (isGuest && !veDichPackageSeenLoadedRef.current && typeof window !== 'undefined') {
+      veDichPackageSeenLoadedRef.current = true
+      try {
+        const raw = window.sessionStorage.getItem(`olympia:guest:vdPkgSeen:${sessionId}`)
+        if (raw) {
+          const parsed: unknown = JSON.parse(raw)
+          if (parsed && typeof parsed === 'object') {
+            const rec = parsed as Record<string, unknown>
+            for (const [seatKey, val] of Object.entries(rec)) {
+              const seat = Number(seatKey)
+              if (!Number.isFinite(seat) || seat < 1 || seat > 4) continue
+              if (typeof val !== 'string' || !val) continue
+              veDichPackageKeyBySeatRef.current.set(seat, val)
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
 
     const currentRoundId = session.current_round_id
@@ -364,6 +388,18 @@ export function OlympiaGameClient({
       if (lastKey === qsiKey) continue
       veDichPackageKeyBySeatRef.current.set(seat, qsiKey)
 
+      if (isGuest && typeof window !== 'undefined') {
+        try {
+          const obj: Record<string, string> = {}
+          for (const [k, v] of veDichPackageKeyBySeatRef.current.entries()) {
+            obj[String(k)] = v
+          }
+          window.sessionStorage.setItem(`olympia:guest:vdPkgSeen:${sessionId}`, JSON.stringify(obj))
+        } catch {
+          // ignore
+        }
+      }
+
       veDichNotifiedBySeatRef.current.set(seat, summary)
 
       const ownerPlayerId =
@@ -379,7 +415,7 @@ export function OlympiaGameClient({
         toast.info(`Ghế ${seat}${ownerLabel} đã chọn gói Về đích: ${summary}`)
       }
     }
-  }, [emitSoundEvent, isGuest, players, roundQuestions, roundType, session.current_round_id])
+  }, [emitSoundEvent, isGuest, players, roundQuestions, roundType, session.current_round_id, sessionId])
 
   useEffect(() => {
     if (!isGuest) return
@@ -732,6 +768,7 @@ export function OlympiaGameClient({
   const isWaitingScreen = !isMc && questionState === 'hidden'
   const isOnline = useOnlineStatus()
   const showVeDichPackageOverlay = Boolean(
+    isGuest &&
     isVeDich &&
     isWaitingScreen &&
     !showBigScoreboard &&
@@ -1008,7 +1045,7 @@ export function OlympiaGameClient({
       const deadlineMs = Date.parse(next)
       const diffMs = Number.isFinite(deadlineMs) ? Math.max(0, deadlineMs - Date.now()) : null
       const roundedSeconds =
-        typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.round(diffMs / 1000)) : null
+        typeof diffMs === 'number' && Number.isFinite(diffMs) ? Math.max(1, Math.ceil(diffMs / 1000)) : null
       const durationMsFromPing =
         lastTimerPing?.action === 'start' &&
           typeof lastTimerPing.durationMs === 'number' &&
@@ -1016,7 +1053,7 @@ export function OlympiaGameClient({
           ? lastTimerPing.durationMs
           : null
       const durationSecondsFromPing =
-        typeof durationMsFromPing === 'number' ? Math.round(durationMsFromPing / 1000) : null
+        typeof durationMsFromPing === 'number' ? Math.ceil(durationMsFromPing / 1000) : null
       const durationSeconds = durationSecondsFromPing ?? roundedSeconds
       const durationMs =
         typeof durationMsFromPing === 'number'
@@ -1044,10 +1081,12 @@ export function OlympiaGameClient({
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return
-    if (!prevTimerExpiredRef.current) {
+    const prevExpired = prevTimerExpiredRef.current
+    const nextExpired = timer.isExpired
+    if (!prevExpired && nextExpired) {
       void emitSoundEvent(GameEvent.TIMER_ENDED, { roundType: resolvedRoundType })
     }
-    prevTimerExpiredRef.current = timer.isExpired
+    prevTimerExpiredRef.current = nextExpired
   }, [emitSoundEvent, isGuest, resolvedRoundType, timer.isExpired])
 
   useEffect(() => {

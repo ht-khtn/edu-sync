@@ -15,6 +15,38 @@ export class SoundEventRouter {
   ]);
   private timeoutIds: Map<string, NodeJS.Timeout> = new Map();
 
+  private roundUpToAvailableCountdownSeconds(
+    roundNumber: number,
+    durationSeconds: number
+  ): number | null {
+    if (!Number.isFinite(roundNumber) || roundNumber <= 0) return null;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+
+    const prefix = `${roundNumber} `;
+    const suffix = "s";
+    const available: number[] = [];
+    for (const key of this.registry.getAllSoundKeys()) {
+      const fileName = this.registry.getFileName(key);
+      if (!fileName) continue;
+      const normalized = fileName.trim();
+      if (!normalized.startsWith(prefix) || !normalized.endsWith(suffix)) continue;
+
+      const match = new RegExp(`^${roundNumber}\\s+(\\d+)s$`, "i").exec(normalized);
+      if (!match?.[1]) continue;
+      const seconds = Number(match[1]);
+      if (!Number.isFinite(seconds) || seconds <= 0) continue;
+      available.push(seconds);
+    }
+
+    if (available.length === 0) return null;
+    const uniqueSorted = Array.from(new Set(available)).sort((a, b) => a - b);
+    const rounded =
+      uniqueSorted.find((s) => s >= durationSeconds) ??
+      uniqueSorted[uniqueSorted.length - 1] ??
+      null;
+    return typeof rounded === "number" && Number.isFinite(rounded) ? rounded : null;
+  }
+
   constructor(
     soundController: SoundController,
     options?: { onCountdownMissing?: (tried: string[]) => void }
@@ -144,10 +176,32 @@ export class SoundEventRouter {
     }
 
     if (roundType === "tang_toc") {
+      const durationSecondsRaw =
+        typeof payload?.durationSeconds === "number" && Number.isFinite(payload.durationSeconds)
+          ? payload.durationSeconds
+          : this.resolveDurationSecondsFromMs(payload?.durationMs);
+      const durationSeconds =
+        typeof durationSecondsRaw === "number" && Number.isFinite(durationSecondsRaw)
+          ? Math.max(1, Math.floor(durationSecondsRaw))
+          : null;
+
+      // Ưu tiên durationSeconds để tránh lệch index (vòng 3: 20/20/30/30).
+      if (durationSeconds === 30) {
+        await this.soundController.play("tt_dem_gio_30s");
+        return;
+      }
+      if (durationSeconds === 20) {
+        await this.soundController.play("tt_dem_gio_20s");
+        return;
+      }
+
+      // Fallback theo questionOrderIndex (hỗ trợ cả 0-based và 1-based).
       const orderIndexRaw = payload?.questionOrderIndex;
       const orderIndex =
         typeof orderIndexRaw === "number" && Number.isFinite(orderIndexRaw) ? orderIndexRaw : null;
-      const isFirstTwo = orderIndex == null ? true : orderIndex <= 2;
+      const isZeroBased = orderIndex === 0;
+      const isFirstTwo =
+        orderIndex == null ? true : isZeroBased ? orderIndex <= 1 : orderIndex <= 2;
       const timerSound = isFirstTwo ? "tt_dem_gio_20s" : "tt_dem_gio_30s";
       await this.soundController.play(timerSound);
       return;
@@ -175,10 +229,15 @@ export class SoundEventRouter {
         ? payload.roundNumber
         : this.getRoundNumber(roundType);
 
-    const durationSeconds =
+    const durationSecondsRaw =
       typeof payload?.durationSeconds === "number" && Number.isFinite(payload.durationSeconds)
         ? payload.durationSeconds
         : this.resolveDurationSecondsFromMs(payload?.durationMs);
+
+    const durationSeconds =
+      typeof durationSecondsRaw === "number" && Number.isFinite(durationSecondsRaw)
+        ? Math.max(1, Math.floor(durationSecondsRaw))
+        : null;
 
     if (!durationSeconds) return null;
 
@@ -188,12 +247,29 @@ export class SoundEventRouter {
 
     const tried: string[] = [];
     for (const n of candidates) {
-      const fileName = `${n} ${durationSeconds}s`;
-      tried.push(fileName);
-      const key = this.registry.findKeyByFileName(fileName);
-      if (!key) continue;
-      if (this.soundController.isReady(key)) return key;
-      if (this.soundController.isMissing(key)) continue;
+      const exactFileName = `${n} ${durationSeconds}s`;
+      tried.push(exactFileName);
+
+      const exactKey = this.registry.findKeyByFileName(exactFileName);
+      if (exactKey) {
+        if (this.soundController.isReady(exactKey)) return exactKey;
+        if (!this.soundController.isMissing(exactKey)) return exactKey;
+      }
+
+      // Nếu không có file đúng giây, làm tròn lên mốc có sẵn gần nhất (ví dụ 4s -> 5s).
+      const roundedSeconds = this.roundUpToAvailableCountdownSeconds(n, durationSeconds);
+      if (
+        typeof roundedSeconds === "number" &&
+        Number.isFinite(roundedSeconds) &&
+        roundedSeconds !== durationSeconds
+      ) {
+        const roundedFileName = `${n} ${roundedSeconds}s`;
+        tried.push(roundedFileName);
+        const roundedKey = this.registry.findKeyByFileName(roundedFileName);
+        if (!roundedKey) continue;
+        if (this.soundController.isReady(roundedKey)) return roundedKey;
+        if (!this.soundController.isMissing(roundedKey)) return roundedKey;
+      }
     }
 
     if (tried.length > 0) {
@@ -215,7 +291,8 @@ export class SoundEventRouter {
 
   private resolveDurationSecondsFromMs(durationMs?: number): number | null {
     if (typeof durationMs !== "number" || !Number.isFinite(durationMs)) return null;
-    const seconds = Math.round(durationMs / 1000);
+    // Làm tròn lên để map sang file countdown (vd: 4000ms -> 5s).
+    const seconds = Math.ceil(durationMs / 1000);
     return seconds > 0 ? seconds : null;
   }
 

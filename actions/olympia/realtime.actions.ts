@@ -147,6 +147,12 @@ const setCurrentQuestionSchema = z.object({
 
 const startTimerAutoSchema = z.object({
   sessionId: z.string().uuid("Phòng thi không hợp lệ."),
+  durationMs: z
+    .preprocess(
+      (val) => (typeof val === "string" && val.trim() ? Number(val) : val),
+      z.number().int().min(1000).max(120000).optional()
+    )
+    .optional(),
 });
 
 const expireTimerSchema = z.object({
@@ -537,6 +543,7 @@ export async function startSessionTimerAutoAction(
 
       const parsed = startTimerAutoSchema.safeParse({
         sessionId: formData.get("sessionId"),
+        durationMs: formData.get("durationMs"),
       });
       if (!parsed.success) {
         return { error: parsed.error.issues[0]?.message ?? "Thiếu thông tin bấm giờ." };
@@ -591,6 +598,15 @@ export async function startSessionTimerAutoAction(
         const list = (rqs as unknown as Array<{ id: string; order_index: number }> | null) ?? [];
         const idx = list.findIndex((r) => r.id === currentRqId);
         durationMs = getCountdownMs(roundType, idx);
+      }
+
+      const manualDurationMs = parsed.data.durationMs;
+      if (
+        typeof manualDurationMs === "number" &&
+        Number.isFinite(manualDurationMs) &&
+        manualDurationMs > 0
+      ) {
+        durationMs = manualDurationMs;
       }
 
       if (!Number.isFinite(durationMs) || durationMs <= 0) {

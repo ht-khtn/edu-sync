@@ -505,15 +505,6 @@ export function HostRoundControls({
     void preloadVideos([introCommon, ...introRounds, ...introRules])
   }, [matchId, introCommon, introRounds, introRules, preloadVideos])
 
-  const lastRoundToastRef = useRef<string | null>(null)
-  const lastWaitingToastRef = useRef<string | null>(null)
-  const lastScoreboardToastRef = useRef<string | null>(null)
-  const lastAnswersToastRef = useRef<string | null>(null)
-  const lastBuzzerToastRef = useRef<string | null>(null)
-  const lastTargetToastRef = useRef<string | null>(null)
-  const lastEndTurnToastRef = useRef<string | null>(null)
-  const lastTimerStartToastRef = useRef<string | null>(null)
-  const lastMediaToastRef = useRef<string | null>(null)
 
   const roundFormRef = useRef<HTMLFormElement | null>(null)
   const buzzerFormRef = useRef<HTMLFormElement | null>(null)
@@ -717,64 +708,54 @@ export function HostRoundControls({
   useEffect(() => {
     const message = roundState.error ?? roundState.success
     if (!message) return
-    if (lastRoundToastRef.current === message) return
-    lastRoundToastRef.current = message
 
     if (roundState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [roundState.error, roundState.success, router])
+  }, [roundState, router])
 
   useEffect(() => {
     const message = waitingState.error ?? waitingState.success
     if (!message) return
-    if (lastWaitingToastRef.current === message) return
-    lastWaitingToastRef.current = message
 
     if (waitingState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [waitingState.error, waitingState.success, router])
+  }, [waitingState, router])
 
   useEffect(() => {
     const message = scoreboardState.error ?? scoreboardState.success
     if (!message) return
-    if (lastScoreboardToastRef.current === message) return
-    lastScoreboardToastRef.current = message
 
     if (scoreboardState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [scoreboardState.error, scoreboardState.success, router])
+  }, [scoreboardState, router])
 
   useEffect(() => {
     const message = answersState.error ?? answersState.success
     if (!message) return
-    if (lastAnswersToastRef.current === message) return
-    lastAnswersToastRef.current = message
 
     if (answersState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [answersState.error, answersState.success, router])
+  }, [answersState, router])
 
   useEffect(() => {
     const message = timerStartState.error ?? timerStartState.success
     if (!message) return
-    if (lastTimerStartToastRef.current === message) return
-    lastTimerStartToastRef.current = message
 
     if (timerStartState.error) toast.error(message)
     else toast.success(message)
-  }, [timerStartState.error, timerStartState.success])
+  }, [timerStartState])
 
   useEffect(() => {
     const message = timerExpireState.error ?? timerExpireState.success
@@ -787,21 +768,17 @@ export function HostRoundControls({
   useEffect(() => {
     const message = buzzerState.error ?? buzzerState.success
     if (!message) return
-    if (lastBuzzerToastRef.current === message) return
-    lastBuzzerToastRef.current = message
 
     if (buzzerState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [buzzerState.error, buzzerState.success, router])
+  }, [buzzerState, router])
 
   useEffect(() => {
     const message = targetState.error ?? targetState.success
     if (!message) return
-    if (lastTargetToastRef.current === message) return
-    lastTargetToastRef.current = message
 
     if (targetState.error) {
       toast.error(message, {
@@ -813,33 +790,29 @@ export function HostRoundControls({
         duration: 3000,
       })
     }
-  }, [targetState.error, targetState.success, router])
+  }, [targetState, router])
 
   useEffect(() => {
     const message = endTurnState.error ?? endTurnState.success
     if (!message) return
-    if (lastEndTurnToastRef.current === message) return
-    lastEndTurnToastRef.current = message
 
     if (endTurnState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [endTurnState.error, endTurnState.success])
+  }, [endTurnState])
 
   useEffect(() => {
     const message = mediaState.error ?? mediaState.success
     if (!message) return
-    if (lastMediaToastRef.current === message) return
-    lastMediaToastRef.current = message
 
     if (mediaState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [mediaState.error, mediaState.success])
+  }, [mediaState])
 
   // Chỉ update query params sau khi server action thành công (tránh navigation/refresh trước khi action chạy xong).
   useEffect(() => {

@@ -76,7 +76,6 @@ export function LiveScoreboard({
 }: Props) {
   const [resetState, resetFormAction, pendingReset] = useActionState(resetScoresAction ?? noopAction, initialState)
   const [editState, editFormAction, pendingEdit] = useActionState(editScoreAction ?? noopAction, initialState)
-  const lastToastRef = useRef<string | null>(null)
   const [editing, setEditing] = useState<boolean>(false)
 
   const [playerMeta, setPlayerMeta] = useState<PlayerScore[]>(scores)
@@ -157,12 +156,10 @@ export function LiveScoreboard({
   useEffect(() => {
     const message = resetState.error ?? resetState.success ?? editState.error ?? editState.success
     if (!message) return
-    if (lastToastRef.current === message) return
-    lastToastRef.current = message
 
     if (resetState.error || editState.error) toast.error(message)
     if (resetState.success || editState.success) toast.success(message)
-  }, [editState.error, editState.success, resetState.error, resetState.success])
+  }, [editState, resetState])
 
   useEffect(() => {
     if (!pendingEdit && !pendingReset) {

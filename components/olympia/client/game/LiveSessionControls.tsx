@@ -91,7 +91,7 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
     } else if (openState.success) {
       toast.success(openState.success)
     }
-  }, [openState.error, openState.success])
+  }, [openState])
 
   // Show toast for end session errors/success
   useEffect(() => {
@@ -100,7 +100,7 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
     } else if (endState.success) {
       toast.success(endState.success)
     }
-  }, [endState.error, endState.success])
+  }, [endState])
 
   // Extract passwords from success message if available
   const extractPasswords = (msg: string | null | undefined) => {

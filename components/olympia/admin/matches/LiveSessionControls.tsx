@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useRef, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Copy, Eye, EyeOff } from 'lucide-react'
@@ -84,8 +84,6 @@ function PasswordDisplay({ label, value }: { label: string; value: string }) {
 export function LiveSessionControls({ matchId, liveSession }: Props) {
   const [openState, openAction] = useActionState(openLiveSessionAction, initialState)
   const [endState, endAction] = useActionState(endLiveSessionAction, initialState)
-  const lastOpenToastRef = useRef<string | null>(null)
-  const lastEndToastRef = useRef<string | null>(null)
   const [persistedPasswords, setPersistedPasswords] = useState<{
     playerPassword: string | null
     mcPassword: string | null
@@ -95,29 +93,25 @@ export function LiveSessionControls({ matchId, liveSession }: Props) {
   useEffect(() => {
     const message = openState.error ?? openState.success
     if (!message) return
-    if (lastOpenToastRef.current === message) return
-    lastOpenToastRef.current = message
 
     if (openState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [openState.error, openState.success])
+  }, [openState])
 
   // Show toast for end session errors/success
   useEffect(() => {
     const message = endState.error ?? endState.success
     if (!message) return
-    if (lastEndToastRef.current === message) return
-    lastEndToastRef.current = message
 
     if (endState.error) {
       toast.error(message)
     } else {
       toast.success(message)
     }
-  }, [endState.error, endState.success])
+  }, [endState])
 
   // Extract passwords from success message if available
   const extractPasswords = (msg: string | null | undefined) => {

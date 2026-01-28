@@ -422,6 +422,7 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
   const channelStatusRef = useRef<
     "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED" | "JOINING" | "LEAVING" | "UNKNOWN"
   >("UNKNOWN");
+  const subscribeRef = useRef<(() => void) | null>(null);
   const realtimeReadyRef = useRef(false);
   const snapshotInFlightRef = useRef(false);
   const sessionRef = useRef(initialData.session);
@@ -1406,10 +1407,15 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       }
     };
 
+    subscribeRef.current = () => {
+      void subscribe();
+    };
+
     subscribe();
 
     return () => {
       mounted = false;
+      subscribeRef.current = null;
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
       }
@@ -1469,6 +1475,45 @@ export function useOlympiaGameState({ sessionId, initialData }: UseOlympiaGameSt
       }
     };
   }, [refreshFromServer]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (typeof document === "undefined") return;
+
+    const tryResume = (reason: "visibility" | "online") => {
+      if (document.hidden) return;
+      if (channelStatusRef.current === "SUBSCRIBED") return;
+      retryStoppedRef.current = false;
+      retryCountRef.current = 0;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      console.info("[Olympia] realtime resume", {
+        reason,
+        matchId,
+        sessionId,
+      });
+      subscribeRef.current?.();
+    };
+
+    const onOnline = () => {
+      tryResume("online");
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        tryResume("visibility");
+      }
+    };
+
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [matchId, sessionId]);
 
   const timerLabel = useMemo(() => {
     if (timer.remainingMs === null) return "Đang chờ host";

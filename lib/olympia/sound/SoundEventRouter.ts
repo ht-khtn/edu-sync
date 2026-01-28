@@ -164,6 +164,21 @@ export class SoundEventRouter {
 
     if (!roundType) return;
 
+    const durationSecondsRaw =
+      typeof payload?.durationSeconds === "number" && Number.isFinite(payload.durationSeconds)
+        ? payload.durationSeconds
+        : this.resolveDurationSecondsFromMs(payload?.durationMs);
+    const durationSeconds =
+      typeof durationSecondsRaw === "number" && Number.isFinite(durationSecondsRaw)
+        ? Math.max(1, Math.ceil(durationSecondsRaw))
+        : null;
+
+    const questionCodeRaw = typeof payload?.questionCode === "string" ? payload.questionCode : "";
+    const questionCode = questionCodeRaw.trim().toUpperCase();
+    if (questionCode === "TT4" || (durationSeconds !== null && durationSeconds >= 40)) {
+      return;
+    }
+
     if (roundType === "tang_toc" && hasVideo) {
       // NO timer sound for video
       return;

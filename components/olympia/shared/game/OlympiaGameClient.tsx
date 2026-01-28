@@ -1085,6 +1085,7 @@ export function OlympiaGameClient({
         durationMs,
         durationSeconds: durationSeconds ?? undefined,
         roundNumber: roundNumber ?? undefined,
+        questionCode: questionCode ?? undefined,
       })
     }
 
@@ -1093,7 +1094,7 @@ export function OlympiaGameClient({
     }
 
     prevTimerDeadlineRef.current = next
-  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, lastTimerPing, mediaKind, resolvedRoundType, roundNumber, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
+  }, [currentQuestionOrderIndex, currentVeDichValue, emitSoundEvent, isGuest, lastTimerPing, mediaKind, questionCode, resolvedRoundType, roundNumber, session.timer_deadline, showAnswersOverlay, showBigScoreboard])
 
   useEffect(() => {
     if (!isGuest || !resolvedRoundType) return

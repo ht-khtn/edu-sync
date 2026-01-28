@@ -34,11 +34,19 @@ const roundLabelMap: Record<string, string> = {
   ve_dich: 'Về đích',
 }
 
-const countdownOptions = [5, 10, 15, 20, 30] as const
-type CountdownOption = (typeof countdownOptions)[number]
+const baseCountdownOptions = [5, 10, 15, 20, 30] as const
+type BaseCountdownOption = (typeof baseCountdownOptions)[number]
+type CountdownOption = BaseCountdownOption | 40
 
-const isCountdownOption = (value: number): value is CountdownOption =>
-  countdownOptions.includes(value as CountdownOption)
+const isCountdownOption = (value: number, allow40: boolean): value is CountdownOption =>
+  (baseCountdownOptions as readonly number[]).includes(value) || (allow40 && value === 40)
+
+const getQuestionCodeFromMeta = (meta?: Record<string, unknown> | null) => {
+  if (!meta || typeof meta !== 'object') return null
+  const raw = meta.code
+  const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : ''
+  return trimmed || null
+}
 
 function isWaitingScreenOn(questionState: string | null | undefined) {
   return questionState === 'hidden'
@@ -85,6 +93,10 @@ function getAutoTimerDurationSeconds(
     const veDichValue = (questionMeta?.ve_dich_value as number) || 20
     newDuration = veDichValue === 30 ? 20 : 15 // 30 điểm = 20s, 20 điểm = 15s
   } else if (roundType === 'tang_toc') {
+    const questionCode = getQuestionCodeFromMeta(questionMeta)
+    if (questionCode === 'TT4') {
+      return 40
+    }
     // Lấy order_index từ meta để xác định duration
     const orderIndex = (questionMeta?.order_index as number) ?? -1
     if (orderIndex >= 0 && orderIndex < 4) {
@@ -133,6 +145,16 @@ function CountdownControls({
     return getAutoTimerDurationSeconds(currentRoundType, currentQuestionMeta, currentQuestionState)
   }, [currentRoundType, currentQuestionMeta, currentQuestionState])
 
+  const questionCode = useMemo(
+    () => getQuestionCodeFromMeta(currentQuestionMeta),
+    [currentQuestionMeta]
+  )
+  const allowFortySeconds = currentRoundType === 'tang_toc' && questionCode === 'TT4'
+  const countdownOptions = useMemo<CountdownOption[]>(
+    () => (allowFortySeconds ? [...baseCountdownOptions, 40] : [...baseCountdownOptions]),
+    [allowFortySeconds]
+  )
+
   const isVeDichReveal = currentRoundType === 've_dich' && currentQuestionState === 'answer_revealed'
   const effectiveHasUserEditedDuration = hasUserEditedDuration && !isVeDichReveal
   const effectiveTimerDurationSeconds = effectiveHasUserEditedDuration
@@ -165,9 +187,9 @@ function CountdownControls({
 
   const durationSecondsValue = useMemo<CountdownOption>(() => {
     const raw = effectiveDurationOverride
-    if (isCountdownOption(raw)) return raw
+    if (isCountdownOption(raw, allowFortySeconds)) return raw
     return countdownOptions[0]
-  }, [effectiveDurationOverride])
+  }, [allowFortySeconds, countdownOptions, effectiveDurationOverride])
 
   // Tick countdown (interval only updates tick; countdown itself is derived)
   useEffect(() => {
@@ -231,7 +253,7 @@ function CountdownControls({
           value={durationSecondsValue}
           onChange={(e) => {
             const val = Number(e.target.value)
-            if (!Number.isFinite(val) || !isCountdownOption(val)) return
+            if (!Number.isFinite(val) || !isCountdownOption(val, allowFortySeconds)) return
             setHasUserEditedDuration(true)
             setTimerDurationSeconds(val)
           }}

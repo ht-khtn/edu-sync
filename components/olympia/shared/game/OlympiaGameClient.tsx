@@ -2439,12 +2439,12 @@ export function OlympiaGameClient({
                 isMc ? (
                   <div className="w-full">
                     <div className="rounded-md border border-slate-700 bg-slate-950/60 p-6">
-                      <div className="relative">
+                      <div className="relative min-h-[420px]">
                         <AnimatePresence>
                           {shouldShowHopeStar ? (
                             <HopeStar
                               key="hope-star"
-                              className="absolute bottom-3 left-3 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
+                              className="absolute bottom-4 left-4 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
                             />
                           ) : null}
                         </AnimatePresence>
@@ -2551,14 +2551,15 @@ export function OlympiaGameClient({
                     open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
                     scoreboard={scoreboard}
                     currentSeat={currentHighlightSeat}
+                    contentClassName="w-full h-full px-10 pointer-events-auto"
                   >
                     {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
-                    <div className="relative w-full">
+                    <div className="relative w-full h-full min-h-[420px]">
                       <AnimatePresence>
                         {shouldShowHopeStar ? (
                           <HopeStar
                             key="hope-star"
-                            className="absolute bottom-3 left-3 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
+                            className="absolute bottom-4 left-4 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
                           />
                         ) : null}
                       </AnimatePresence>

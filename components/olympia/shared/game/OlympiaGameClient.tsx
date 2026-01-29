@@ -2123,7 +2123,7 @@ export function OlympiaGameClient({
         <main
           className={cn(
             'flex-1 relative flex overflow-y-auto',
-            isGuest ? 'px-0 pt-0 pb-0 overflow-hidden' : 'px-6 pt-6 pb-6',
+            isGuest ? 'px-4 pt-4 pb-4 overflow-hidden sm:px-6 sm:pt-6 sm:pb-6' : 'px-6 pt-6 pb-6',
             isMc ? 'items-start justify-start' : 'items-center justify-center'
           )}
 
@@ -2144,7 +2144,7 @@ export function OlympiaGameClient({
             <div
               className={cn(
                 'w-full',
-                isMc ? 'max-w-none text-left' : isGuest ? 'max-w-none text-center' : 'max-w-5xl text-center'
+                isMc ? 'max-w-none text-left' : isGuest ? 'max-w-none text-center' : 'max-w-7xl text-center'
               )}
             >
               {shouldUseVcnvUi ? (
@@ -2227,13 +2227,9 @@ export function OlympiaGameClient({
                           : 'bg-slate-950/15 border-slate-700'
 
                     return (
-                      <div className={cn('w-full rounded-md border px-3 py-3', rowBgClass)}>
+                      <div className={cn('inline-block max-w-full rounded-md border px-3 py-3', rowBgClass)}>
                         <div className="flex items-start gap-3">
-                          <div
-                            className={cn(
-                              'flex min-w-0 flex-1 flex-wrap items-start justify-start gap-1.5 sm:gap-2'
-                            )}
-                          >
+                          <div className={cn('flex flex-wrap items-start justify-start gap-1.5 sm:gap-2')}>
                             {Array.from({ length: slotCount }).map((_, i) => {
                               const ch = i < letters.length ? letters[i] ?? null : null
                               const showLetter = opened && ch != null
@@ -2347,7 +2343,7 @@ export function OlympiaGameClient({
                   ]
 
                   return (
-                    <div className="mt-6 grid gap-6 md:grid-cols-2 md:items-start text-left relative">
+                    <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_fit-content(560px)] md:items-start text-left relative">
                       {resolvedViewerMode === 'player' && isViewerDisqualifiedObstacle ? (
                         <div className="absolute inset-0 z-50 flex items-center justify-center">
                           <div className="mx-4 w-full max-w-3xl rounded-md border border-rose-400/60 bg-rose-950/80 px-6 py-4 text-center">
@@ -2364,10 +2360,10 @@ export function OlympiaGameClient({
                             <img
                               src={mediaUrl}
                               alt="CNV"
-                              className="h-[360px] w-full object-cover"
+                              className="h-[clamp(300px,46vh,560px)] w-full object-cover"
                             />
                           ) : (
-                            <div className="flex h-[360px] w-full items-center justify-center text-sm text-slate-300">
+                            <div className="flex h-[clamp(300px,46vh,560px)] w-full items-center justify-center text-sm text-slate-300">
                               (Chưa có ảnh CNV)
                             </div>
                           )}
@@ -2407,15 +2403,15 @@ export function OlympiaGameClient({
                         </div>
                       </div>
 
-                      <div className="md:col-span-1 space-y-4">
-                        <div className="rounded-md border border-slate-700 bg-slate-950/60 px-4 py-3">
+                      <div className="md:col-span-1 space-y-4 w-fit max-w-full">
+                        <div className="inline-block rounded-md border border-slate-700 bg-slate-950/60 px-4 py-3">
                           <p className="text-xs uppercase tracking-widest text-slate-200">
-                            CHƯỚNG NGẠI VẬT CÓ {cnvLettersCount} CHỮ
+                            CHƯỚNG NGẠI VẬT CÓ {cnvLettersCount} CHỮ CÁI
                           </p>
                         </div>
 
                         {missingCodes.length > 0 ? (
-                          <div className="rounded-md border border-amber-500/40 bg-amber-950/30 px-4 py-3">
+                          <div className="inline-block max-w-full rounded-md border border-amber-500/40 bg-amber-950/30 px-4 py-3">
                             <p className="text-sm text-amber-100 font-medium">Thiếu dữ liệu VCNV</p>
                             <p className="mt-1 text-xs text-amber-200">
                               Không tìm thấy: {missingCodes.join(', ')}
@@ -2423,10 +2419,10 @@ export function OlympiaGameClient({
                           </div>
                         ) : null}
 
-                        <div className="space-y-3">
+                        <div className="space-y-3 w-fit max-w-full">
                           {rowDefs.map((d) => {
                             const rq = byCode.get(d.code) ?? null
-                            return <div key={d.code} className="w-full">{renderRow(rq, d.label)}</div>
+                            return <div key={d.code} className="w-fit max-w-full">{renderRow(rq, d.label)}</div>
                           })}
                         </div>
                       </div>

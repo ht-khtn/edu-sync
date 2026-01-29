@@ -1,6 +1,6 @@
 {
   "name": "edu-sync",
-  "version": "1.10.8",
+  "version": "1.10.9",
   "private": true,
   "scripts": {
     "predev": "node scripts/inject-version.cjs",

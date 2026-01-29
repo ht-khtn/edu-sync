@@ -2227,7 +2227,7 @@ export function OlympiaGameClient({
                           : 'bg-slate-950/15 border-slate-700'
 
                     return (
-                      <div className={cn('inline-block max-w-full rounded-md border px-3 py-3', rowBgClass)}>
+                      <div className={cn('w-full rounded-md border px-3 py-3', rowBgClass)}>
                         <div className="flex items-start gap-3">
                           <div className={cn('flex flex-wrap items-start justify-start gap-1.5 sm:gap-2')}>
                             {Array.from({ length: slotCount }).map((_, i) => {
@@ -2360,7 +2360,7 @@ export function OlympiaGameClient({
                             <img
                               src={mediaUrl}
                               alt="CNV"
-                              className="h-[clamp(300px,46vh,560px)] w-full object-cover"
+                              className="h-[clamp(300px,46vh,560px)] w-full object-contain"
                             />
                           ) : (
                             <div className="flex h-[clamp(300px,46vh,560px)] w-full items-center justify-center text-sm text-slate-300">
@@ -2403,26 +2403,26 @@ export function OlympiaGameClient({
                         </div>
                       </div>
 
-                      <div className="md:col-span-1 space-y-4 w-fit max-w-full">
-                        <div className="inline-block rounded-md border border-slate-700 bg-slate-950/60 px-4 py-3">
-                          <p className="text-xs uppercase tracking-widest text-slate-200">
-                            CHƯỚNG NGẠI VẬT CÓ {cnvLettersCount} CHỮ CÁI
-                          </p>
-                        </div>
-
-                        {missingCodes.length > 0 ? (
-                          <div className="inline-block max-w-full rounded-md border border-amber-500/40 bg-amber-950/30 px-4 py-3">
-                            <p className="text-sm text-amber-100 font-medium">Thiếu dữ liệu VCNV</p>
-                            <p className="mt-1 text-xs text-amber-200">
-                              Không tìm thấy: {missingCodes.join(', ')}
+                      <div className="md:col-span-1 w-fit max-w-full">
+                        <div className="inline-grid grid-cols-1 gap-3 w-fit max-w-full">
+                          <div className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-4 py-3">
+                            <p className="text-xs uppercase tracking-widest text-slate-200">
+                              CHƯỚNG NGẠI VẬT CÓ {cnvLettersCount} CHỮ CÁI
                             </p>
                           </div>
-                        ) : null}
 
-                        <div className="space-y-3 w-fit max-w-full">
+                          {missingCodes.length > 0 ? (
+                            <div className="w-full rounded-md border border-amber-500/40 bg-amber-950/30 px-4 py-3">
+                              <p className="text-sm text-amber-100 font-medium">Thiếu dữ liệu VCNV</p>
+                              <p className="mt-1 text-xs text-amber-200">
+                                Không tìm thấy: {missingCodes.join(', ')}
+                              </p>
+                            </div>
+                          ) : null}
+
                           {rowDefs.map((d) => {
                             const rq = byCode.get(d.code) ?? null
-                            return <div key={d.code} className="w-fit max-w-full">{renderRow(rq, d.label)}</div>
+                            return <div key={d.code} className="w-full">{renderRow(rq, d.label)}</div>
                           })}
                         </div>
                       </div>

@@ -2450,10 +2450,12 @@ export function OlympiaGameClient({
                         </AnimatePresence>
                         <div
                           className={cn(
-                            'w-full',
+                            'w-full min-h-[420px] h-full',
                             showQuestionText && showQuestionMedia && !isMediaExpanded
-                              ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
-                              : 'flex flex-col'
+                              ? (isQuestionShort
+                                ? 'flex flex-col justify-center gap-6'
+                                : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-center')
+                              : 'flex flex-col justify-center'
                           )}
                         >
                           {showQuestionText && !isMediaExpanded ? (
@@ -2564,10 +2566,12 @@ export function OlympiaGameClient({
                         ) : null}
                       </AnimatePresence>
                       <div className={cn(
-                        'w-full',
+                        'w-full min-h-[420px] h-full',
                         showQuestionText && showQuestionMedia && !isMediaExpanded
-                          ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
-                          : 'flex flex-col'
+                          ? (isQuestionShort
+                            ? 'flex flex-col justify-center gap-6'
+                            : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-center')
+                          : 'flex flex-col justify-center'
                       )}>
                         {/* Cột chữ (ẩn khi media được phóng to) */}
                         {showQuestionText && !isMediaExpanded ? (

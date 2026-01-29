@@ -2551,7 +2551,7 @@ export function OlympiaGameClient({
                     open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
                     scoreboard={scoreboard}
                     currentSeat={currentHighlightSeat}
-                    contentClassName="w-full h-full px-10 pointer-events-auto"
+                    contentClassName="w-full h-full px-10 pointer-events-auto flex items-center justify-center"
                   >
                     {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
                     <div className="relative w-full h-full min-h-[420px]">

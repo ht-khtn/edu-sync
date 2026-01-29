@@ -4,6 +4,7 @@ import type { ReactNode, CSSProperties } from 'react'
 import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { useActionState } from 'react'
 import { useFormStatus, createPortal } from 'react-dom'
+import { AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { submitAnswerAction, triggerBuzzerAction, type ActionState } from '@/app/(olympia)/olympia/actions'
@@ -31,6 +32,7 @@ import { clearGuestMediaCommandAction } from '@/actions/olympia/realtime.actions
 import { cn } from '@/utils/cn'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import OlympiaQuestionFrame from '@/components/olympia/shared/game/OlympiaQuestionFrame'
+import { HopeStar } from '@/components/olympia/shared/game/HopeStar'
 
 type OlympiaGameClientProps = {
   initialData: GameSessionPayload
@@ -640,6 +642,13 @@ export function OlympiaGameClient({
   const viewerPlayer = viewerUserId ? players.find((p) => p.participant_id === viewerUserId) ?? null : null
   const isViewerTarget = Boolean(viewerPlayer?.id && targetPlayerId && viewerPlayer.id === targetPlayerId)
   const isViewerDisqualifiedObstacle = roundType === 'vcnv' && viewerPlayer?.is_disqualified_obstacle === true
+
+  const hasHopeStar = useMemo(() => {
+    if (!isVeDich || !currentQuestionId) return false
+    return starUses.some((row) => row.round_question_id === currentQuestionId)
+  }, [currentQuestionId, isVeDich, starUses])
+
+  const shouldShowHopeStar = hasHopeStar && (isMc || questionState !== 'hidden')
 
   const effectiveBuzzerWinnerId = useMemo(() => {
     if (!currentQuestionId) return null
@@ -2430,33 +2439,157 @@ export function OlympiaGameClient({
                 isMc ? (
                   <div className="w-full">
                     <div className="rounded-md border border-slate-700 bg-slate-950/60 p-6">
-                      <div
-                        className={cn(
-                          'w-full',
-                          showQuestionText && showQuestionMedia && !isMediaExpanded
-                            ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
-                            : 'flex flex-col'
-                        )}
-                      >
+                      <div className="relative">
+                        <AnimatePresence>
+                          {shouldShowHopeStar ? (
+                            <HopeStar
+                              key="hope-star"
+                              className="absolute bottom-3 left-3 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
+                            />
+                          ) : null}
+                        </AnimatePresence>
+                        <div
+                          className={cn(
+                            'w-full',
+                            showQuestionText && showQuestionMedia && !isMediaExpanded
+                              ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
+                              : 'flex flex-col'
+                          )}
+                        >
+                          {showQuestionText && !isMediaExpanded ? (
+                            <div className={cn('flex flex-col', showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : '')}>
+                              <div className="max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                                <p
+                                  className={cn(
+                                    questionFontSize,
+                                    'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                                  )}
+                                >
+                                  {questionText?.trim() ? questionText : '—'}
+                                </p>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {showQuestionMedia ? (
+                            <div className={cn(
+                              'rounded-md border border-slate-700 bg-slate-950/60 p-3',
+                              isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-5xl' : 'lg:pl-4') : 'mx-auto max-w-5xl'
+                            )}>
+                              {mediaUrl ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs text-slate-300">Ảnh/Video</p>
+                                    <button
+                                      onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                      className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                                      type="button"
+                                    >
+                                      {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
+                                    </button>
+                                  </div>
+                                  <div
+                                    onClick={() => setIsMediaExpanded(!isMediaExpanded)}
+                                    className="cursor-pointer transition-transform hover:scale-[1.02]"
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        setIsMediaExpanded(!isMediaExpanded)
+                                      }
+                                    }}
+                                  >
+                                    {mediaKind === 'image' ? (
+                                      /* eslint-disable-next-line @next/next/no-img-element */
+                                      <img
+                                        src={mediaUrl}
+                                        alt="Media câu hỏi"
+                                        className={cn('w-full object-contain rounded', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                      />
+                                    ) : mediaKind === 'video' ? (
+                                      <video
+                                        ref={syncedVideoRef}
+                                        playsInline
+                                        src={mediaUrl}
+                                        className={cn('w-full rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                        tabIndex={-1}
+                                        controls
+                                      />
+                                    ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
+                                      <div className={cn('aspect-video w-full overflow-hidden rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : '')}>
+                                        <iframe
+                                          src={youtubeEmbedUrl}
+                                          title="Video câu hỏi"
+                                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                          allowFullScreen
+                                          className="h-full w-full"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <a
+                                        href={mediaUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-sky-300 hover:underline break-all"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {mediaUrl}
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <OlympiaQuestionFrame
+                    open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
+                    scoreboard={scoreboard}
+                    currentSeat={currentHighlightSeat}
+                  >
+                    {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
+                    <div className="relative w-full">
+                      <AnimatePresence>
+                        {shouldShowHopeStar ? (
+                          <HopeStar
+                            key="hope-star"
+                            className="absolute bottom-3 left-3 z-20 w-[clamp(64px,8vw,120px)] aspect-square drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]"
+                          />
+                        ) : null}
+                      </AnimatePresence>
+                      <div className={cn(
+                        'w-full',
+                        showQuestionText && showQuestionMedia && !isMediaExpanded
+                          ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
+                          : 'flex flex-col'
+                      )}>
+                        {/* Cột chữ (ẩn khi media được phóng to) */}
                         {showQuestionText && !isMediaExpanded ? (
-                          <div className={cn('flex flex-col', showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : '')}>
-                            <div className="max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
-                              <p
-                                className={cn(
-                                  questionFontSize,
-                                  'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
-                                )}
-                              >
+                          <div className={cn(
+                            'flex flex-col',
+                            showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : ''
+                          )}>
+                            <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                              <p className={cn(
+                                questionFontSize,
+                                'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                              )}>
                                 {questionText?.trim() ? questionText : '—'}
                               </p>
                             </div>
                           </div>
                         ) : null}
 
+                        {/* Cột media (click để phóng to/thu nhỏ) */}
                         {showQuestionMedia ? (
                           <div className={cn(
                             'rounded-md border border-slate-700 bg-slate-950/60 p-3',
-                            isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-5xl' : 'lg:pl-4') : 'mx-auto max-w-5xl'
+                            isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-4xl' : 'lg:pl-4') : 'mx-auto max-w-4xl'
                           )}>
                             {mediaUrl ? (
                               <div className="space-y-2">
@@ -2487,19 +2620,27 @@ export function OlympiaGameClient({
                                     <img
                                       src={mediaUrl}
                                       alt="Media câu hỏi"
-                                      className={cn('w-full object-contain rounded', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                      className={cn(
+                                        'w-full object-contain rounded',
+                                        isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                      )}
                                     />
                                   ) : mediaKind === 'video' ? (
                                     <video
                                       ref={syncedVideoRef}
                                       playsInline
                                       src={mediaUrl}
-                                      className={cn('w-full rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : 'max-h-[520px]')}
+                                      className={cn(
+                                        'w-full rounded bg-black',
+                                        isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
+                                      )}
                                       tabIndex={-1}
-                                      controls
                                     />
                                   ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                                    <div className={cn('aspect-video w-full overflow-hidden rounded bg-black', isMediaExpanded ? 'max-h-[720px]' : '')}>
+                                    <div className={cn(
+                                      'aspect-video w-full overflow-hidden rounded bg-black',
+                                      isMediaExpanded ? 'max-h-[600px]' : ''
+                                    )}>
                                       <iframe
                                         src={youtubeEmbedUrl}
                                         title="Video câu hỏi"
@@ -2524,133 +2665,21 @@ export function OlympiaGameClient({
                             ) : null}
                           </div>
                         ) : null}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <OlympiaQuestionFrame
-                    open={!isCnvQuestion && !showAnswersOverlay && !showBigScoreboard}
-                    scoreboard={scoreboard}
-                    currentSeat={currentHighlightSeat}
-                  >
-                    {/* Layout động: câu ngắn -> media dưới, câu dài -> media bên phải */}
-                    <div className={cn(
-                      'w-full',
-                      showQuestionText && showQuestionMedia && !isMediaExpanded
-                        ? (isQuestionShort ? 'flex flex-col gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start')
-                        : 'flex flex-col'
-                    )}>
-                      {/* Cột chữ (ẩn khi media được phóng to) */}
-                      {showQuestionText && !isMediaExpanded ? (
-                        <div className={cn(
-                          'flex flex-col',
-                          showQuestionMedia && !isQuestionShort ? 'lg:pr-4' : ''
-                        )}>
+
+                        {/* Khi phóng to media thì vẫn hiển thị lại chữ (tránh mất câu hỏi) */}
+                        {showQuestionText && showQuestionMedia && isMediaExpanded ? (
                           <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
-                            <p className={cn(
-                              questionFontSize,
-                              'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
-                            )}>
+                            <p
+                              className={cn(
+                                questionFontSize,
+                                'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
+                              )}
+                            >
                               {questionText?.trim() ? questionText : '—'}
                             </p>
                           </div>
-                        </div>
-                      ) : null}
-
-                      {/* Cột media (click để phóng to/thu nhỏ) */}
-                      {showQuestionMedia ? (
-                        <div className={cn(
-                          'rounded-md border border-slate-700 bg-slate-950/60 p-3',
-                          isMediaExpanded ? 'w-full max-w-full' : showQuestionText ? (isQuestionShort ? 'mx-auto max-w-4xl' : 'lg:pl-4') : 'mx-auto max-w-4xl'
-                        )}>
-                          {mediaUrl ? (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <p className="text-xs text-slate-300">Ảnh/Video</p>
-                                <button
-                                  onClick={() => setIsMediaExpanded(!isMediaExpanded)}
-                                  className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
-                                  type="button"
-                                >
-                                  {isMediaExpanded ? 'Thu nhỏ' : 'Phóng to'}
-                                </button>
-                              </div>
-                              <div
-                                onClick={() => setIsMediaExpanded(!isMediaExpanded)}
-                                className="cursor-pointer transition-transform hover:scale-[1.02]"
-                                role="button"
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    setIsMediaExpanded(!isMediaExpanded)
-                                  }
-                                }}
-                              >
-                                {mediaKind === 'image' ? (
-                                  /* eslint-disable-next-line @next/next/no-img-element */
-                                  <img
-                                    src={mediaUrl}
-                                    alt="Media câu hỏi"
-                                    className={cn(
-                                      'w-full object-contain rounded',
-                                      isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
-                                    )}
-                                  />
-                                ) : mediaKind === 'video' ? (
-                                  <video
-                                    ref={syncedVideoRef}
-                                    playsInline
-                                    src={mediaUrl}
-                                    className={cn(
-                                      'w-full rounded bg-black',
-                                      isMediaExpanded ? 'max-h-[600px]' : 'max-h-[420px]'
-                                    )}
-                                    tabIndex={-1}
-                                  />
-                                ) : mediaKind === 'youtube' && youtubeEmbedUrl ? (
-                                  <div className={cn(
-                                    'aspect-video w-full overflow-hidden rounded bg-black',
-                                    isMediaExpanded ? 'max-h-[600px]' : ''
-                                  )}>
-                                    <iframe
-                                      src={youtubeEmbedUrl}
-                                      title="Video câu hỏi"
-                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                      allowFullScreen
-                                      className="h-full w-full"
-                                    />
-                                  </div>
-                                ) : (
-                                  <a
-                                    href={mediaUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-sky-300 hover:underline break-all"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    {mediaUrl}
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {/* Khi phóng to media thì vẫn hiển thị lại chữ (tránh mất câu hỏi) */}
-                      {showQuestionText && showQuestionMedia && isMediaExpanded ? (
-                        <div className="max-h-[420px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
-                          <p
-                            className={cn(
-                              questionFontSize,
-                              'font-semibold leading-snug whitespace-pre-wrap text-slate-50'
-                            )}
-                          >
-                            {questionText?.trim() ? questionText : '—'}
-                          </p>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   </OlympiaQuestionFrame>
                 )
